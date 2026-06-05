@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>Logs</h1>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <h2>Filtres</h2>
+  </div>
+  <form class="inline-form" id="logs-filter">
+    <label>
+      Symbole
+      <input name="symbol">
+    </label>
+    <label>
+      Setup ID
+      <input name="setup_id">
+    </label>
+    <label>
+      Niveau
+      <select name="level">
+        <option value="">Tous</option>
+        <option>INFO</option>
+        <option>WARNING</option>
+        <option>ERROR</option>
+        <option>CRITICAL</option>
+        <option>TRADE</option>
+        <option>ORDER</option>
+        <option>RISK</option>
+        <option>SYNC</option>
+      </select>
+    </label>
+    <button type="submit">Filtrer</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <h2>Evenements</h2>
+  </div>
+  <div class="event-list" id="logs-events"></div>
+</section>
+{% endblock %}

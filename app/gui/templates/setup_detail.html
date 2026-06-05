@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1 id="detail-title">Setup</h1>
+    <span class="subtitle" id="detail-subtitle"></span>
+  </div>
+</section>
+
+<section class="panel market-panel">
+  <div class="panel-heading chart-heading">
+    <h2>Graphe</h2>
+    <div class="chart-heading-side">
+      <div class="chart-legend" id="setup-chart-legend"></div>
+      <div class="chart-timeframe-row">
+        <span class="chart-timeframe-label">Timeframe</span>
+        <div class="chart-timeframes" id="setup-chart-timeframes" aria-label="Timeframe du graphe">
+          <button class="chart-timeframe-button" type="button" data-chart-timeframe="3m">3mn</button>
+          <button class="chart-timeframe-button" type="button" data-chart-timeframe="10m">10mn</button>
+          <button class="chart-timeframe-button" type="button" data-chart-timeframe="15m">15mn</button>
+          <button class="chart-timeframe-button" type="button" data-chart-timeframe="30m">30mn</button>
+          <button class="chart-timeframe-button" type="button" data-chart-timeframe="1h">1h</button>
+          <button class="chart-timeframe-button" type="button" data-chart-timeframe="4h">4h</button>
+          <button class="chart-timeframe-button active" type="button" data-chart-timeframe="1d">1D</button>
+        </div>
+        <span class="chart-timeframe-status" id="setup-chart-timeframe-status">Actif: 1D</span>
+      </div>
+      <div class="chart-controls" aria-label="Controle du graphe">
+        <button class="chart-control-button" type="button" id="setup-chart-zoom-in" title="Zoom avant">+</button>
+        <button class="chart-control-button" type="button" id="setup-chart-zoom-out" title="Zoom arriere">-</button>
+        <button class="chart-control-button wide" type="button" id="setup-chart-reset" title="Reinitialiser le zoom">Reset</button>
+        <span class="chart-range" id="setup-chart-range"></span>
+      </div>
+    </div>
+  </div>
+  <div class="setup-chart-wrap">
+    <canvas id="setup-chart"></canvas>
+    <div class="chart-empty" id="setup-chart-empty" hidden></div>
+  </div>
+  <div class="market-summary" id="setup-market-summary"></div>
+</section>
+
+<section class="panel entry-panel">
+  <div class="panel-heading">
+    <h2>Entree</h2>
+  </div>
+  <div class="setup-condition-grid" id="setup-condition-grid"></div>
+  <dl class="detail-list compact-detail-list" id="setup-entry-plan"></dl>
+</section>
+
+<section class="panel analysis-panel">
+  <div class="panel-heading">
+    <h2>Suivi & analyse</h2>
+  </div>
+  <div class="analysis-overview" id="setup-analysis-overview"></div>
+  <div class="analysis-checks" id="setup-analysis-checks"></div>
+  <div class="analysis-timeline" id="setup-analysis-timeline"></div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <h2>Etat</h2>
+  </div>
+  <dl class="detail-list setup-state-detail" id="setup-detail-summary"></dl>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <h2>Configuration</h2>
+    <div class="config-actions">
+      <button class="secondary-button" type="button" id="setup-config-format">Formater</button>
+      <button class="secondary-button" type="button" id="setup-config-reset">Recharger</button>
+      <button type="button" id="setup-config-save">Sauvegarder</button>
+    </div>
+  </div>
+  <form class="config-form" id="setup-config-form"></form>
+  <details class="raw-config">
+    <summary>JSON</summary>
+    <textarea class="config-view config-editor" id="setup-config" spellcheck="false"></textarea>
+  </details>
+  <p class="field-message" id="setup-config-message" hidden></p>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <h2>Historique</h2>
+  </div>
+  <div class="event-list" id="setup-events"></div>
+</section>
+{% endblock %}

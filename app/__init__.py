@@ -1,0 +1,2 @@
+"""Setup Order application package."""
+

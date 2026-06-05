@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>Configuration</h1>
+  </div>
+</section>
+
+<section class="content-grid two-col">
+  <div class="panel">
+    <div class="panel-heading">
+      <h2>Runtime</h2>
+    </div>
+    <dl class="detail-list" id="settings-runtime"></dl>
+  </div>
+  <div class="panel">
+    <div class="panel-heading">
+      <h2>Broker account</h2>
+    </div>
+    <form class="tool-form" id="broker-account-form">
+      <label>
+        Account
+        <select name="connector" id="broker-connector-select">
+          <option value="simulated">Local simulation</option>
+          <option value="paper">IBKR paper account</option>
+          <option value="live">IBKR live account</option>
+        </select>
+      </label>
+      <label>
+        Host
+        <input name="host" id="broker-host-input" value="127.0.0.1">
+      </label>
+      <label>
+        Port
+        <input name="port" id="broker-port-input" type="number" min="1" max="65535" value="7497">
+      </label>
+      <label>
+        Client ID
+        <input name="client_id" id="broker-client-id-input" type="number" min="1" value="1001">
+      </label>
+      <button type="submit">Connect</button>
+    </form>
+    <p class="field-message" id="broker-account-message"></p>
+  </div>
+  <div class="panel">
+    <div class="panel-heading">
+      <h2>Audit TWS</h2>
+    </div>
+    <form class="tool-form" id="tws-audit-form">
+      <label class="checkbox-line">
+        <input name="enabled" id="tws-audit-enabled" type="checkbox">
+        Journaliser les appels TWS detailles
+      </label>
+      <button type="submit">Enregistrer</button>
+    </form>
+    <p class="field-message" id="tws-audit-message"></p>
+  </div>
+  <div class="panel">
+    <div class="panel-heading">
+      <h2>Limites de risque</h2>
+    </div>
+    <dl class="detail-list" id="settings-risk"></dl>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+data/trading_state.sqlite
+data/logs/*.log
+data/exports/*.csv
+.env
+

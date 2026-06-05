@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>Setups</h1>
+  </div>
+</section>
+
+<section class="content-grid setups-grid">
+  <div class="panel setups-list-panel">
+    <div class="panel-heading">
+      <h2>Liste</h2>
+      <button class="secondary-button table-reset-button" type="button" id="setups-columns-reset">Defaut</button>
+    </div>
+    <div class="table-toolbar">
+      <label class="table-search">
+        Recherche
+        <input id="setups-search" type="search" placeholder="Ticker, type, statut..." autocomplete="off">
+      </label>
+      <span class="table-count" id="setups-count"></span>
+    </div>
+    <div class="column-controls" id="setups-column-controls" aria-label="Colonnes"></div>
+    <div class="table-wrap">
+      <table class="setups-table">
+        <thead id="setups-head"></thead>
+        <tbody id="setups-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel setup-create-panel">
+    <div class="panel-heading">
+      <h2>Nouveau setup</h2>
+    </div>
+    <form class="tool-form" id="setup-form">
+      <label>
+        Ticker
+        <input name="symbol" required autocomplete="off">
+      </label>
+      <label>
+        Setup
+        <textarea
+          name="text"
+          rows="5"
+          required
+        ></textarea>
+      </label>
+      <div class="button-row">
+        <button type="button" id="setup-preview-button">Convertir</button>
+        <button type="submit">Sauver</button>
+      </div>
+    </form>
+    <div class="conversion-result" id="setup-conversion-result" hidden></div>
+    <pre class="config-view compact" id="setup-preview" hidden></pre>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>Positions</h1>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <h2>Positions</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Symbole</th>
+          <th>Qty</th>
+          <th>Prix moyen</th>
+          <th>Prix courant</th>
+          <th>PnL</th>
+          <th>Stop</th>
+          <th>Risque restant</th>
+          <th>Setup</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="positions-table"></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>Ordres</h1>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <h2>Ordres</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Symbole</th>
+          <th>Setup</th>
+          <th>Action</th>
+          <th>Type</th>
+          <th>Qty</th>
+          <th>Statut</th>
+          <th>Broker ID</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="orders-table"></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

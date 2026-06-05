@@ -1,0 +1,79 @@
+app:
+  environment: "development"
+  mode: "simulation"
+  timezone: "Europe/Paris"
+
+broker:
+  host: "127.0.0.1"
+  port: 7497
+  paper_port: 7497
+  live_port: 7496
+  client_id: 1001
+  reconnect: true
+  reconnect_interval_seconds: 5
+  market_data_source: "historical"
+  historical_duration: "30 D"
+  historical_bar_size: "1 day"
+  historical_what_to_show: "TRADES"
+  historical_use_rth: true
+  connector: "simulated"
+
+risk:
+  max_open_positions: 5
+  max_position_amount_usd: 250
+  max_risk_per_trade_usd: 15
+  max_daily_loss_usd: 50
+  max_total_exposure_usd: 1000
+  allow_short: false
+
+market:
+  allow_premarket: false
+  allow_after_hours: false
+  stale_data_seconds: 20
+
+orders:
+  default_entry_order_type: "STP_LMT"
+  default_stop_order_type: "STP"
+  cancel_unfilled_entry_after_minutes: 30
+
+setup_defaults:
+  timeframes:
+    signal: "15m"
+    confirmation: "1d"
+  entry:
+    trigger_offset: 0.02
+    limit_offset: 0.05
+  breakout:
+    valid_for_days: 5
+  retest:
+    max_retest_days: 5
+  confirmation:
+    min_volume_ratio: 0.8
+  momentum:
+    volume_above_average: 1.5
+  range:
+    min_days_inside_range: 5
+
+storage:
+  database_file: "data/trading_state.sqlite"
+  setups_folder: "data/setups"
+  logs_folder: "data/logs"
+
+gui:
+  host: "127.0.0.1"
+  port: 8000
+  require_login: false
+
+safety:
+  emergency_exit_if_stop_fails: false
+  max_stop_submit_retries: 3
+
+emergency_stop:
+  cancel_entry_orders: true
+  keep_existing_stops: true
+  close_positions_market: false
+
+alerts:
+  enabled: true
+  telegram_enabled: false
+  email_enabled: false
