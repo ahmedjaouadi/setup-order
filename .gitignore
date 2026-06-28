@@ -4,8 +4,13 @@ __pycache__/
 .mypy_cache/
 .venv/
 venv/
+.codex_tmp_pdf/
 data/trading_state.sqlite
 data/logs/*.log
 data/exports/*.csv
 .env
 
+# Runtime files
+setup-order-v2/data/logs/
+setup-order-v2/data/*.sqlite-shm
+setup-order-v2/data/*.sqlite-wal
