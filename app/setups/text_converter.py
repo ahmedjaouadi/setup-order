@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from app.conversion import canonicalize_setup_config
 from app.utils.id_generator import new_id
 
 
@@ -25,14 +26,16 @@ def convert_text_to_setup(
     defaults: dict[str, Any],
     enabled: bool = True,
 ) -> ConversionResult:
-    clean_symbol = symbol.strip().upper()
-    if not clean_symbol:
-        return ConversionResult(ok=False, errors=["Ticker is required"])
     if not text.strip():
         return ConversionResult(ok=False, errors=["Setup text is required"])
+    clean_symbol = symbol.strip().upper()
     parsed_json = _parse_json_setup(text)
     if parsed_json is not None:
-        config_symbol = str(parsed_json.get("symbol", "")).strip().upper()
+        config_payload = _setup_payload_from_json(parsed_json)
+        config_symbol = str(config_payload.get("symbol", "")).strip().upper()
+        clean_symbol = clean_symbol or config_symbol
+        if not clean_symbol:
+            return ConversionResult(ok=False, errors=["Ticker is required"])
         if config_symbol and config_symbol != clean_symbol:
             return ConversionResult(
                 ok=False,
@@ -44,14 +47,23 @@ def convert_text_to_setup(
                 ],
                 extracted={"json_detected": True, "symbol": config_symbol},
             )
-        parsed_json.setdefault("symbol", clean_symbol)
-        parsed_json.setdefault("enabled", enabled)
+        config_payload.setdefault("symbol", clean_symbol)
+        config_payload.setdefault("enabled", enabled)
+        canonical = canonicalize_setup_config(parsed_json, defaults=defaults)
         return ConversionResult(
             ok=True,
-            config=parsed_json,
-            warnings=["JSON setup detected; text conversion skipped"],
-            extracted={"json_detected": True},
+            config=canonical.config,
+            warnings=[
+                "JSON setup detected; text conversion skipped",
+                *canonical.warnings,
+            ],
+            extracted={
+                "json_detected": True,
+                "canonical_mapped_fields": canonical.mapped_fields,
+            },
         )
+    if not clean_symbol:
+        return ConversionResult(ok=False, errors=["Ticker is required"])
 
     normalized = _normalize(text)
     setup_type = _detect_setup_type(normalized)
@@ -103,7 +115,7 @@ def convert_text_to_setup(
         stop_loss=float(stop_loss),
         max_risk=float(max_risk),
         max_position=float(max_position),
-        mode=str(defaults["app"].get("mode", "simulation")),
+        mode=str(defaults["app"].get("mode", "paper")),
         enabled=enabled,
         defaults=defaults,
     )
@@ -116,10 +128,14 @@ def convert_text_to_setup(
             warnings=warnings,
             extracted=extracted,
         )
+    canonical = canonicalize_setup_config(config, defaults=defaults)
     return ConversionResult(
         ok=True,
-        config=config,
-        warnings=warnings,
+        config=canonical.config,
+        warnings=[
+            *warnings,
+            *canonical.warnings,
+        ],
         extracted=extracted,
     )
 
@@ -135,6 +151,11 @@ def _parse_json_setup(text: str) -> dict[str, Any] | None:
     if not isinstance(parsed, dict):
         return None
     return parsed
+
+
+def _setup_payload_from_json(parsed: dict[str, Any]) -> dict[str, Any]:
+    skeleton = parsed.get("skeleton")
+    return skeleton if isinstance(skeleton, dict) else parsed
 
 
 def _build_config(
@@ -181,14 +202,58 @@ def _build_config(
         "risk": {
             "max_position_amount_usd": max_position,
             "max_risk_usd": max_risk,
-            "initial_stop_loss": stop_loss,
+            "risk_model": "TRAILING_STOP_INITIAL_RISK",
             "emergency_exit_if_stop_fails": True,
+            "block_entry_if_risk_unknown": True,
+            "block_entry_if_trailing_stop_missing": True,
+        },
+        "trailing_stop_loss": {
+            "enabled": True,
+            "mode": "AUTO_INTELLIGENT",
+            "never_lower_stop": True,
+            "initial_stop": stop_loss,
+            "activation": {
+                "mode": "ON_ENTRY_FILL",
+                "activate_before_entry_transmission": True,
+                "entry_order_requires_attached_trailing_stop": True,
+            },
+            "calculation": {
+                "method": "HYBRID_ATR_STRUCTURE",
+                "allowed_methods": [
+                    "ATR_BASED",
+                    "STRUCTURE_BASED",
+                    "HYBRID_ATR_STRUCTURE",
+                    "PERCENT_BASED_FALLBACK",
+                ],
+                "atr_timeframe": "1h",
+                "atr_period": 14,
+                "atr_multiplier_initial": "AUTO",
+                "atr_multiplier_trailing": "AUTO",
+                "structure_reference": "higher_low_or_support",
+                "buffer_policy": "MAX_OF_TICK_SPREAD_ATR_FRACTION",
+            },
+            "ratchet_rules": {
+                "update_on_closed_bar_only": True,
+                "timeframe": "15m",
+                "do_not_lower_stop": True,
+                "do_not_update_outside_rth": True,
+                "do_not_update_if_spread_wide": True,
+            },
+            "broker_order": {
+                "order_type": "TRAIL_OR_MANAGED_STOP",
+                "attach_to_entry_order": True,
+                "required_before_entry_transmission": True,
+                "use_native_ibkr_trailing_order_if_available": True,
+                "fallback_to_managed_stop_updates": True,
+            },
         },
         "management": {
             "take_profit_mode": "none",
             "never_lower_stop": True,
             "stop_management": {
-                "mode": "step_based",
+                "mode": "TRAILING_STOP_LOSS",
+                "source": "trailing_stop_loss",
+                "never_lower_stop": True,
                 "steps": _extract_stop_steps(text),
             },
         },
@@ -295,7 +360,11 @@ def _build_config(
         return {
             **base,
             "take_profit": {"enabled": False},
-            "stop_management": {"mode": "step_based", "never_lower_stop": True},
+            "stop_management": {
+                "mode": "TRAILING_STOP_LOSS",
+                "source": "trailing_stop_loss",
+                "never_lower_stop": True,
+            },
         }
 
     return None

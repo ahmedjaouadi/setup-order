@@ -1,0 +1,281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "setup.base.schema.json",
+  "title": "Canonical Setup Base",
+  "type": "object",
+  "required": [
+    "setup_id",
+    "symbol",
+    "enabled",
+    "mode",
+    "setup_type",
+    "setup_role",
+    "direction",
+    "entry",
+    "risk",
+    "trailing_stop_loss"
+  ],
+  "properties": {
+    "setup_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["paper", "live"]
+    },
+    "setup_type": {
+      "type": "string",
+      "enum": [
+        "aggressive_rebound",
+        "breakout_retest",
+        "momentum_breakout",
+        "position_management",
+        "pullback_continuation",
+        "range_breakout",
+        "runner",
+        "trailing_runner"
+      ]
+    },
+    "setup_role": {
+      "type": "string",
+      "enum": [
+        "ENTRY_AND_MANAGEMENT",
+        "ENTRY_ONLY",
+        "MANAGEMENT_ONLY"
+      ]
+    },
+    "direction": {
+      "type": "string",
+      "enum": ["long", "short"]
+    },
+    "entry": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "order_type": {
+          "type": "string",
+          "enum": ["MKT", "LMT", "STP", "STP_LMT", "TRAIL", "MKT_PROTECTED_BY_TRAILING_STOP"]
+        },
+        "trigger_price": {
+          "type": "number",
+          "minimum": 0
+        },
+        "entry_price": {
+          "type": "number",
+          "minimum": 0
+        },
+        "limit_price": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maximum_limit_price": {
+          "type": "number",
+          "minimum": 0
+        },
+        "trigger_offset": {
+          "type": "number",
+          "minimum": 0
+        },
+        "limit_offset": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cancel_if_not_filled_after_minutes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "minimum_tick": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "risk": {
+      "type": "object",
+      "properties": {
+        "max_position_amount_usd": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max_risk_usd": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "emergency_exit_if_stop_fails": {
+          "type": "boolean"
+        },
+        "block_entry_if_risk_unknown": {
+          "type": "boolean"
+        },
+        "block_entry_if_trailing_stop_missing": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "trailing_stop_loss": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "never_lower_stop": {
+          "type": "boolean"
+        },
+        "initial_stop": {
+          "type": ["number", "null"],
+          "exclusiveMinimum": 0
+        },
+        "current_stop": {
+          "type": ["number", "null"],
+          "exclusiveMinimum": 0
+        },
+        "trailing_stop_order_ready": {
+          "type": "boolean"
+        },
+        "activation": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        },
+        "calculation": {
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string"
+            },
+            "allowed_methods": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "atr_timeframe": {
+              "type": "string"
+            },
+            "atr_period": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "atr_multiplier_initial": {},
+            "atr_multiplier_trailing": {},
+            "structure_reference": {
+              "type": "string"
+            },
+            "buffer_policy": {
+              "type": "string"
+            },
+            "min_tick_buffer": {
+              "type": "number",
+              "minimum": 0
+            },
+            "spread_buffer_multiplier": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": true
+        },
+        "ratchet_rules": {
+          "type": "object",
+          "properties": {
+            "move_only_up_for_long": {
+              "type": "boolean"
+            },
+            "move_only_down_for_short": {
+              "type": "boolean"
+            },
+            "update_on_closed_bar_only": {
+              "type": "boolean"
+            },
+            "timeframe": {
+              "type": "string"
+            },
+            "min_improvement_required": {},
+            "do_not_update_if_spread_wide": {
+              "type": "boolean"
+            },
+            "do_not_update_outside_rth": {
+              "type": "boolean"
+            },
+            "do_not_lower_stop": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        },
+        "broker_order": {
+          "type": "object",
+          "properties": {
+            "order_type": {
+              "type": "string"
+            },
+            "attach_to_entry_order": {
+              "type": "boolean"
+            },
+            "required_before_entry_transmission": {
+              "type": "boolean"
+            },
+            "use_native_ibkr_trailing_order_if_available": {
+              "type": "boolean"
+            },
+            "fallback_to_managed_stop_updates": {
+              "type": "boolean"
+            },
+            "trailing_stop_order_ready": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "management": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "zone_min": {
+            "type": "number"
+          },
+          "zone_max": {
+            "type": "number"
+          },
+          "action": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,50 @@
+# Manual Test Checklist
+
+- Ouvrir `/opportunities` et verifier les sections Top, Blocked, Recently expired, Generated scenarios.
+- Ouvrir `/setups`, cliquer `Generer le modele de configuration` et verifier que le squelette contient `setup_type: CHOOSE_ONE_SETUP_TYPE`, `setup_type_options` complet, `trailing_runner`, les blocs multi-setups visibles, `entry.order_type=AUTO_SELECT`, `volume_confirmation.enabled=AUTO_SELECT`, `volume_confirmation_policy_by_setup_type`, `expected_output` et la section d'aide `_template`.
+- Ouvrir `/setups`, cliquer `Generer le modele de configuration` et verifier que le squelette contient une section racine `trailing_stop_loss`.
+- Verifier que `trailing_stop_loss.enabled=true`.
+- Verifier que `trailing_stop_loss.initial_stop` existe.
+- Verifier que `risk.initial_stop_loss` n'existe pas comme champ principal.
+- Verifier que `risk.protective_stop` n'existe pas comme champ principal.
+- Verifier que les champs legacy `initial_stop_loss` et `protective_stop`, s'ils sont colles depuis un ancien setup, sont acceptes seulement comme alias/migration puis convertis vers `trailing_stop_loss.initial_stop`.
+- Verifier que `_template.required_by_setup_type` ne reference pas `risk.initial_stop_loss`.
+- Verifier que `_template.required_by_setup_type` ne reference pas `risk.protective_stop`.
+- Ouvrir une fiche setup et verifier que le resume affiche `trailing_stop_loss.initial_stop`, pas `protective_stop`.
+- Creer un setup legacy contenant `risk.protective_stop`, capturer `/api/setups/{setup_id}/creation-snapshot` et verifier que la reponse contient `trailing_stop_loss.initial_stop`, sans `initial_stop_loss`.
+- Verifier que la table setups et le graphe de fiche setup utilisent le stop initial canonique pour la colonne/ligne de stop.
+- Lancer un scoring, un forecast avec `setup_id` et un replay Model Lab sur un setup legacy; verifier que le stop est migre avant usage.
+- Mettre `trailing_stop_loss.broker_order.trailing_stop_order_ready=false`, declencher une entree candidate et verifier que `entry_decision`, `risk_engine` et `order_manager` gardent `can_send_order=false`.
+- Lancer les golden tests associes a V2.4.1 et verifier qu'ils passent: `python -m unittest tests.test_v241_legacy_stop_cleanup tests.test_signal_engine tests.test_forecasting tests.test_v23_forecast_stack tests.test_v23_forecast_stack_contract tests.test_v2_priority_modules`.
+- Coller le squelette dans un analyseur/expert et verifier que `expected_output.rules` demande un seul JSON final canonique, remplace `CHOOSE_ONE_SETUP_TYPE` et `AUTO_SELECT`, puis supprime les sections helpers non pertinentes.
+- Coller un JSON avec `symbol` dans le champ setup du bloc `Nouveau setup` et verifier que le champ `Ticker` se remplit automatiquement avant sauvegarde.
+- Creer ou simuler un setup momentum dont `ask > maximum_limit_price + stale_buffer`; verifier que la fiche setup affiche `Entree bloquee - breakout manque`, `can_send_order=NO`, et les raisons `PRICE_TOO_FAR_ABOVE_ENTRY` / `ASK_ABOVE_MAXIMUM_LIMIT_PLUS_STALE_BUFFER`.
+- Verifier qu'un setup `position_management`, `runner` ou `trailing_runner` avec volume faible ne transforme pas le volume en blocage de gestion.
+- Sur un setup intraday, verifier dans le panneau d'analyse volume les champs ratio ferme, ratio projete, volume courant, volume moyen, echantillon, mode de comparaison et liquidite execution.
+- Appeler `POST /api/opportunities/rebuild-shortlist`.
+- Simuler une quote ou un contexte type `CAST` avec `perf_stock_1d` autour de `+13%` et metadata secteur absente; verifier que Market Context et `/api/opportunities` exposent `OPPORTUNITY_DETECTED`, `INTRADAY_MOMENTUM_ANOMALY`, `SECTOR_METADATA_MISSING` et `can_send_order=false`.
+- Simuler une forte performance avec `price_too_far_above_entry=true`; verifier que l'opportunite reste detectee mais recommande `WAIT_FOR_RETEST` et affiche `DO_NOT_CHASE_EXTENDED_PRICE`.
+- Simuler un secteur connu avec stock `+5%`, secteur `+1%` et SPY `+0.5%`; verifier que `RELATIVE_STRENGTH_LEADER` est present et que RS secteur/SPY sont calcules.
+- Appeler `POST /api/opportunities/{symbol}/create-setup-candidate` sur un symbole ayant une opportunite detectee.
+- Appeler `POST /api/opportunities/{opportunity_id}/generate-scenario-draft`.
+- Verifier que le scenario genere est `DRAFT` et `selection.armed=false`.
+- Appeler `GET /api/opportunities/{opportunity_id}/explain`.
+- Appeler `POST /api/backtests/run-mvp` avec des bougies de test.
+- Verifier `/api/backtests/{backtest_id}/events`, `/trades`, `/summary`, `/report`.
+- Appeler `POST /api/model-lab/run-timesfm-benchmark`.
+- Appeler `POST /api/model-lab/selection-policy/recompute`.
+- Appeler `POST /api/reports/daily/generate`, puis `/api/reports/daily/latest`.
+- Ouvrir `/forecasting/stack` et verifier les statuts Worker / Dependency / Input / Forecast / Reliability / Samples / Display / Execution.
+- Confirmer que `Samples = 0` affiche `WARMUP` ou `ACCURACY_HISTORY_WARMUP`, pas un `INSUFFICIENT_DATA` generique.
+- Creer un setup et verifier `GET /api/setups/{setup_id}/creation-snapshot`; modifier ensuite le setup et confirmer que `snapshot_id` ne change pas.
+- Appeler `POST /api/forecasting/outcomes/evaluate-due` avec `{ "prices": { "<SYMBOL>": 100.0 } }`, puis reconstruire les scorecards.
+- Appeler `POST /api/model-lab/forecast-stack/compare` avec `actual` et `predictions`, puis verifier `/model-lab/forecast-stack`.
+- Confirmer dans les reponses providers et forecasts que `use_for_execution` reste toujours faux.
+- Verifier sur la fiche setup le consensus, la divergence TimesFM/Chronos, les probabilites Lag-Llama et l'impact de score.
+- Appeler `GET /api/forecasting/providers/{model_name}/forecasts` et `/errors`, puis verifier `last_run`, `last_error`, `reliability_grade` et `sample_size` dans Research.
+- Lancer un walk-forward avec des folds valides, puis confirmer `validation.no_data_leakage=true`; verifier qu'un fold chevauche retourne HTTP 422.
+- Confirmer qu'un modele n'est selectionne que s'il bat naive et ATR, possede assez d'echantillons et ne degrade pas le PnL simule.
+- Installer un tier avec `./install-forecasting.ps1 -Tier p1`, puis verifier que `python scripts/check_forecasting_stack.py` marque les providers installes comme prets.
+- Appeler `POST /api/model-lab/darts/run-experiment` avec `series`, `horizon_bars` et `models`, puis confirmer la presence des resultats Darts, `naive_baseline` et `atr_baseline`.
+- Appeler `POST /api/model-lab/forecast-stack/run-native` avec un provider installe dans `models` et confirmer son classement face aux deux baselines.
+- Confirmer que NeuralForecast, AutoGluon, Darts et Moirai retournent `MODEL_LAB_ONLY` depuis l'API de forecast runtime meme lorsqu'ils sont installes.

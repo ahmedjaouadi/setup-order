@@ -7,12 +7,48 @@ from app.setups.breakout_retest import BreakoutRetestSetup
 from app.setups.momentum_breakout import MomentumBreakoutSetup
 
 
+def intelligent_trailing_stop(initial_stop: float) -> dict:
+    return {
+        "enabled": True,
+        "mode": "AUTO_INTELLIGENT",
+        "never_lower_stop": True,
+        "initial_stop": initial_stop,
+        "activation": {
+            "mode": "ON_ENTRY_FILL",
+        },
+        "calculation": {
+            "method": "HYBRID_ATR_STRUCTURE",
+            "atr_timeframe": "1h",
+            "atr_period": 14,
+            "atr_multiplier_initial": "AUTO",
+            "atr_multiplier_trailing": "AUTO",
+            "structure_reference": "higher_low_or_support",
+            "buffer_policy": "MAX_OF_TICK_SPREAD_ATR_FRACTION",
+        },
+        "ratchet_rules": {
+            "update_on_closed_bar_only": True,
+            "timeframe": "15m",
+            "do_not_lower_stop": True,
+            "do_not_update_outside_rth": True,
+            "do_not_update_if_spread_wide": True,
+        },
+        "broker_order": {
+            "order_type": "TRAIL_OR_MANAGED_STOP",
+            "attach_to_entry_order": True,
+            "required_before_entry_transmission": True,
+            "use_native_ibkr_trailing_order_if_available": True,
+            "fallback_to_managed_stop_updates": True,
+            "trailing_stop_order_ready": True,
+        },
+    }
+
+
 def valid_breakout_config() -> dict:
     return {
         "setup_id": "UEC_2026_001",
         "symbol": "UEC",
         "enabled": True,
-        "mode": "simulation",
+        "mode": "paper",
         "setup_type": "breakout_retest",
         "setup_role": "ENTRY_AND_MANAGEMENT",
         "direction": "long",
@@ -28,8 +64,9 @@ def valid_breakout_config() -> dict:
         "risk": {
             "max_position_amount_usd": 200,
             "max_risk_usd": 15,
-            "initial_stop_loss": 13.85,
+            "emergency_exit_if_stop_fails": True,
         },
+        "trailing_stop_loss": intelligent_trailing_stop(13.85),
     }
 
 
@@ -38,7 +75,7 @@ def valid_momentum_config() -> dict:
         "setup_id": "NOK_2026_001",
         "symbol": "NOK",
         "enabled": True,
-        "mode": "simulation",
+        "mode": "paper",
         "setup_type": "momentum_breakout",
         "setup_role": "ENTRY_AND_MANAGEMENT",
         "direction": "long",
@@ -72,8 +109,9 @@ def valid_momentum_config() -> dict:
         "risk": {
             "max_position_amount_usd": 250,
             "max_risk_usd": 15,
-            "initial_stop_loss": 14.90,
+            "emergency_exit_if_stop_fails": True,
         },
+        "trailing_stop_loss": intelligent_trailing_stop(14.90),
     }
 
 
@@ -83,10 +121,33 @@ class BreakoutRetestTests(unittest.TestCase):
         result = setup.validate()
 
         self.assertTrue(result.valid)
+        self.assertEqual(setup.config["trailing_stop_loss"]["initial_stop"], 13.85)
+
+    def test_legacy_initial_stop_is_migrated_to_trailing_stop_loss(self) -> None:
+        config = valid_breakout_config()
+        config.pop("trailing_stop_loss")
+        config["risk"]["initial_stop_loss"] = 13.85
+
+        setup = BreakoutRetestSetup(config)
+
+        self.assertEqual(
+            setup.config["trailing_stop_loss"]["migration_status"],
+            "MIGRATED_TO_TRAILING_STOP",
+        )
+
+    def test_rejects_new_setup_without_trailing_stop_loss(self) -> None:
+        config = valid_breakout_config()
+        config.pop("trailing_stop_loss")
+        setup = BreakoutRetestSetup(config)
+
+        result = setup.validate()
+
+        self.assertFalse(result.valid)
+        self.assertIn("TRAILING_STOP_LOSS_REQUIRED", result.errors)
 
     def test_rejects_stop_above_estimated_entry(self) -> None:
         config = valid_breakout_config()
-        config["risk"]["initial_stop_loss"] = 15.00
+        config["trailing_stop_loss"]["initial_stop"] = 15.00
 
         result = BreakoutRetestSetup(config).validate()
 

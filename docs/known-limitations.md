@@ -1,0 +1,26 @@
+# Known Limitations
+
+- V2.4.1 Legacy Stop Cleanup is accepted: the setup template should not emit `risk.initial_stop_loss` or `risk.protective_stop` as primary fields, and final runtime models should use `trailing_stop_loss.initial_stop`.
+- `initial_stop_loss` and `protective_stop` can still appear in legacy migration code, alias tests, imported historical payloads and archived documentation; they are accepted only as aliases/migration inputs.
+- Scoring, forecasting and Model Lab are no longer known V2.4.1 limitations for stop-field usage: they canonicalize setup configs before reading stop values.
+- `entry_decision`, `risk_engine` and `order_manager` must keep execution blocked when `trailing_stop_loss.broker_order.trailing_stop_order_ready=false`; any bypass should be treated as a regression.
+- The associated V2.4.1 legacy-stop/golden tests pass, but V2.4 remains `ACCEPTED_WITH_BLOCKERS_REMAINING` until the remaining non-scoped modules are audited in later cleanup steps.
+- Le replay/backtest MVP simule uniquement un modele simple `STP_LMT` + stop protecteur.
+- Les scenarios generes depuis opportunites restent des brouillons; ils ne creent pas de setup arme.
+- Le stop n'est jamais invente si absent: une ambiguity est creee.
+- `Gain aujourd'hui` privilegie maintenant une estimation live `realized_pnl + pnl latent positions` pour reactiver l'UI plus vite; elle peut donc bouger avant que le chiffre broker exact ne se resynchronise.
+- Le Opportunity Scanner Market Context utilise des seuils simples et deterministes; ils doivent encore etre calibres avec un historique paper-trading avant d'etre consideres comme fiables.
+- `OPPORTUNITY_DETECTED` signifie seulement "merite analyse"; ce statut ne prouve pas qu'une entree est autorisee et ne peut pas contourner setup valide, stop, session, risk engine et order manager.
+- Les detecteurs historiques multi-timeframe avances (breakout/retest/reclaim/pullback separes avec niveaux complets) restent partiels; le noyau actuel transforme surtout les donnees Market Context et quotes locales en signal de decouverte.
+- Les scorecards Model Lab utilisent une evaluation locale simplifiee lorsque les forecasts historiques detailles ne sont pas fournis.
+- Les pages detail opportunite et scenario ne sont pas encore separees.
+- L'evaluation des forecasts arrives a echeance exige actuellement un mapping explicite `symbol -> observation`; l'observation accepte un prix final ou un chemin avec high/low pour les touches entry/stop.
+- Darts, Chronos, Lag-Llama, NeuralForecast, AutoGluon et Uni2TS restent des dependances optionnelles; leur absence retourne un statut explicite sans casser l'application.
+- Le benchmark forecast stack accepte des series pre-calculees; Darts peut aussi produire un holdout natif depuis une serie brute lorsqu'il est installe.
+- Lag-Llama et Moirai telechargent leurs poids au premier lancement si aucun cache/chemin local n'est disponible; ce premier run depend donc de l'acces Hugging Face.
+- Les estimations `prob_touch_*` derivees des quantiles Lag-Llama sont marquees par `TOUCH_PROBABILITIES_ESTIMATED_FROM_QUANTILES` jusqu'a calibration sur le ledger.
+- Les actions Enable/Disable des providers se font encore par `config.yaml`; la page expose leur etat mais ne reecrit pas la configuration sur disque.
+- Le squelette universel aide l'expert a choisir un setup type, mais la sauvegarde attend toujours un JSON final canonique avec un seul `setup_type`; les aides `_template` sont ignorees automatiquement et ne doivent pas etre conservees comme configuration finale.
+- Le classifieur complet de mismatch session (`RTH_PREVIOUS_DAY` vs `PRE_MARKET_CURRENT_DAY`) n'est pas encore alimente par tous les snapshots; la politique est configuree mais depend de donnees de session fiables.
+- Le bootstrap/backtest automatique Forecast Stack par nouveau symbole n'est pas encore lance en arriere-plan; la fiabilite peut donc rester en `ACCURACY_HISTORY_WARMUP` tant que le ledger n'a pas d'outcomes evalues.
+- Les tables recommandees `forecast_model_registry`, `forecast_runs`, `forecast_outcomes` et `symbol_forecast_state` du rapport ne sont pas toutes separees sous ces noms; le depot utilise encore les tables V2.3 existantes pour les forecasts et scorecards.

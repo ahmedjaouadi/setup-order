@@ -1,0 +1,118 @@
+setup_id:
+  - "setup id"
+  - "id setup"
+symbol:
+  - "ticker"
+  - "symbole"
+mode:
+  - "trade mode"
+  - "account mode"
+setup_type:
+  - "type setup"
+  - "type"
+setup_role:
+  - "role"
+  - "setup role"
+direction:
+  - "side"
+entry.enabled:
+  - "entry_enabled"
+  - "entry enabled"
+entry.order_type:
+  - "entry_order_type"
+  - "order type"
+  - "type d'ordre"
+  - "type ordre"
+entry.trigger_price:
+  - "entry_trigger"
+  - "trigger"
+  - "trigger price"
+  - "prix trigger"
+entry.entry_price:
+  - "entry price"
+  - "prix entree"
+entry.limit_price:
+  - "entry_limit_price"
+  - "limit_price"
+  - "limit price"
+entry.maximum_limit_price:
+  - "maximum_limit_price"
+  - "max limit"
+  - "maximum limit price"
+  - "prix limite maximal"
+entry.trigger_offset:
+  - "trigger_offset"
+entry.limit_offset:
+  - "limit_offset"
+entry.cancel_if_not_filled_after_minutes:
+  - "cancel_if_not_filled_after_minutes"
+  - "cancel after minutes"
+trailing_stop_loss.initial_stop:
+  - "sl"
+  - "stop"
+  - "stop_loss"
+  - "stop-loss"
+  - "initial stop loss"
+  - "initial_stop_loss"
+  - "legacy_initial_stop_loss"
+  - "legacy stop loss"
+  - "fixed stop loss"
+  - "initial trailing stop"
+  - "initial_trailing_stop"
+  - "trailing_stop_initial_level"
+  - "trailing stop initial level"
+  - "hard stop"
+  - "hard_stop"
+  - "protective stop"
+  - "stop protecteur"
+trailing_stop_loss.enabled:
+  - "trailing_stop_enabled"
+  - "trailing stop enabled"
+risk.max_position_amount_usd:
+  - "max_position_amount_usd"
+  - "montant maximal"
+  - "position max"
+  - "max position amount"
+  - "budget maximal"
+  - "budget"
+risk.max_risk_usd:
+  - "max_risk_usd"
+  - "risque maximal"
+  - "max risk"
+  - "risk max"
+  - "risque"
+breakout.daily_close_above:
+  - "daily_close_above"
+  - "daily close above"
+  - "cloture au dessus"
+breakout.resistance:
+  - "resistance"
+  - "breakout level"
+  - "niveau breakout"
+retest.zone_min:
+  - "retest_zone_min"
+  - "zone min"
+retest.zone_max:
+  - "retest_zone_max"
+  - "zone max"
+retest.no_close_below:
+  - "no_close_below"
+  - "close not below"
+support_zone.min:
+  - "support_zone_min"
+support_zone.max:
+  - "support_zone_max"
+pullback.entry_reference:
+  - "entry_reference"
+range.high:
+  - "range high"
+range.low:
+  - "range low"
+position_source.mode:
+  - "position source mode"
+position_source.require_existing_position:
+  - "require_existing_position"
+position_source.reconcile_on_load:
+  - "reconcile_on_load"
+position_source.block_if_position_not_found:
+  - "block_if_position_not_found"
