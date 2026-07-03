@@ -1,0 +1,7 @@
+# P1: primary TimesFM, Chronos, Darts, and deterministic baselines.
+timesfm[torch]
+torch
+pandas
+huggingface-hub
+chronos-forecasting
+u8darts[torch]

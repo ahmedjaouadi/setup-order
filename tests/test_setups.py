@@ -223,6 +223,8 @@ class MomentumBreakoutAdaptiveTests(unittest.TestCase):
                 price=15.70,
                 bid=15.68,
                 ask=15.70,
+                high=15.78,
+                low=15.68,
                 close=15.70,
                 volume_ratio_closed_bar=1.80,
                 bars_above_resistance=0,
@@ -269,6 +271,86 @@ class MomentumBreakoutAdaptiveTests(unittest.TestCase):
             signal.metadata["analysis"]["validation"]["path"],
             "FAST_BREAKOUT",
         )
+        self.assertEqual(
+            signal.metadata["analysis"]["validation"]["volume_status"],
+            "FAST_VOLUME_CONFIRMED",
+        )
+
+    def test_rejects_strong_volume_when_price_is_rejected_below_resistance(self) -> None:
+        setup = MomentumBreakoutSetup(valid_momentum_config())
+
+        signal = setup.evaluate(
+            self.momentum_snapshot(
+                open=15.82,
+                high=16.05,
+                low=15.72,
+                close=15.76,
+                price=15.76,
+                bid=15.74,
+                ask=15.76,
+                volume_ratio_closed_bar=2.10,
+                bars_above_resistance=0,
+            ),
+            SetupStatus.WAITING_ACTIVATION,
+        )
+
+        self.assertEqual(signal.action, SignalAction.HOLD)
+        self.assertEqual(
+            signal.metadata["analysis"]["decision_status"],
+            "BREAKOUT_REJECTED_ON_VOLUME",
+        )
+        self.assertEqual(
+            signal.metadata["analysis"]["validation"]["volume_status"],
+            "VOLUME_REJECTED",
+        )
+
+    def test_waits_when_triggered_breakout_has_weak_volume(self) -> None:
+        setup = MomentumBreakoutSetup(valid_momentum_config())
+
+        signal = setup.evaluate(
+            self.momentum_snapshot(
+                close=15.86,
+                volume_ratio_closed_bar=0.62,
+                average_volume_ratio_last_2_bars=0.70,
+                bars_above_resistance=1,
+            ),
+            SetupStatus.WAITING_ACTIVATION,
+        )
+
+        self.assertEqual(signal.action, SignalAction.HOLD)
+        self.assertEqual(
+            signal.metadata["analysis"]["decision_status"],
+            "PRICE_TRIGGERED_WEAK_VOLUME",
+        )
+        self.assertEqual(
+            signal.metadata["analysis"]["validation"]["volume_status"],
+            "WEAK_VOLUME",
+        )
+
+    def test_projects_live_bar_volume_before_classifying(self) -> None:
+        setup = MomentumBreakoutSetup(valid_momentum_config())
+
+        signal = setup.evaluate(
+            self.momentum_snapshot(
+                current_bar_volume=70000,
+                bar_volume_15m=None,
+                volume=70000,
+                avg_volume_15m=120000,
+                volume_ratio_15m=None,
+                volume_ratio_closed_bar=None,
+                volume_ratio=None,
+                volume_ratio_live=None,
+                elapsed_ratio=0.5,
+                average_volume_ratio_last_2_bars=1.20,
+            ),
+            SetupStatus.WAITING_ACTIVATION,
+        )
+
+        volume = signal.metadata["analysis"]["validation"]["volume_confirmation"]
+        self.assertFalse(volume["current_bar_is_closed"])
+        self.assertEqual(volume["projected_bar_volume"], 140000)
+        self.assertAlmostEqual(volume["live_projected_volume_ratio"], 1.1667)
+        self.assertEqual(volume["liquidity_status"], "EXECUTION_LIQUIDITY_OK")
 
     def test_rejects_entry_when_ask_is_above_limit(self) -> None:
         setup = MomentumBreakoutSetup(valid_momentum_config())

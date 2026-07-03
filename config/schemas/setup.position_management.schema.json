@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "setup.position_management.schema.json",
+  "title": "Position Management Setup",
+  "type": "object",
+  "required": ["position_source", "management"],
+  "properties": {
+    "setup_role": {
+      "const": "MANAGEMENT_ONLY"
+    },
+    "entry": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "const": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "position_source": {
+      "type": "object",
+      "required": ["mode", "require_existing_position"],
+      "properties": {
+        "mode": {
+          "const": "adopt_existing_ibkr_position"
+        },
+        "require_existing_position": {
+          "const": true
+        },
+        "reconcile_on_load": {
+          "type": "boolean"
+        },
+        "block_if_position_not_found": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "management": {
+      "type": "object",
+      "required": ["stop_management"],
+      "properties": {
+        "stop_management": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "minLength": 1
+            },
+            "rules": {
+              "type": "array"
+            },
+            "steps": {
+              "type": "array"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "setup.runner.schema.json",
+  "title": "Runner Setup",
+  "type": "object",
+  "properties": {
+    "management": {
+      "type": "object",
+      "properties": {
+        "stop_management": {
+          "type": "object",
+          "properties": {
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "when_price_above": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "new_stop": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

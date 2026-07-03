@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from typing import Any
+
+from app.broker.ib_models import BrokerOrderRequest, BrokerPosition
 from app.broker.tws_connector import BrokerConnector
-from app.models import EventLevel, PositionRecord, SetupRole, SetupStatus
+from app.engine.broker_reality import REPORT_STATE_KEY, build_broker_reality_report
+from app.models import ConnectionStatus, EventLevel, OrderStatus, PositionRecord, SetupStatus
+from app.setups.setup_roles import setup_is_management_only, setup_role_from_config
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
 
@@ -12,33 +17,117 @@ class ReconciliationEngine:
         repository: TradingRepository,
         event_store: EventStore,
         broker: BrokerConnector,
+        settings: dict[str, Any] | None = None,
     ) -> None:
         self.repository = repository
         self.event_store = event_store
         self.broker = broker
+        self.settings = settings if isinstance(settings, dict) else {}
 
-    async def run(self) -> dict[str, int]:
-        broker_positions = await self.broker.positions()
-        broker_orders = await self.broker.open_orders()
+    async def run(self) -> dict[str, Any]:
+        broker_connected = await self.broker.status() == ConnectionStatus.CONNECTED
+        local_setups = self.repository.list_setups()
+        local_orders = self.repository.list_orders()
+        local_positions = self.repository.list_positions()
+        broker_positions: list[BrokerPosition] = []
+        position_query_error: str | None = None
+        if broker_connected:
+            try:
+                broker_positions = await self.broker.positions()
+            except Exception as exc:
+                position_query_error = str(exc)
+                self.event_store.record(
+                    EventLevel.WARNING,
+                    "broker_position_reconciliation_failed",
+                    "Broker position reconciliation failed",
+                    data={"error": position_query_error},
+                )
+        broker_orders: list[BrokerOrderRequest] = []
+        order_query_error: str | None = None
+        broker_account_summary: dict[str, Any] = {}
+        account_query_error: str | None = None
+        broker_executions: list[Any] = []
+        if broker_connected:
+            try:
+                broker_orders = await self.broker.open_orders()
+            except Exception as exc:
+                order_query_error = str(exc)
+                self.event_store.record(
+                    EventLevel.WARNING,
+                    "broker_order_reconciliation_failed",
+                        "Broker open order reconciliation failed",
+                        data={"error": order_query_error},
+                )
+            broker_account_summary, account_query_error = await _broker_account_summary(self.broker)
+            if account_query_error:
+                self.event_store.record(
+                    EventLevel.WARNING,
+                    "broker_account_reconciliation_failed",
+                    "Broker account/pnl reconciliation failed",
+                    data={"error": account_query_error},
+                )
+            broker_executions = await _broker_recent_executions(self.broker)
+        broker_order_statuses = await _broker_order_statuses(self.broker) if broker_connected else {}
         result = {
             "broker_positions": len(broker_positions),
             "broker_open_orders": len(broker_orders),
-            "local_positions": len(self.repository.list_positions()),
-            "local_orders": len(self.repository.list_orders()),
+            "broker_executions": len(broker_executions),
+            "local_positions": len(local_positions),
+            "local_orders": len(local_orders),
+            "local_orders_updated": 0,
+            "local_orders_cancelled": 0,
+            "local_orders_filled": 0,
+            "local_orders_rejected": 0,
+            "local_orders_reactivated": 0,
+            "missing_broker_orders": 0,
             "adopted_positions": 0,
             "manual_review_required": 0,
+            "broker_reality_rows": 0,
+            "reconciliation_mismatches": 0,
+            "auto_execution_blocked": False,
+            "broker_tracker_status": "DISCONNECTED" if not broker_connected else "OK",
         }
+        if not broker_connected:
+            self._save_broker_reality_report(
+                local_setups=local_setups,
+                local_orders=local_orders,
+                broker_orders=[],
+                broker_positions=[],
+                local_positions=local_positions,
+                broker_account_summary={},
+                broker_executions=[],
+                broker_connected=False,
+                result=result,
+            )
+            self.event_store.record(
+                EventLevel.SYNC,
+                "reconciliation_completed",
+                "Reconciliation skipped because broker is disconnected",
+                data=result,
+            )
+            return result
+        if order_query_error is None and position_query_error is None:
+            self._reconcile_local_orders(
+                broker_positions=broker_positions,
+                broker_orders=broker_orders,
+                broker_order_statuses=broker_order_statuses,
+                result=result,
+            )
         positions_by_symbol = {
             position.symbol.upper(): position
             for position in broker_positions
             if position.quantity != 0
         }
-        for setup in self.repository.list_setups():
+        for setup in local_setups:
+            setup_id = str(setup.get("setup_id") or "")
+            current_setup = self.repository.get_setup(setup_id) if setup_id else None
+            if current_setup:
+                setup = current_setup
+            if str(setup.get("status") or "") in _TERMINAL_SETUP_STATUSES:
+                continue
             config = setup.get("config", {})
-            role = config.get("setup_role")
-            if role is None and config.get("setup_type") == "position_management":
-                role = SetupRole.MANAGEMENT_ONLY.value
-            if role != SetupRole.MANAGEMENT_ONLY.value:
+            role = setup_role_from_config(config, infer_position_management=True)
+            if not setup_is_management_only(role):
                 continue
             source = config.get("position_source", {})
             if source.get("mode") != "adopt_existing_ibkr_position":
@@ -153,6 +242,20 @@ class ReconciliationEngine:
                     "current_stop": current_stop,
                 },
             )
+        self._save_broker_reality_report(
+            local_setups=self.repository.list_setups(),
+            local_orders=self.repository.list_orders(),
+            broker_orders=broker_orders,
+            broker_positions=broker_positions,
+            local_positions=self.repository.list_positions(),
+            broker_account_summary=broker_account_summary,
+            broker_executions=broker_executions,
+            broker_connected=broker_connected,
+            result=result,
+            order_query_error=order_query_error,
+            position_query_error=position_query_error,
+            account_query_error=account_query_error,
+        )
         self.event_store.record(
             EventLevel.SYNC,
             "reconciliation_completed",
@@ -161,11 +264,193 @@ class ReconciliationEngine:
         )
         return result
 
+    def _save_broker_reality_report(
+        self,
+        *,
+        local_setups: list[dict[str, Any]],
+        local_orders: list[dict[str, Any]],
+        broker_orders: list[BrokerOrderRequest],
+        broker_positions: list[BrokerPosition],
+        local_positions: list[dict[str, Any]],
+        broker_account_summary: dict[str, Any],
+        broker_executions: list[Any],
+        broker_connected: bool,
+        result: dict[str, Any],
+        order_query_error: str | None = None,
+        position_query_error: str | None = None,
+        account_query_error: str | None = None,
+    ) -> None:
+        report = build_broker_reality_report(
+            local_setups=local_setups,
+            local_orders=local_orders,
+            local_positions=local_positions,
+            broker_orders=broker_orders,
+            broker_positions=broker_positions,
+            account_summary=broker_account_summary,
+            executions=broker_executions,
+            broker_connected=broker_connected,
+            order_query_error=order_query_error,
+            position_query_error=position_query_error,
+            account_query_error=account_query_error,
+            settings=self.settings,
+        )
+        self.repository.set_bot_state(REPORT_STATE_KEY, report)
+        result["broker_reality_rows"] = len(report.get("rows", []))
+        result["reconciliation_mismatches"] = int(report.get("mismatch_count") or 0)
+        result["auto_execution_blocked"] = bool(report.get("auto_execution_blocked"))
+        result["broker_tracker_status"] = str(report.get("broker_tracker_status") or "")
+
+    def _reconcile_local_orders(
+        self,
+        *,
+        broker_positions: list[BrokerPosition],
+        broker_orders: list[BrokerOrderRequest],
+        broker_order_statuses: dict[str, str],
+        result: dict[str, int],
+    ) -> None:
+        positions_by_symbol = {
+            position.symbol.upper(): position
+            for position in broker_positions
+            if position.quantity != 0
+        }
+        broker_open_statuses = _open_order_statuses_by_key(broker_orders)
+        for order in self.repository.list_orders():
+            local_keys = _local_order_keys(order)
+            if not local_keys:
+                continue
+            current_status = str(order.get("status") or "")
+            open_status = _first_matching_status(local_keys, broker_open_statuses)
+            if open_status:
+                if open_status != current_status:
+                    self._mark_local_order_status(
+                        order,
+                        open_status,
+                        result,
+                        source="broker_open_orders",
+                    )
+                continue
+            if current_status not in _ACTIVE_ORDER_STATUSES:
+                continue
+            known_status = _first_matching_status(local_keys, broker_order_statuses)
+            if not known_status:
+                known_status = _infer_missing_order_status(order, positions_by_symbol)
+                result["missing_broker_orders"] += 1
+            if known_status and known_status != str(order.get("status") or ""):
+                self._mark_local_order_status(
+                    order,
+                    known_status,
+                    result,
+                    source="broker_reconciliation",
+                    missing_from_open_orders=True,
+                )
+
+    def _mark_local_order_status(
+        self,
+        order: dict[str, Any],
+        status: str,
+        result: dict[str, int],
+        *,
+        source: str,
+        missing_from_open_orders: bool = False,
+    ) -> None:
+        order_id = str(order.get("id") or "")
+        if not order_id:
+            return
+        previous_status = str(order.get("status") or "")
+        self.repository.update_order_status(order_id, status)
+        result["local_orders_updated"] += 1
+        if status == OrderStatus.CANCELLED.value:
+            result["local_orders_cancelled"] += 1
+        elif status == OrderStatus.FILLED.value:
+            result["local_orders_filled"] += 1
+        elif status == OrderStatus.REJECTED.value:
+            result["local_orders_rejected"] += 1
+        elif (
+            status == OrderStatus.SUBMITTED.value
+            and previous_status not in _ACTIVE_ORDER_STATUSES
+        ):
+            result["local_orders_reactivated"] += 1
+        self.event_store.record(
+            EventLevel.SYNC,
+            "order_status_reconciled",
+            f"Order marked {status} after broker reconciliation",
+            setup_id=str(order.get("setup_id") or "") or None,
+            symbol=str(order.get("symbol") or "").upper() or None,
+            data={
+                "order_id": order_id,
+                "broker_order_id": order.get("broker_order_id"),
+                "broker_perm_id": order.get("broker_perm_id"),
+                "previous_status": previous_status,
+                "status": status,
+                "source": source,
+                "missing_from_open_orders": missing_from_open_orders,
+            },
+        )
+        self._update_setup_after_reconciled_order(order, status)
+
+    def _update_setup_after_reconciled_order(
+        self,
+        order: dict[str, Any],
+        status: str,
+    ) -> None:
+        setup_id = str(order.get("setup_id") or "")
+        if not setup_id:
+            return
+        setup = self.repository.get_setup(setup_id)
+        if not setup:
+            return
+        setup_status = str(setup.get("status") or "")
+        side = str(order.get("side") or "").upper()
+        symbol = str(order.get("symbol") or "").upper()
+        if status == OrderStatus.SUBMITTED.value:
+            target_status = (
+                SetupStatus.STOP_ORDER_PLACED.value
+                if side == "SELL"
+                else SetupStatus.ENTRY_ORDER_PLACED.value
+            )
+            if setup_status in _TERMINAL_SETUP_STATUSES or setup_status in {
+                SetupStatus.MANUAL_REVIEW_REQUIRED.value,
+            }:
+                self.repository.update_setup_status(
+                    setup_id,
+                    target_status,
+                    "Open order restored from TWS",
+                )
+            return
+        if status != OrderStatus.CANCELLED.value:
+            return
+        if setup_status in _TERMINAL_SETUP_STATUSES:
+            return
+        if side == "SELL" and self.repository.get_position(symbol):
+            self.repository.update_setup_status(
+                setup_id,
+                SetupStatus.MANUAL_REVIEW_REQUIRED.value,
+                "Protective stop cancelled in TWS",
+            )
+            self.event_store.record(
+                EventLevel.CRITICAL,
+                "protective_stop_cancelled_in_tws",
+                "Protective stop was cancelled in TWS while a position is open",
+                setup_id=setup_id,
+                symbol=symbol,
+                data={"order_id": order.get("id"), "broker_order_id": order.get("broker_order_id")},
+            )
+            return
+        if side == "BUY" and setup_status in _ORDER_DEPENDENT_SETUP_STATUSES:
+            self.repository.update_setup_status(
+                setup_id,
+                SetupStatus.CANCELLED.value,
+                "Entry order cancelled in TWS",
+            )
+
 
 def _protective_stop(config: dict) -> float | None:
-    risk = config.get("risk", {})
-    value = risk.get("protective_stop", risk.get("initial_stop_loss"))
-    return float(value) if value is not None else None
+    trailing = config.get("trailing_stop_loss", {})
+    if isinstance(trailing, dict):
+        value = trailing.get("current_stop", trailing.get("initial_stop"))
+        if value is not None:
+            return float(value)
+    return None
 
 
 def _matching_stop_order(orders: list, symbol: str):
@@ -177,3 +462,128 @@ def _matching_stop_order(orders: list, symbol: str):
         if order.stop_price is not None:
             return order
     return None
+
+
+_ACTIVE_ORDER_STATUSES = {OrderStatus.CREATED.value, OrderStatus.SUBMITTED.value}
+_ORDER_DEPENDENT_SETUP_STATUSES = {
+    SetupStatus.ENTRY_ORDER_PLACED.value,
+    SetupStatus.ENTRY_PARTIALLY_FILLED.value,
+    SetupStatus.STOP_ORDER_PLACED.value,
+    SetupStatus.STOP_PLACED.value,
+}
+_TERMINAL_SETUP_STATUSES = {
+    SetupStatus.CLOSED.value,
+    SetupStatus.CANCELLED.value,
+    SetupStatus.EXPIRED.value,
+    SetupStatus.INVALIDATED.value,
+    SetupStatus.ERROR.value,
+    SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value,
+}
+
+
+async def _broker_order_statuses(broker: BrokerConnector) -> dict[str, str]:
+    status_reader = getattr(broker, "order_statuses", None)
+    if not callable(status_reader):
+        return {}
+    try:
+        statuses = await status_reader()
+    except Exception:
+        return {}
+    if not isinstance(statuses, dict):
+        return {}
+    return {
+        str(key): _normalize_order_status(value)
+        for key, value in statuses.items()
+        if str(key).strip() and _normalize_order_status(value)
+    }
+
+
+async def _broker_account_summary(broker: BrokerConnector) -> tuple[dict[str, Any], str | None]:
+    reader = getattr(broker, "account_summary", None)
+    if not callable(reader):
+        return {}, None
+    try:
+        account = await reader()
+    except Exception as exc:
+        return {}, str(exc)
+    return (account if isinstance(account, dict) else {}), None
+
+
+async def _broker_recent_executions(broker: BrokerConnector) -> list[Any]:
+    reader = getattr(broker, "recent_executions", None)
+    if not callable(reader):
+        return []
+    try:
+        executions = await reader()
+    except Exception:
+        return []
+    return list(executions or [])
+
+
+def _open_order_statuses_by_key(orders: list[BrokerOrderRequest]) -> dict[str, str]:
+    statuses: dict[str, str] = {}
+    for order in orders:
+        status = _normalize_order_status(order.status) or OrderStatus.SUBMITTED.value
+        for key in _broker_order_keys(order):
+            statuses[key] = status
+    return statuses
+
+
+def _local_order_keys(order: dict[str, Any]) -> set[str]:
+    keys = {
+        order.get("id"),
+        order.get("broker_order_id"),
+        order.get("broker_perm_id"),
+    }
+    return _clean_keys(keys)
+
+
+def _broker_order_keys(order: BrokerOrderRequest) -> set[str]:
+    keys = {
+        order.client_order_id,
+        order.broker_order_id,
+        order.broker_perm_id,
+    }
+    return _clean_keys(keys)
+
+
+def _clean_keys(values: set[Any]) -> set[str]:
+    return {
+        text
+        for value in values
+        for text in [str(value or "").strip()]
+        if text
+    }
+
+
+def _first_matching_status(keys: set[str], statuses: dict[str, str]) -> str:
+    for key in keys:
+        status = statuses.get(key)
+        if status:
+            return status
+    return ""
+
+
+def _normalize_order_status(value: Any) -> str:
+    normalized = str(value or "").strip().upper()
+    if normalized in {
+        OrderStatus.CREATED.value,
+        OrderStatus.SUBMITTED.value,
+        OrderStatus.FILLED.value,
+        OrderStatus.CANCELLED.value,
+        OrderStatus.REJECTED.value,
+        OrderStatus.ERROR.value,
+    }:
+        return normalized
+    return ""
+
+
+def _infer_missing_order_status(
+    order: dict[str, Any],
+    positions_by_symbol: dict[str, BrokerPosition],
+) -> str:
+    side = str(order.get("side") or "").upper()
+    symbol = str(order.get("symbol") or "").upper()
+    if side == "BUY" and symbol in positions_by_symbol:
+        return OrderStatus.FILLED.value
+    return OrderStatus.CANCELLED.value

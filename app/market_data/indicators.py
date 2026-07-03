@@ -53,6 +53,31 @@ def average_true_range(rows: list[dict], period: int = 14) -> float | None:
     return round(atr, 4)
 
 
+def simple_average_true_range(rows: list[dict], period: int = 14) -> float | None:
+    if period <= 0 or len(rows) < period + 1:
+        return None
+    ranges: list[float] = []
+    tail = rows[-(period + 1):]
+    for index in range(1, len(tail)):
+        row = tail[index]
+        previous = tail[index - 1]
+        high = _number_or_none(row.get("high"))
+        low = _number_or_none(row.get("low"))
+        previous_close = _number_or_none(previous.get("close"))
+        if high is None or low is None or previous_close is None:
+            return None
+        ranges.append(
+            max(
+                high - low,
+                abs(high - previous_close),
+                abs(low - previous_close),
+            )
+        )
+    if len(ranges) < period:
+        return None
+    return round(sum(ranges[-period:]) / period, 4)
+
+
 def _number_or_none(value) -> float | None:
     if value in (None, ""):
         return None

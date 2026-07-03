@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
+from app.engine.broker_reality import REPORT_STATE_KEY, orders_broker_truth_overlay
 from app.models import EventLevel
 
 
@@ -22,7 +23,10 @@ async def orders_page(request: Request):
 
 @router.get("/api/orders")
 async def list_orders(request: Request):
-    return {"items": request.app.state.repository.list_orders()}
+    repository = request.app.state.repository
+    orders = repository.list_orders_with_protection()
+    report = repository.get_bot_state(REPORT_STATE_KEY, {})
+    return {"items": orders_broker_truth_overlay(orders, report)}
 
 
 @router.post("/api/orders/{order_id}/cancel")
@@ -31,6 +35,16 @@ async def cancel_order(request: Request, order_id: str):
     if not cancelled:
         raise HTTPException(status_code=404, detail="Order cannot be cancelled")
     return {"ok": True}
+
+
+@router.post("/api/orders/{order_id}/attach-stop")
+async def attach_missing_stop(request: Request, order_id: str):
+    try:
+        stop_order = await request.app.state.engine.order_manager.attach_missing_stop(order_id)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await request.app.state.engine._broadcast_snapshot()
+    return {"ok": True, "stop_order_id": stop_order.id, "status": stop_order.status}
 
 
 @router.delete("/api/orders/{order_id}")

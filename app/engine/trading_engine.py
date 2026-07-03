@@ -2,24 +2,46 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from copy import deepcopy
+import time
 from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
+from app.broker.ib_models import BrokerOrderRequest, BrokerPosition
 from app.broker.tws_connector import BrokerConnector, create_broker_connector
-from app.engine.order_manager import (
-    BrokerModeMismatchError,
-    DuplicateOrderError,
-    ManagementOnlyEntryError,
-    OrderManager,
+from app.engine.action_executor import ActionExecutor
+from app.engine.broker_reality import (
+    REPORT_STATE_KEY,
+    broker_tracker_config,
+    execution_safety_config,
+    freshen_broker_reality_report,
+    normalize_broker_order_status,
 )
+from app.engine.entry_order_executor import EntryOrderExecutor
+from app.engine.order_manager import OrderManager
+from app.engine.opportunity_alert_service import OpportunityAlertService
+from app.engine.position_action_executor import PositionActionExecutor
 from app.engine.position_manager import PositionManager
 from app.engine.reconciliation import ReconciliationEngine
 from app.engine.risk_engine import RiskEngine, RiskLimits
 from app.engine.setup_engine import SetupEngine
+from app.engine.setup_lifecycle_service import SetupLifecycleService
+from app.engine.setup_diagnostics import market_snapshot_payload
+from app.engine.setup_status_reporter import SetupStatusReporter
+from app.engine.setup_template_service import SetupTemplateService
+from app.engine.signal_engine import SignalEngine
 from app.engine.state_machine import StateMachine
+from app.engine.stock_market_monitor import (
+    StockMarketMonitor,
+    active_market_symbols,
+    float_value,
+    int_value,
+    stock_analysis_dedupe_key,
+    stock_analysis_summary,
+    stock_quote_fields_text,
+    stock_quote_message,
+)
 from app.market_data.market_data_service import MarketDataService
 from app.models import (
     BotStatus,
@@ -27,11 +49,8 @@ from app.models import (
     EventLevel,
     MarketSnapshot,
     SetupStatus,
-    SetupRole,
-    SignalAction,
     to_jsonable,
 )
-from app.setups.setup_factory import SetupFactory
 from app.settings import Settings
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
@@ -50,6 +69,8 @@ class NullBroadcaster:
 logger = logging.getLogger(__name__)
 HEARTBEAT_INTERVAL_SECONDS = 5
 HEARTBEAT_STALE_SECONDS = HEARTBEAT_INTERVAL_SECONDS * 3
+ACCOUNT_SNAPSHOT_TTL_SECONDS = 30
+BROKER_RUNTIME_SNAPSHOT_TTL_SECONDS = 10
 CHART_TIMEFRAMES: dict[str, dict[str, str]] = {
     "3m": {"label": "3mn", "duration": "2 D", "bar_size": "3 mins"},
     "10m": {"label": "10mn", "duration": "5 D", "bar_size": "10 mins"},
@@ -68,23 +89,28 @@ class TradingEngine:
         repository: TradingRepository,
         broker: BrokerConnector | None = None,
         broadcaster: Broadcaster | None = None,
+        data_quality_service: Any | None = None,
+        feature_store: Any | None = None,
     ) -> None:
         self.settings = settings
         self.repository = repository
         saved_broker = repository.get_bot_state("broker_selection", {})
-        broker_connector = str(saved_broker.get("connector") or settings.broker_connector)
+        broker_connector = self._normalize_user_connector(
+            str(saved_broker.get("connector") or settings.broker_connector)
+        )
         for key in ("host", "port", "client_id"):
             if saved_broker.get(key) is not None:
                 self.settings.raw["broker"][key] = saved_broker[key]
         self.settings.raw["broker"]["connector"] = broker_connector
-        self.settings.raw["app"]["mode"] = (
-            "simulation" if broker_connector == "simulated" else broker_connector
-        )
+        self.settings.raw["app"]["mode"] = broker_connector
         audit_state = self._tws_audit_state()
         self.settings.raw["broker"]["tws_audit_enabled"] = audit_state["enabled"]
+        broker_config = dict(self.settings.raw.get("broker", {}))
+        broker_config["market_data_policy"] = self.settings.raw.get("market_data", {})
+        broker_config["indicator_policy"] = self.settings.raw.get("indicators", {})
         self.broker = broker or create_broker_connector(
             broker_connector,
-            self.settings.raw.get("broker", {}),
+            broker_config,
         )
         self._apply_tws_audit_settings()
         self.broadcaster = broadcaster or NullBroadcaster()
@@ -94,6 +120,13 @@ class TradingEngine:
             event_store=self.event_store,
             setups_folder=settings.setups_folder,
         )
+        self.setup_status_reporter = SetupStatusReporter(
+            settings=settings,
+            repository=repository,
+            setup_engine=self.setup_engine,
+            broker_provider=lambda: self.broker,
+        )
+        self.setup_template_service = SetupTemplateService(settings)
         self.risk_engine = RiskEngine(RiskLimits.from_config(settings.raw))
         self.order_manager = OrderManager(
             repository=repository,
@@ -108,10 +141,63 @@ class TradingEngine:
             ),
         )
         self.position_manager = PositionManager(repository, self.event_store)
-        self.reconciliation = ReconciliationEngine(repository, self.event_store, self.broker)
+        self.reconciliation = ReconciliationEngine(
+            repository,
+            self.event_store,
+            self.broker,
+            settings.raw,
+        )
         self.market_data = MarketDataService()
         self.state_machine = StateMachine()
+        self.setup_lifecycle = SetupLifecycleService(
+            repository=repository,
+            event_store=self.event_store,
+            state_machine=self.state_machine,
+            settings=settings.raw,
+            market_snapshot_provider=lambda symbol: self.market_data.latest(symbol),
+        )
+        self.signal_engine = SignalEngine(
+            repository,
+            settings.raw,
+            lifecycle_service=self.setup_lifecycle,
+        )
+        market_config = settings.raw.get("market", {})
+        self.opportunity_alert_service = OpportunityAlertService(
+            repository,
+            self.event_store,
+            near_ready_threshold=float(
+                market_config.get("opportunity_near_ready_threshold", 0.96) or 0.96
+            ),
+            cooldown_seconds=float(
+                market_config.get("opportunity_alert_cooldown_seconds", 300) or 300
+            ),
+        )
+        self.action_executor = ActionExecutor(
+            repository,
+            self.event_store,
+            self.state_machine,
+        )
+        self.position_action_executor = PositionActionExecutor(
+            repository,
+            self.event_store,
+            self.position_manager,
+            self.state_machine,
+        )
+        self.entry_order_executor = EntryOrderExecutor(
+            repository,
+            self.event_store,
+            self.risk_engine,
+            self.order_manager,
+            settings=settings.raw,
+            lifecycle_service=self.setup_lifecycle,
+        )
         self._monitor_task: asyncio.Task | None = None
+        self._account_summary_cache: dict[str, Any] | None = None
+        self._account_summary_cached_at: float = 0.0
+        self._broker_positions_cache: list[dict[str, Any]] | None = None
+        self._broker_positions_cached_at: float = 0.0
+        self._broker_open_orders_cache: list[BrokerOrderRequest] | None = None
+        self._broker_open_orders_cached_at: float = 0.0
         self._health: dict[str, Any] = {
             "started_at": None,
             "last_heartbeat_at": None,
@@ -126,7 +212,11 @@ class TradingEngine:
             "last_stock_poll_ok": 0,
             "last_stock_poll_errors": 0,
             "last_stock_poll_reason": "",
+            "last_stock_poll_timeout_seconds": 0,
             "last_stock_analysis_count": 0,
+            "last_reconciliation_at": None,
+            "last_reconciliation_result": {},
+            "last_reconciliation_error": "",
             "broker_status": ConnectionStatus.DISCONNECTED.value,
             "last_broker_error": "",
             "tws_request_count": 0,
@@ -142,6 +232,21 @@ class TradingEngine:
             "last_processed_setups": 0,
             "last_error": "",
         }
+        self.stock_market_monitor = StockMarketMonitor(
+            settings=settings,
+            repository=repository,
+            event_store=self.event_store,
+            market_data=self.market_data,
+            signal_engine=self.signal_engine,
+            signal_handler=self._handle_signal,
+            broker_provider=lambda: self.broker,
+            health=self._health,
+            audit_drain=self._drain_broker_audit,
+            now_provider=lambda: self._utc_now_iso(),
+            opportunity_alert_service=self.opportunity_alert_service,
+            data_quality_service=data_quality_service,
+            feature_store=feature_store,
+        )
 
     async def start(self) -> None:
         self._mark_engine_started()
@@ -161,6 +266,8 @@ class TradingEngine:
         )
         loaded = self.setup_engine.load_all()
         reconciliation_result = await self.reconciliation.run()
+        self._mark_reconciliation_completed(reconciliation_result)
+        self.setup_lifecycle.revalidate_all(force=True)
         self.event_store.record(
             EventLevel.INFO,
             "engine_started",
@@ -196,14 +303,18 @@ class TradingEngine:
         return {**default, **state}
 
     def _runtime_payload(self, status: str, connection: str) -> dict[str, Any]:
-        connector = str(getattr(self.broker, "connector_name", "simulated"))
-        account_mode = str(getattr(self.broker, "account_mode", "simulation"))
+        connector = str(getattr(self.broker, "connector_name", "paper"))
+        account_mode = str(getattr(self.broker, "account_mode", "paper"))
         is_simulated = connector == "simulated"
-        connection_label = "SIMULATED" if is_simulated and connection == "CONNECTED" else connection
-        status_label = "SIM RUNNING" if is_simulated and status == "RUNNING" else status
-        mode_label = "local simulation" if is_simulated else f"IBKR {account_mode} account"
+        connection_label = connection
+        status_label = status
+        mode_label = (
+            f"internal {account_mode} test broker"
+            if is_simulated
+            else f"IBKR {account_mode} account"
+        )
         last_error = str(getattr(self.broker, "last_error", ""))
-        broker_message = "Local simulated broker only. No TWS/IBKR account is used."
+        broker_message = "Internal broker reserved for automated tests."
         if not is_simulated:
             broker_message = (
                 f"Connected to TWS/Gateway for the {account_mode} account."
@@ -228,36 +339,120 @@ class TradingEngine:
             "can_submit_orders": connection == "CONNECTED",
         }
 
+    @staticmethod
+    def _normalize_user_connector(connector: str) -> str:
+        normalized = str(connector or "").strip().lower()
+        if normalized in {"paper", "live"}:
+            return normalized
+        return "paper"
+
     async def snapshot(self) -> dict[str, Any]:
         runtime = self.runtime_state()
         setups = self.repository.list_setups()
-        positions = self.repository.list_positions()
-        orders = self.repository.list_orders()
+        local_orders = self.repository.list_orders()
+        local_positions = self.repository.list_positions()
+        broker_open_orders = await self._broker_open_orders_snapshot()
+        broker_positions = await self._broker_positions_snapshot(
+            setups,
+            local_positions,
+            local_orders,
+            broker_open_orders,
+        )
+        positions = self._merge_position_snapshots(local_positions, broker_positions)
+        display_orders = self._orders_with_broker_overlay(
+            local_orders,
+            broker_open_orders,
+            setups,
+        )
+        orders = self.repository.list_orders_with_protection(
+            orders=display_orders,
+            positions=positions,
+        )
+        events = self.repository.list_events(limit=200)
+        orders = self._enrich_orders_with_event_diagnostics(orders, events)
         stock_pnl = self._stock_pnl(positions)
-        positions_pnl = round(sum(float(row["unrealized_pnl"]) for row in stock_pnl), 2)
-        account = await self._account_snapshot(positions_pnl)
+        direct_positions_pnl = round(sum(float(row["unrealized_pnl"]) for row in stock_pnl), 2)
+        account = await self._account_snapshot(direct_positions_pnl)
+        broker_reality = self._broker_reality_snapshot()
         self._drain_broker_audit()
-        events = self.repository.list_events(limit=20)
-        daily_pnl = self._money(account.get("today_pnl"))
+        broker_pnl = broker_reality.get("pnl", {}) if isinstance(broker_reality, dict) else {}
+        broker_connected = runtime.get("connection") == ConnectionStatus.CONNECTED.value
+        broker_pnl_status = str(
+            broker_pnl.get("status") or broker_pnl.get("sync_status") or ""
+        )
+        broker_pnl_fresh = (
+            broker_reality.get("broker_tracker_status") == "OK"
+            and broker_pnl.get("source") == "TWS"
+            and broker_pnl_status == "OK"
+        )
+        positions_pnl = (
+            self._money(broker_pnl.get("unrealized_pnl"))
+            if broker_pnl_fresh and broker_pnl.get("unrealized_pnl") is not None
+            else direct_positions_pnl
+        )
+        if positions_pnl is None:
+            positions_pnl = 0.0
+        daily_pnl = self._money(broker_pnl.get("daily_pnl")) if broker_pnl_fresh else None
+        pnl_source = "TWS" if daily_pnl is not None else "TWS_STALE"
+        if daily_pnl is None and not broker_connected:
+            daily_pnl = self._money(account.get("today_pnl_live_estimate"))
+            pnl_source = "LOCAL_FALLBACK" if daily_pnl is not None else "UNAVAILABLE"
         if daily_pnl is None:
-            daily_pnl = positions_pnl
+            daily_pnl_for_limits = 0.0
+        else:
+            daily_pnl_for_limits = daily_pnl
+        active_broker_order_count = self._active_broker_order_count(broker_open_orders)
+        prepared_broker_order_count = self._broker_order_count_by_status(
+            broker_open_orders,
+            {"PREPARED_NOT_TRANSMITTED"},
+        )
+        local_active_order_count = len([order for order in orders if order.get("is_active")])
+        open_positions_count = self._broker_reality_int(
+            broker_reality,
+            "broker_positions_count",
+        )
+        if open_positions_count is None:
+            open_positions_count = len(positions)
+        open_orders_count = self._broker_reality_int(
+            broker_reality,
+            "broker_active_orders",
+        )
+        if open_orders_count is None:
+            open_orders_count = (
+                active_broker_order_count
+                if broker_connected
+                else local_active_order_count
+            )
+        prepared_orders_count = self._broker_reality_int(
+            broker_reality,
+            "broker_prepared_not_transmitted_orders",
+        )
+        if prepared_orders_count is None:
+            prepared_orders_count = prepared_broker_order_count
         active_setups = [
             setup
             for setup in setups
-            if setup["enabled"]
-            and setup["status"]
+            if setup["status"]
             not in {
                 SetupStatus.CLOSED.value,
                 SetupStatus.CANCELLED.value,
                 SetupStatus.EXPIRED.value,
                 SetupStatus.INVALIDATED.value,
-                SetupStatus.DISABLED.value,
                 SetupStatus.ERROR.value,
                 SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value,
             }
         ]
         max_daily_loss = float(self.settings.raw["risk"]["max_daily_loss_usd"])
         health = self._health_payload(len(active_setups))
+        health.update(
+            {
+                "broker_tracker_status": broker_reality.get("broker_tracker_status"),
+                "broker_sync_age_seconds": broker_reality.get("broker_sync_age_seconds"),
+                "broker_reality_blocked": broker_reality.get("auto_execution_blocked"),
+                "broker_reality_blocking_reasons": broker_reality.get("blocking_reasons", []),
+                "broker_reality_mismatch_count": broker_reality.get("mismatch_count", 0),
+            }
+        )
         return {
             "runtime": runtime,
             "config": {
@@ -265,24 +460,53 @@ class TradingEngine:
                 "orders": self.settings.raw["orders"],
                 "setup_defaults": self.settings.raw.get("setup_defaults", {}),
                 "broker": self.settings.raw["broker"],
+                "broker_tracker": self.settings.raw.get("broker_tracker", {}),
+                "execution_safety": self.settings.raw.get("execution_safety", {}),
                 "tws_audit": self._tws_audit_state(),
                 "storage": self.settings.raw["storage"],
             },
             "metrics": {
                 "active_setups": len(active_setups),
-                "open_positions": len(positions),
-                "open_orders": len(
-                    [
-                        order
-                        for order in orders
-                        if order["status"] in {"CREATED", "SUBMITTED"}
-                    ]
+                "auto_execution_setups": len(
+                    [setup for setup in active_setups if setup.get("enabled")]
+                ),
+                "open_positions": open_positions_count,
+                "open_orders": open_orders_count,
+                "broker_active_orders": open_orders_count,
+                "broker_prepared_not_transmitted_orders": prepared_orders_count,
+                "historical_orders": len([order for order in orders if not order.get("is_active")]),
+                "cancelled_orders": len(
+                    [order for order in orders if str(order.get("status") or "") == "CANCELLED"]
+                ),
+                "filled_orders": len(
+                    [order for order in orders if str(order.get("status") or "") == "FILLED"]
                 ),
                 "daily_pnl": daily_pnl,
-                "daily_loss_remaining": round(max_daily_loss + daily_pnl, 2),
+                "daily_loss_remaining": (
+                    round(max_daily_loss + daily_pnl_for_limits, 2)
+                    if daily_pnl is not None
+                    else None
+                ),
                 "positions_pnl": positions_pnl,
                 "pnl_until_yesterday": account.get("pnl_until_yesterday"),
                 "today_pnl": daily_pnl,
+                "today_pnl_broker": account.get("today_pnl_broker"),
+                "broker_pnl_source": broker_pnl.get("source", "UNAVAILABLE"),
+                "broker_pnl_status": broker_pnl_status or "UNKNOWN",
+                "broker_pnl_fresh": broker_pnl_fresh,
+                "broker_pnl_age_seconds": broker_pnl.get("age_seconds"),
+                "broker_pnl_last_update": broker_pnl.get("last_update"),
+                "broker_pnl_reason": broker_pnl.get("reason"),
+                "pnl_display_source": pnl_source,
+                "remaining_risk": broker_reality.get("remaining_risk"),
+                "remaining_risk_status": broker_reality.get("remaining_risk_status"),
+                "remaining_risk_reason": broker_reality.get("remaining_risk_reason"),
+                "unprotected_positions": broker_reality.get("unprotected_positions", 0),
+                "unprotected_orders": broker_reality.get("unprotected_orders", 0),
+                "active_stop_orders": broker_reality.get("active_stop_orders", 0),
+                "broker_tracker_status": broker_reality.get("broker_tracker_status"),
+                "broker_sync_age_seconds": broker_reality.get("broker_sync_age_seconds"),
+                "auto_execution_blocked": broker_reality.get("auto_execution_blocked"),
                 "account": account,
             },
             "performance": {
@@ -290,10 +514,11 @@ class TradingEngine:
                 "stock_pnl": stock_pnl,
             },
             "health": health,
+            "broker_reality": broker_reality,
             "setups": setups,
             "positions": positions,
             "orders": orders[:25],
-            "events": events,
+            "events": events[:20],
             "market": [to_jsonable(item) for item in self.market_data.all_latest()],
         }
 
@@ -331,12 +556,24 @@ class TradingEngine:
             except Exception as exc:
                 logger.exception("Engine heartbeat failed")
                 self._health["last_error"] = str(exc)
+                self._health["heartbeat_in_progress"] = False
 
-    async def _heartbeat(self) -> None:
+    async def _heartbeat(self, poll_stocks: bool = True) -> None:
         broker_status = await self._broker_health_check()
         broker_check_at = self._utc_now_iso()
-        self._drain_broker_audit()
+        heartbeat_started_at = self._utc_now_iso()
         broker_error = str(getattr(self.broker, "last_error", "") or "")
+        self._health.update(
+            {
+                "last_heartbeat_at": heartbeat_started_at,
+                "last_heartbeat_started_at": heartbeat_started_at,
+                "last_broker_check_at": broker_check_at,
+                "broker_status": broker_status.value,
+                "last_broker_error": broker_error,
+                "heartbeat_in_progress": True,
+            }
+        )
+        self._drain_broker_audit()
         runtime = self.runtime_state()
         current_status = str(runtime.get("status") or BotStatus.PAUSED.value)
         if broker_status != ConnectionStatus.CONNECTED and current_status == BotStatus.RUNNING.value:
@@ -348,21 +585,24 @@ class TradingEngine:
                 connection=broker_status.value,
             ),
         )
-        await self._poll_active_stock_quotes(current_status, broker_status)
+        await self._reconcile_if_due(broker_status)
+        if poll_stocks:
+            await self._poll_active_stock_quotes_with_timeout(current_status, broker_status)
+        # Dashboard/monitoring refresh: revalidate pre-entry setups so a stale
+        # setup never stays displayed as WAITING_ACTIVATION (throttled).
+        self.setup_lifecycle.revalidate_all()
         self._drain_broker_audit()
         broker_diagnostics = self._broker_diagnostics()
         checked_setups = len(
             [
                 setup
                 for setup in self.repository.list_setups()
-                if setup["enabled"]
-                and setup["status"]
+                if setup["status"]
                 not in {
                     SetupStatus.CLOSED.value,
                     SetupStatus.CANCELLED.value,
                     SetupStatus.EXPIRED.value,
                     SetupStatus.INVALIDATED.value,
-                    SetupStatus.DISABLED.value,
                     SetupStatus.ERROR.value,
                     SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value,
                 }
@@ -372,6 +612,8 @@ class TradingEngine:
         self._health.update(
             {
                 "last_heartbeat_at": heartbeat_at,
+                "last_heartbeat_completed_at": heartbeat_at,
+                "heartbeat_in_progress": False,
                 "last_broker_check_at": broker_check_at,
                 "last_setup_check_at": heartbeat_at,
                 "broker_status": broker_status.value,
@@ -385,6 +627,7 @@ class TradingEngine:
 
     def _health_payload(self, active_setup_count: int) -> dict[str, Any]:
         heartbeat_age = self._age_seconds(self._health.get("last_heartbeat_at"))
+        heartbeat_stale_seconds = self._heartbeat_stale_seconds()
         broker_status = str(self._health.get("broker_status") or "")
         if broker_status in {ConnectionStatus.DISCONNECTED.value, ConnectionStatus.ERROR.value}:
             status = "BROKER_DOWN"
@@ -395,7 +638,7 @@ class TradingEngine:
         elif heartbeat_age is None:
             status = "STARTING"
             label = "CHECKING"
-        elif heartbeat_age <= HEARTBEAT_STALE_SECONDS:
+        elif heartbeat_age <= heartbeat_stale_seconds:
             status = "OK"
             label = f"LIVE {heartbeat_age}s"
         else:
@@ -406,7 +649,7 @@ class TradingEngine:
             "status": status,
             "label": label,
             "heartbeat_interval_seconds": HEARTBEAT_INTERVAL_SECONDS,
-            "heartbeat_stale_seconds": HEARTBEAT_STALE_SECONDS,
+            "heartbeat_stale_seconds": heartbeat_stale_seconds,
             "heartbeat_age_seconds": heartbeat_age,
             "market_tick_age_seconds": self._age_seconds(self._health.get("last_market_tick_at")),
             "market_analysis_age_seconds": self._age_seconds(self._health.get("last_market_analysis_at")),
@@ -414,20 +657,160 @@ class TradingEngine:
             "active_setup_count": active_setup_count,
         }
 
+    def _heartbeat_stale_seconds(self) -> int:
+        market = self.settings.raw.get("market", {})
+        configured = market.get("heartbeat_stale_seconds")
+        try:
+            seconds = int(float(configured))
+        except (TypeError, ValueError):
+            seconds = 0
+        return max(HEARTBEAT_STALE_SECONDS, seconds)
+
+    async def _reconcile_if_due(self, broker_status: ConnectionStatus) -> None:
+        if broker_status != ConnectionStatus.CONNECTED:
+            # Reflect the disconnect into the stored broker_reality report right away
+            # instead of waiting for the report to age past stale_after_seconds.
+            await self._run_reconciliation(mark_completed=False)
+            return
+        age = self._age_seconds(self._health.get("last_reconciliation_at"))
+        if age is not None and age < self._reconciliation_interval_seconds():
+            return
+        await self._run_reconciliation(mark_completed=True)
+
+    async def _run_reconciliation(self, *, mark_completed: bool) -> None:
+        try:
+            result = await self.reconciliation.run()
+        except Exception as exc:
+            message = str(exc)
+            self._health["last_reconciliation_error"] = message
+            self.event_store.record(
+                EventLevel.WARNING,
+                "runtime_reconciliation_failed",
+                "Runtime broker reconciliation failed",
+                data={"error": message},
+            )
+            return
+        if mark_completed:
+            self._mark_reconciliation_completed(result)
+
+    def _mark_reconciliation_completed(self, result: dict[str, Any]) -> None:
+        self._health.update(
+            {
+                "last_reconciliation_at": self._utc_now_iso(),
+                "last_reconciliation_result": result,
+                "last_reconciliation_error": "",
+            }
+        )
+
+    def _reconciliation_interval_seconds(self) -> int:
+        tracker = broker_tracker_config(self.settings.raw)
+        if tracker["enabled"]:
+            return tracker["refresh_seconds"]
+        runtime = self.settings.raw.get("runtime", {})
+        configured = runtime.get("reconciliation_interval_seconds", 45)
+        try:
+            seconds = int(float(configured))
+        except (TypeError, ValueError):
+            seconds = 45
+        return max(5, seconds)
+
+    def _broker_reality_snapshot(self) -> dict[str, Any]:
+        report = self.repository.get_bot_state(REPORT_STATE_KEY, {})
+        if not isinstance(report, dict) or not report.get("broker_last_sync_at"):
+            tracker = broker_tracker_config(self.settings.raw)
+            safety = execution_safety_config(self.settings.raw)
+            status = "DISABLED" if not tracker["enabled"] else "NOT_RUNNING"
+            blocked = (
+                tracker["enabled"]
+                and tracker["block_auto_execution_if_stale"]
+                and safety["block_new_entries_if_broker_tracker_stale"]
+            )
+            return {
+                "broker_tracker_status": status,
+                "broker_sync_status": status,
+                "broker_last_sync_at": None,
+                "broker_sync_age_seconds": None,
+                "stale_after_seconds": tracker["stale_after_seconds"],
+                "refresh_seconds": tracker["refresh_seconds"],
+                "broker_connected": False,
+                "auto_execution_blocked": blocked,
+                "blocking_reasons": ["BROKER_TRACKER_NOT_RUNNING"] if blocked else [],
+                "mismatch_count": 0,
+                "critical_count": 0,
+                "broker_positions_count": None,
+                "broker_active_orders": None,
+                "broker_prepared_not_transmitted_orders": None,
+                "remaining_risk": None,
+                "remaining_risk_status": "UNKNOWN_CRITICAL" if blocked else "UNAVAILABLE",
+                "remaining_risk_reason": "BROKER_TRACKER_NOT_RUNNING" if blocked else "",
+                "unprotected_positions": 0,
+                "unprotected_orders": 0,
+                "active_stop_orders": 0,
+                "rows": [],
+                "pnl": {
+                    "source": "UNAVAILABLE",
+                    "daily_pnl": None,
+                    "unrealized_pnl": None,
+                    "realized_pnl": None,
+                    "status": "STALE",
+                    "sync_status": "UNKNOWN",
+                    "age_seconds": None,
+                    "reason": "NO_RECENT_TWS_PNL_SNAPSHOT",
+                },
+            }
+        return freshen_broker_reality_report(report, settings=self.settings.raw)
+
+    @staticmethod
+    def _broker_reality_int(report: dict[str, Any], key: str) -> int | None:
+        value = report.get(key) if isinstance(report, dict) else None
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _broker_order_count_by_status(
+        orders: list[BrokerOrderRequest],
+        statuses: set[str],
+    ) -> int:
+        return len(
+            [
+                order
+                for order in orders
+                if normalize_broker_order_status(
+                    order.broker_status or order.raw_status or order.status,
+                    transmit=bool(order.transmit),
+                )
+                in statuses
+            ]
+        )
+
+    @classmethod
+    def _active_broker_order_count(cls, orders: list[BrokerOrderRequest]) -> int:
+        return cls._broker_order_count_by_status(
+            orders,
+            {"PENDING_SUBMIT", "TRANSMITTED", "PARTIALLY_FILLED"},
+        )
+
     async def market_history(
         self,
         symbol: str,
         timeframe: str,
+        *,
+        duration: str | None = None,
     ) -> dict[str, Any]:
         normalized = self._normalize_chart_timeframe(timeframe)
         config = CHART_TIMEFRAMES[normalized]
         timeout = float(
-            self.settings.raw.get("market", {}).get("tws_stock_quote_timeout_seconds", 4)
+            self.settings.raw.get("market", {}).get("tws_historical_timeout_seconds")
+            or self.settings.raw.get("market", {}).get("tws_stock_quote_timeout_seconds", 4)
             or 4
         )
         result = await self.broker.historical_bars(
             symbol.upper(),
-            duration=config["duration"],
+            duration=duration or config["duration"],
             bar_size=config["bar_size"],
             timeout=timeout,
         )
@@ -438,6 +821,67 @@ class TradingEngine:
             "timeframe_label": config["label"],
             "available_timeframes": self.chart_timeframes(),
         }
+
+    async def forecast_market_history(
+        self,
+        symbol: str,
+        timeframe: str,
+    ) -> dict[str, Any]:
+        """History provider for the forecast stack.
+
+        Decoupled from the chart's fixed window: the forecast needs enough bars
+        to satisfy ``forecasting.context_bars`` for the requested bar size, and
+        the chart's short duration (e.g. "10 D" for 15m) starves thinly-traded
+        or recently-listed symbols below ``min_context_bars``. We size the
+        history window from the configured context instead.
+        """
+        normalized = self._normalize_chart_timeframe(timeframe)
+        config = CHART_TIMEFRAMES[normalized]
+        forecast_cfg = self.settings.raw.get("forecasting", {})
+        if not isinstance(forecast_cfg, dict):
+            forecast_cfg = {}
+        try:
+            context_bars = int(forecast_cfg.get("context_bars", 256) or 256)
+        except (TypeError, ValueError):
+            context_bars = 256
+        # Fetch ~2x the context so gaps, holidays and illiquidity still leave
+        # enough usable bars; the model itself caps usage at context_bars.
+        desired_bars = max(context_bars * 2, 128)
+        duration = self._forecast_history_duration(config["bar_size"], desired_bars)
+        return await self.market_history(symbol, normalized, duration=duration)
+
+    @staticmethod
+    def _forecast_history_duration(bar_size: str, desired_bars: int) -> str:
+        """Build an IB duration string large enough for ``desired_bars``."""
+
+        def ceil_div(numerator: int, denominator: int) -> int:
+            return -(-numerator // max(1, denominator))
+
+        bars_per_session = {
+            "3 mins": 130,
+            "5 mins": 78,
+            "10 mins": 39,
+            "15 mins": 26,
+            "30 mins": 13,
+            "1 hour": 7,
+            "2 hours": 4,
+            "4 hours": 2,
+            "1 day": 1,
+        }.get(bar_size, 26)
+        intraday = "day" not in bar_size and "week" not in bar_size
+        if intraday:
+            trading_days = ceil_div(desired_bars, bars_per_session)
+            # Trading days -> calendar days (weekends) + holiday buffer.
+            calendar_days = ceil_div(trading_days * 7, 5) + 3
+            calendar_days = max(calendar_days, 5)
+            if calendar_days <= 60:
+                return f"{calendar_days} D"
+            return f"{ceil_div(calendar_days, 30)} M"
+        # Daily/weekly bars.
+        calendar_days = ceil_div(desired_bars * 7, 5) + 5
+        if calendar_days <= 365:
+            return f"{calendar_days} D"
+        return f"{ceil_div(calendar_days, 365)} Y"
 
     @staticmethod
     def chart_timeframes() -> list[dict[str, str]]:
@@ -531,7 +975,7 @@ class TradingEngine:
             if isinstance(extra, dict):
                 symbol = extra.get("symbol")
             if (
-                request_name in {"reqTickersAsync", "reqHistoricalDataAsync"}
+                request_name in {"reqTickersAsync", "reqMktData", "reqHistoricalDataAsync"}
                 and isinstance(extra, dict)
                 and symbol
             ):
@@ -571,6 +1015,358 @@ class TradingEngine:
             parsed = parsed.replace(tzinfo=timezone.utc)
         return max(int((datetime.now(timezone.utc) - parsed).total_seconds()), 0)
 
+    async def _broker_open_orders_snapshot(self) -> list[BrokerOrderRequest]:
+        cached = self._broker_open_orders_cache
+        cache_age = time.monotonic() - self._broker_open_orders_cached_at
+        if cached is not None and cache_age < BROKER_RUNTIME_SNAPSHOT_TTL_SECONDS:
+            return list(cached)
+        if not await self._broker_is_connected():
+            return list(cached or [])
+        reader = getattr(self.broker, "open_orders", None)
+        if not callable(reader):
+            return []
+        try:
+            orders = await reader()
+        except Exception as exc:
+            self._health["last_broker_error"] = str(exc)
+            return list(cached or [])
+        self._broker_open_orders_cache = list(orders or [])
+        self._broker_open_orders_cached_at = time.monotonic()
+        return list(self._broker_open_orders_cache)
+
+    async def _broker_positions_snapshot(
+        self,
+        setups: list[dict[str, Any]],
+        local_positions: list[dict[str, Any]],
+        local_orders: list[dict[str, Any]],
+        broker_open_orders: list[BrokerOrderRequest],
+    ) -> list[dict[str, Any]]:
+        cached = self._broker_positions_cache
+        cache_age = time.monotonic() - self._broker_positions_cached_at
+        if cached is not None and cache_age < BROKER_RUNTIME_SNAPSHOT_TTL_SECONDS:
+            return [dict(position) for position in cached]
+        if not await self._broker_is_connected():
+            return [dict(position) for position in cached or []]
+        reader = getattr(self.broker, "positions", None)
+        if not callable(reader):
+            return []
+        try:
+            broker_positions = await reader()
+        except Exception as exc:
+            self._health["last_broker_error"] = str(exc)
+            return [dict(position) for position in cached or []]
+        rows = self._broker_position_rows(
+            broker_positions or [],
+            setups,
+            local_positions,
+            local_orders,
+            broker_open_orders,
+        )
+        self._broker_positions_cache = rows
+        self._broker_positions_cached_at = time.monotonic()
+        return [dict(position) for position in rows]
+
+    async def _broker_is_connected(self) -> bool:
+        status_reader = getattr(self.broker, "status", None)
+        if not callable(status_reader):
+            return False
+        try:
+            return await status_reader() == ConnectionStatus.CONNECTED
+        except Exception:
+            return False
+
+    def _broker_position_rows(
+        self,
+        broker_positions: list[BrokerPosition],
+        setups: list[dict[str, Any]],
+        local_positions: list[dict[str, Any]],
+        local_orders: list[dict[str, Any]],
+        broker_open_orders: list[BrokerOrderRequest],
+    ) -> list[dict[str, Any]]:
+        setup_by_symbol = self._preferred_setup_by_symbol(setups)
+        local_by_symbol = {
+            str(position.get("symbol") or "").upper(): position
+            for position in local_positions
+        }
+        active_stop_by_symbol = self._active_stop_by_symbol(
+            local_orders,
+            broker_open_orders,
+        )
+        rows: list[dict[str, Any]] = []
+        for broker_position in broker_positions:
+            symbol = str(getattr(broker_position, "symbol", "") or "").upper()
+            if not symbol:
+                continue
+            quantity = self._int_value(getattr(broker_position, "quantity", 0)) or 0
+            if quantity == 0:
+                continue
+            average_price = self._float_value(
+                getattr(broker_position, "average_price", None)
+            )
+            current_price = self._float_value(
+                getattr(broker_position, "current_price", None)
+            )
+            if average_price is None or current_price is None:
+                continue
+            broker_unrealized_pnl = self._money(
+                getattr(broker_position, "unrealized_pnl", None)
+            )
+            if broker_unrealized_pnl is None:
+                broker_unrealized_pnl = self._money(
+                    (current_price - average_price) * quantity
+                )
+            local_position = local_by_symbol.get(symbol, {})
+            setup = setup_by_symbol.get(symbol, {})
+            current_stop = active_stop_by_symbol.get(symbol)
+            if current_stop is None:
+                current_stop = self._money(local_position.get("current_stop"))
+            setup_id = (
+                local_position.get("setup_id")
+                or setup.get("setup_id")
+                or f"broker:{symbol}"
+            )
+            rows.append(
+                {
+                    "symbol": symbol,
+                    "setup_id": setup_id,
+                    "quantity": quantity,
+                    "average_price": average_price,
+                    "current_price": current_price,
+                    "unrealized_pnl": broker_unrealized_pnl or 0.0,
+                    "realized_pnl": self._money(getattr(broker_position, "realized_pnl", None)),
+                    "daily_pnl": self._money(getattr(broker_position, "daily_pnl", None)),
+                    "current_stop": current_stop,
+                    "risk_remaining": self._position_risk_remaining(
+                        quantity,
+                        current_price,
+                        current_stop,
+                    ),
+                    "status": "OPEN",
+                    "updated_at": self._utc_now_iso(),
+                    "source": "broker",
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _merge_position_snapshots(
+        local_positions: list[dict[str, Any]],
+        broker_positions: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        by_symbol: dict[str, dict[str, Any]] = {}
+        for position in local_positions:
+            symbol = str(position.get("symbol") or "").upper()
+            if symbol:
+                by_symbol[symbol] = dict(position)
+        for position in broker_positions:
+            symbol = str(position.get("symbol") or "").upper()
+            if not symbol:
+                continue
+            merged = {**by_symbol.get(symbol, {}), **dict(position)}
+            if merged.get("current_stop") is None:
+                merged["current_stop"] = by_symbol.get(symbol, {}).get("current_stop")
+            by_symbol[symbol] = merged
+        return [by_symbol[symbol] for symbol in sorted(by_symbol)]
+
+    def _orders_with_broker_overlay(
+        self,
+        local_orders: list[dict[str, Any]],
+        broker_orders: list[BrokerOrderRequest],
+        setups: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        broker_by_key: dict[str, BrokerOrderRequest] = {}
+        for broker_order in broker_orders:
+            for key in self._broker_order_keys(broker_order):
+                broker_by_key[key] = broker_order
+
+        matched_broker_keys: set[str] = set()
+        rows: list[dict[str, Any]] = []
+        for order in local_orders:
+            row = dict(order)
+            broker_order = next(
+                (
+                    broker_by_key[key]
+                    for key in self._local_order_keys(order)
+                    if key in broker_by_key
+                ),
+                None,
+            )
+            if broker_order is not None:
+                row["status"] = self._broker_order_status(broker_order)
+                broker_status = self._broker_reality_order_status(broker_order)
+                row["broker_order_status"] = broker_status
+                row["broker_live_status"] = broker_status
+                row["broker_transmit"] = bool(broker_order.transmit)
+                if not row.get("broker_perm_id") and broker_order.broker_perm_id:
+                    row["broker_perm_id"] = broker_order.broker_perm_id
+                matched_broker_keys.update(self._broker_order_keys(broker_order))
+            elif str(row.get("status") or "") in {"CREATED", "SUBMITTED"}:
+                row["broker_order_status"] = "NO_BROKER_ORDER"
+                row["broker_live_status"] = "NO_BROKER_ORDER"
+            rows.append(row)
+
+        setup_by_symbol = self._preferred_setup_by_symbol(setups)
+        for broker_order in broker_orders:
+            broker_keys = self._broker_order_keys(broker_order)
+            if broker_keys.intersection(matched_broker_keys):
+                continue
+            rows.append(self._broker_order_row(broker_order, setup_by_symbol))
+        return rows
+
+    def _broker_order_row(
+        self,
+        broker_order: BrokerOrderRequest,
+        setup_by_symbol: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        symbol = str(broker_order.symbol or "").upper()
+        side = str(broker_order.side or "").upper()
+        broker_id = (
+            broker_order.client_order_id
+            or broker_order.broker_order_id
+            or broker_order.broker_perm_id
+            or f"{symbol}:{side}"
+        )
+        localish_id = str(broker_id)
+        if not localish_id.startswith(("ord_", "stp_")):
+            localish_id = f"broker_{localish_id}"
+        return {
+            "id": localish_id,
+            "setup_id": (setup_by_symbol.get(symbol, {}) or {}).get("setup_id", "broker"),
+            "symbol": symbol,
+            "side": side,
+            "order_type": str(broker_order.order_type or ""),
+            "quantity": int(broker_order.quantity or 0),
+            "status": self._broker_order_status(broker_order),
+            "trigger_price": broker_order.trigger_price,
+            "limit_price": broker_order.limit_price,
+            "stop_price": broker_order.stop_price if side == "SELL" else None,
+            "broker_order_id": broker_order.broker_order_id,
+            "broker_perm_id": broker_order.broker_perm_id,
+            "parent_id": broker_order.parent_id,
+            "oca_group": broker_order.oca_group,
+            "created_at": self._utc_now_iso(),
+            "updated_at": self._utc_now_iso(),
+            "broker_order_status": self._broker_reality_order_status(broker_order),
+            "broker_live_status": self._broker_reality_order_status(broker_order),
+            "broker_transmit": bool(broker_order.transmit),
+        }
+
+    @staticmethod
+    def _broker_order_status(order: BrokerOrderRequest) -> str:
+        status = str(order.status or "").upper()
+        if status in {"CREATED", "SUBMITTED", "FILLED", "CANCELLED", "REJECTED", "ERROR"}:
+            return status
+        return "SUBMITTED"
+
+    @staticmethod
+    def _broker_reality_order_status(order: BrokerOrderRequest) -> str:
+        return normalize_broker_order_status(
+            order.broker_status or order.raw_status or order.status,
+            transmit=bool(order.transmit),
+        )
+
+    def _active_stop_by_symbol(
+        self,
+        local_orders: list[dict[str, Any]],
+        broker_orders: list[BrokerOrderRequest],
+    ) -> dict[str, float]:
+        stops: dict[str, float] = {}
+        for order in local_orders:
+            if str(order.get("side") or "").upper() != "SELL":
+                continue
+            if str(order.get("status") or "") not in {"CREATED", "SUBMITTED"}:
+                continue
+            stop_price = self._money(order.get("stop_price"))
+            symbol = str(order.get("symbol") or "").upper()
+            if symbol and stop_price is not None:
+                stops[symbol] = stop_price
+        for order in broker_orders:
+            if str(order.side or "").upper() != "SELL":
+                continue
+            stop_price = self._money(order.stop_price)
+            symbol = str(order.symbol or "").upper()
+            if symbol and stop_price is not None:
+                stops[symbol] = stop_price
+        return stops
+
+    @staticmethod
+    def _position_risk_remaining(
+        quantity: int,
+        current_price: float,
+        current_stop: float | None,
+    ) -> float:
+        if current_stop is None:
+            return 0.0
+        if quantity >= 0:
+            return round(max(current_price - current_stop, 0.0) * abs(quantity), 2)
+        return round(max(current_stop - current_price, 0.0) * abs(quantity), 2)
+
+    @staticmethod
+    def _preferred_setup_by_symbol(
+        setups: list[dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        preferred: dict[str, dict[str, Any]] = {}
+        for setup in setups:
+            symbol = str(setup.get("symbol") or "").upper()
+            if not symbol:
+                continue
+            current = preferred.get(symbol)
+            if current is None or TradingEngine._setup_preference(setup) < TradingEngine._setup_preference(current):
+                preferred[symbol] = setup
+        return preferred
+
+    @staticmethod
+    def _setup_preference(setup: dict[str, Any]) -> int:
+        status = str(setup.get("status") or "")
+        if status in {
+            SetupStatus.IN_POSITION.value,
+            SetupStatus.MANAGING_POSITION.value,
+            SetupStatus.PARTIAL_EXIT.value,
+            SetupStatus.STOP_ORDER_PLACED.value,
+            SetupStatus.STOP_PLACED.value,
+            SetupStatus.ENTRY_ORDER_PLACED.value,
+        }:
+            return 0
+        if status in {
+            SetupStatus.CLOSED.value,
+            SetupStatus.CANCELLED.value,
+            SetupStatus.EXPIRED.value,
+            SetupStatus.INVALIDATED.value,
+            SetupStatus.ERROR.value,
+            SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value,
+        }:
+            return 2
+        return 1
+
+    @staticmethod
+    def _local_order_keys(order: dict[str, Any]) -> set[str]:
+        return TradingEngine._clean_keys(
+            {
+                order.get("id"),
+                order.get("broker_order_id"),
+                order.get("broker_perm_id"),
+            }
+        )
+
+    @staticmethod
+    def _broker_order_keys(order: BrokerOrderRequest) -> set[str]:
+        return TradingEngine._clean_keys(
+            {
+                order.client_order_id,
+                order.broker_order_id,
+                order.broker_perm_id,
+            }
+        )
+
+    @staticmethod
+    def _clean_keys(values: set[Any]) -> set[str]:
+        return {
+            text
+            for value in values
+            for text in [str(value or "").strip()]
+            if text
+        }
+
     def _stock_pnl(self, positions: list[dict[str, Any]]) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         for position in positions:
@@ -579,7 +1375,11 @@ class TradingEngine:
             average_price = float(position["average_price"])
             latest = self.market_data.latest(symbol)
             current_price = float(latest.price) if latest else float(position["current_price"])
-            unrealized_pnl = round((current_price - average_price) * quantity, 2)
+            broker_unrealized_pnl = self._money(position.get("unrealized_pnl"))
+            if str(position.get("source") or "") == "broker" and broker_unrealized_pnl is not None:
+                unrealized_pnl = broker_unrealized_pnl
+            else:
+                unrealized_pnl = round((current_price - average_price) * quantity, 2)
             cost_basis = abs(average_price * quantity)
             pnl_percent = round((unrealized_pnl / cost_basis) * 100, 2) if cost_basis else None
             rows.append(
@@ -605,257 +1405,104 @@ class TradingEngine:
         runtime_status: str,
         broker_status: ConnectionStatus,
     ) -> None:
-        market_config = self.settings.raw.get("market", {})
-        enabled = bool(market_config.get("tws_stock_poll_enabled", True))
-        interval = int(market_config.get("tws_stock_poll_interval_seconds", 15) or 15)
-        timeout = float(market_config.get("tws_stock_quote_timeout_seconds", 4) or 4)
-        if not enabled:
-            self._health["last_stock_poll_reason"] = "disabled"
-            return
-        if broker_status != ConnectionStatus.CONNECTED:
-            self._health["last_stock_poll_reason"] = "broker_not_connected"
-            return
-        should_analyze = runtime_status == BotStatus.RUNNING.value
-        last_poll_age = self._age_seconds(self._health.get("last_stock_poll_at"))
-        if last_poll_age is not None and last_poll_age < interval:
-            return
+        await self.stock_market_monitor.poll_active_stock_quotes(
+            runtime_status,
+            broker_status,
+        )
 
-        symbols = self._active_market_symbols()
-        now = self._utc_now_iso()
-        if not symbols:
-            logger.warning("TWS stock poll skipped: no active enabled setup symbols")
+    async def _poll_active_stock_quotes_with_timeout(
+        self,
+        runtime_status: str,
+        broker_status: ConnectionStatus,
+    ) -> None:
+        timeout = self._stock_poll_total_timeout_seconds()
+        try:
+            await asyncio.wait_for(
+                self._poll_active_stock_quotes(runtime_status, broker_status),
+                timeout=timeout,
+            )
+        except TimeoutError:
+            symbols = self._active_market_symbols()
+            now = self._utc_now_iso()
             self._health.update(
                 {
                     "last_stock_poll_at": now,
-                    "last_stock_poll_symbols": [],
-                    "last_stock_poll_count": 0,
+                    "last_stock_poll_symbols": symbols,
+                    "last_stock_poll_count": len(symbols),
                     "last_stock_poll_ok": 0,
-                    "last_stock_poll_errors": 0,
-                    "last_stock_poll_reason": "no_active_setups",
+                    "last_stock_poll_errors": len(symbols),
+                    "last_stock_poll_reason": "timeout",
+                    "last_stock_poll_timeout_seconds": timeout,
+                    "last_stock_poll_latency_ms": int(timeout * 1000),
                     "last_stock_analysis_count": 0,
                 }
             )
             self.event_store.record(
                 EventLevel.WARNING,
-                "stock_poll_skipped",
-                "No active enabled setup symbols to poll",
+                "stock_poll_timeout",
+                f"TWS stock poll timed out after {timeout:g}s",
+                data={
+                    "timeout_seconds": timeout,
+                    "symbols": symbols,
+                    "runtime_status": runtime_status,
+                    "broker_status": broker_status.value,
+                },
             )
-            return
-
-        logger.info(
-            "TWS stock poll started: %d symbols (%s)",
-            len(symbols),
-            ", ".join(symbols),
-        )
-        ok_count = 0
-        error_count = 0
-        analysis_count = 0
-        for symbol in symbols:
-            quote = await self.broker.market_snapshot(symbol, timeout=timeout)
-            if quote.get("available"):
-                ok_count += 1
-                price = self._money(quote.get("price"))
-                snapshot = MarketSnapshot(
-                    symbol=symbol,
-                    price=float(price),
-                    open=self._money(quote.get("open")),
-                    high=self._money(quote.get("high")),
-                    low=self._money(quote.get("low")),
-                    close=self._money(quote.get("close")) or price,
-                    bid=self._money(quote.get("bid")),
-                    ask=self._money(quote.get("ask")),
-                    volume=self._float_value(quote.get("volume")),
-                    current_bar_volume=self._float_value(
-                        quote.get("current_bar_volume", quote.get("volume"))
-                    ),
-                    previous_high=self._money(quote.get("previous_high")),
-                    daily_close=self._money(quote.get("close")) or price,
-                    volume_ratio=self._float_value(quote.get("volume_ratio")),
-                    volume_ratio_closed_bar=self._float_value(
-                        quote.get("volume_ratio_closed_bar", quote.get("volume_ratio"))
-                    ),
-                    volume_ratio_live=self._float_value(quote.get("volume_ratio_live")),
-                    average_volume_ratio_last_2_bars=self._float_value(
-                        quote.get("average_volume_ratio_last_2_bars")
-                    ),
-                    elapsed_ratio=self._float_value(quote.get("elapsed_ratio")),
-                    projected_volume=self._float_value(quote.get("projected_volume")),
-                    bar_count=self._int_value(quote.get("bar_count")),
-                    bars_above_resistance=self._int_value(
-                        quote.get("bars_above_resistance")
-                    ),
-                    minimum_tick=self._float_value(quote.get("minimum_tick")),
-                    atr_15m=self._float_value(quote.get("atr_15m")),
-                    atr_1h=self._float_value(quote.get("atr_1h")),
-                    session=str(quote["session"]).upper()
-                    if quote.get("session")
-                    else None,
-                    market_open_time=str(quote["market_open_time"])
-                    if quote.get("market_open_time")
-                    else None,
-                    current_time=str(quote["current_time"])
-                    if quote.get("current_time")
-                    else None,
-                    last_confirmed_higher_low=self._money(
-                        quote.get("last_confirmed_higher_low")
-                    ),
-                    support_level=self._money(quote.get("support_level")),
-                    successful_retest_low=self._money(quote.get("successful_retest_low")),
-                    structural_support=self._money(quote.get("structural_support")),
-                    breakout_already_detected=bool(
-                        quote.get("breakout_already_detected", False)
-                    ),
-                    new_higher_low_confirmed=bool(
-                        quote.get("new_higher_low_confirmed", False)
-                    ),
-                    close_1h=self._money(quote.get("close_1h")),
-                    historical_bars=quote.get("historical_bars")
-                    if isinstance(quote.get("historical_bars"), list)
-                    else [],
-                )
-                message = self._stock_quote_message(symbol, quote)
-                logger.info(message)
-                self.event_store.record(
-                    EventLevel.INFO,
-                    "stock_quote",
-                    message,
-                    symbol=symbol,
-                    data=quote,
-                )
-                if should_analyze:
-                    processed = await self._analyze_market_snapshot(snapshot)
-                    analysis_count += len(processed)
-                else:
-                    self._record_market_tick(snapshot)
-                    self._record_stock_analysis_skipped(
-                        snapshot,
-                        f"bot status {runtime_status}",
-                    )
-            else:
-                error_count += 1
-                message = (
-                    quote.get("message")
-                    or f"TWS did not return a usable quote for {symbol}"
-                )
-                logger.warning(
-                    "TWS stock quote missing %s: %s %s",
-                    symbol,
-                    message,
-                    self._stock_quote_fields_text(quote),
-                )
-                self.event_store.record(
-                    EventLevel.WARNING,
-                    "stock_quote_missing",
-                    message,
-                    symbol=symbol,
-                    data=quote,
-                )
             self._drain_broker_audit()
 
-        self._health.update(
-            {
-                "last_stock_poll_at": now,
-                "last_stock_poll_symbols": symbols,
-                "last_stock_poll_count": len(symbols),
-                "last_stock_poll_ok": ok_count,
-                "last_stock_poll_errors": error_count,
-                "last_stock_poll_reason": (
-                    "ok"
-                    if should_analyze and error_count == 0
-                    else "quote_only_bot_not_running"
-                    if error_count == 0
-                    else "partial"
-                ),
-                "last_stock_analysis_count": analysis_count,
-            }
-        )
-        logger.info(
-            "TWS stock poll finished: %d symbols, %d quotes OK, %d errors, %d analyses",
-            len(symbols),
-            ok_count,
-            error_count,
-            analysis_count,
-        )
+    def _stock_poll_total_timeout_seconds(self) -> float:
+        market = self.settings.raw.get("market", {})
+        configured = market.get("tws_stock_poll_total_timeout_seconds")
+        try:
+            seconds = float(configured)
+        except (TypeError, ValueError):
+            seconds = 0
+        if seconds > 0:
+            return max(0.1, seconds)
+        stale_after = self._heartbeat_stale_seconds()
+        return float(max(5, min(120, stale_after - HEARTBEAT_INTERVAL_SECONDS)))
 
     def _active_market_symbols(self) -> list[str]:
-        terminal_statuses = {
-            SetupStatus.CLOSED.value,
-            SetupStatus.CANCELLED.value,
-            SetupStatus.EXPIRED.value,
-            SetupStatus.INVALIDATED.value,
-            SetupStatus.DISABLED.value,
-            SetupStatus.ERROR.value,
-            SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value,
-        }
-        symbols = {
-            str(setup["symbol"]).upper()
-            for setup in self.repository.list_setups()
-            if setup["enabled"] and setup["status"] not in terminal_statuses
-        }
-        return sorted(symbols)
+        return active_market_symbols(self.repository.list_setups())
 
-    @classmethod
-    def _stock_quote_message(cls, symbol: str, quote: dict[str, Any]) -> str:
-        fields = cls._stock_quote_fields_text(quote)
-        if not fields:
-            return f"TWS stock quote {symbol}: no market fields"
-        return f"TWS stock quote {symbol}: {fields}"
+    @staticmethod
+    def _stock_quote_message(symbol: str, quote: dict[str, Any]) -> str:
+        return stock_quote_message(symbol, quote)
 
     @staticmethod
     def _stock_quote_fields_text(quote: dict[str, Any]) -> str:
-        keys = (
-            "market_data_source",
-            "price",
-            "bid",
-            "ask",
-            "last",
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-            "current_bar_volume",
-            "previous_high",
-            "volume_ratio",
-            "volume_ratio_closed_bar",
-            "volume_ratio_live",
-            "average_volume_ratio_last_2_bars",
-            "elapsed_ratio",
-            "projected_volume",
-            "minimum_tick",
-            "atr_15m",
-            "atr_1h",
-            "session",
-            "bar_date",
-            "bar_count",
-            "bars_above_resistance",
-        )
-        parts = [
-            f"{key}={quote[key]}"
-            for key in keys
-            if quote.get(key) not in (None, "")
-        ]
-        return " ".join(parts)
+        return stock_quote_fields_text(quote)
 
     @staticmethod
     def _float_value(value: Any) -> float | None:
-        if value in (None, ""):
-            return None
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
+        return float_value(value)
 
     @staticmethod
     def _int_value(value: Any) -> int | None:
-        if value in (None, ""):
-            return None
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
+        return int_value(value)
 
     async def _account_snapshot(self, positions_pnl: float) -> dict[str, Any]:
+        cached = self._account_summary_cache
+        cache_age = time.monotonic() - self._account_summary_cached_at
+        if cached is None or cache_age >= ACCOUNT_SNAPSHOT_TTL_SECONDS:
+            cached = await self._fetch_broker_account_snapshot()
+            self._account_summary_cache = cached
+            self._account_summary_cached_at = time.monotonic()
+        account = dict(cached)
+        broker_today_pnl = self._money(account.get("today_pnl"))
+        account["today_pnl_broker"] = broker_today_pnl
+        account["positions_unrealized_pnl"] = self._money(positions_pnl)
+        if account["unrealized_pnl"] is None:
+            account["unrealized_pnl"] = account["positions_unrealized_pnl"]
+        account["today_pnl_live_estimate"] = self._live_today_pnl_estimate(account)
+        self._apply_account_history(account)
+        if account.get("today_pnl") is None:
+            account["today_pnl"] = account.get("unrealized_pnl")
+        if account.get("pnl_until_yesterday") is None:
+            account["pnl_until_yesterday"] = account.get("realized_pnl")
+        return account
+
+    async def _fetch_broker_account_snapshot(self) -> dict[str, Any]:
         try:
             account = await self.broker.account_summary()
         except Exception as exc:
@@ -877,22 +1524,109 @@ class TradingEngine:
             "previous_day_equity": self._money(account.get("previous_day_equity")),
             "realized_pnl": self._money(account.get("realized_pnl")),
             "unrealized_pnl": self._money(account.get("unrealized_pnl")),
-            "positions_unrealized_pnl": self._money(positions_pnl),
+            "today_pnl": self._money(account.get("today_pnl")),
             "message": account.get("message", ""),
         }
-        if account["unrealized_pnl"] is None:
-            account["unrealized_pnl"] = account["positions_unrealized_pnl"]
-        self._apply_account_history(account)
-        if account.get("today_pnl") is None:
-            previous_day_equity = account.get("previous_day_equity")
-            net_liquidation = account.get("net_liquidation")
-            if previous_day_equity is not None and net_liquidation is not None:
-                account["today_pnl"] = self._money(net_liquidation - previous_day_equity)
-            else:
-                account["today_pnl"] = account.get("unrealized_pnl")
-        if account.get("pnl_until_yesterday") is None:
-            account["pnl_until_yesterday"] = account.get("realized_pnl")
         return account
+
+    @staticmethod
+    def _live_today_pnl_estimate(account: dict[str, Any]) -> float | None:
+        realized = account.get("realized_pnl")
+        positions_unrealized = account.get("positions_unrealized_pnl")
+        broker_today = account.get("today_pnl_broker")
+        if realized is None and broker_today is not None:
+            return TradingEngine._money(broker_today)
+        if realized is None and positions_unrealized is None:
+            return None
+        return TradingEngine._money((realized or 0.0) + (positions_unrealized or 0.0))
+
+    def _enrich_orders_with_event_diagnostics(
+        self,
+        orders: list[dict[str, Any]],
+        events: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        latest_event_by_order_id: dict[str, str] = {}
+        for event in events:
+            message = self._order_diagnostic_message_from_event(event)
+            if not message:
+                continue
+            data = event.get("data", {})
+            if not isinstance(data, dict):
+                continue
+            for field in ("order_id", "entry_order_id", "stop_order_id"):
+                order_id = str(data.get(field) or "").strip()
+                if order_id and order_id not in latest_event_by_order_id:
+                    latest_event_by_order_id[order_id] = message
+        enriched: list[dict[str, Any]] = []
+        for order in orders:
+            row = dict(order)
+            status = str(row.get("status") or "")
+            broker_status = str(row.get("broker_order_status") or "")
+            if broker_status:
+                row["is_active"] = broker_status in {
+                    "PENDING_SUBMIT",
+                    "TRANSMITTED",
+                    "PARTIALLY_FILLED",
+                }
+            else:
+                row["is_active"] = status in {"CREATED", "SUBMITTED"}
+            row["lifecycle_bucket"] = "ACTIVE" if row["is_active"] else "HISTORY"
+            row["diagnostic_message"] = (
+                latest_event_by_order_id.get(str(row.get("id") or ""))
+                or self._default_order_diagnostic_message(row)
+            )
+            enriched.append(row)
+        return enriched
+
+    @staticmethod
+    def _order_diagnostic_message_from_event(event: dict[str, Any]) -> str:
+        event_type = str(event.get("event_type") or "")
+        message = str(event.get("message") or "").strip()
+        data = event.get("data", {})
+        if not isinstance(data, dict):
+            data = {}
+        failure_reason = str(data.get("failure_reason") or "").strip()
+        if event_type == "entry_order_unprotected_blocked" and failure_reason:
+            return failure_reason
+        if event_type in {
+            "entry_order_rejected",
+            "entry_order_unprotected_blocked",
+            "protective_stop_rejected",
+            "order_cancelled",
+            "order_cancel_reconciled",
+        }:
+            if failure_reason and failure_reason.lower() != message.lower():
+                return f"{message} | {failure_reason}" if message else failure_reason
+            return message
+        return ""
+
+    @staticmethod
+    def _default_order_diagnostic_message(order: dict[str, Any]) -> str:
+        status = str(order.get("status") or "")
+        broker_status = str(order.get("broker_order_status") or "")
+        side = str(order.get("side") or "").upper()
+        stop_order_id = str(order.get("stop_order_id") or "").strip()
+        if broker_status in {"PENDING_SUBMIT", "TRANSMITTED", "PARTIALLY_FILLED"}:
+            return f"Broker confirms working order: {broker_status}."
+        if broker_status == "PREPARED_NOT_TRANSMITTED":
+            return "Prepared in TWS but not transmitted. Do not treat as active."
+        if broker_status == "NO_BROKER_ORDER":
+            return "Local order intent exists, but TWS does not confirm a working order."
+        if broker_status in {"REJECTED", "INACTIVE_OR_REJECTED"}:
+            return "Broker rejected or inactivated this order."
+        if status in {"CREATED", "SUBMITTED"}:
+            return "Local active intent; broker confirmation unavailable."
+        if status == "CANCELLED" and side == "BUY" and not stop_order_id:
+            return "Historical order: cancelled before protective stop activation."
+        if status == "CANCELLED":
+            return "Historical order: cancelled."
+        if status == "FILLED":
+            return "Historical order: filled."
+        if status == "REJECTED":
+            return "Historical order: rejected."
+        if status == "ERROR":
+            return "Historical order: error."
+        return "Historical order."
 
     def _apply_account_history(self, account: dict[str, Any]) -> None:
         net_liquidation = account.get("net_liquidation")
@@ -920,8 +1654,9 @@ class TradingEngine:
         account["daily_start_equity"] = start_today
         account["initial_equity"] = initial_equity
         if start_today is not None:
-            account["today_pnl"] = self._money(net_liquidation - start_today)
-            account["pnl_until_yesterday"] = self._money(start_today - initial_equity)
+            account["equity_change_today"] = self._money(net_liquidation - start_today)
+        if start_today is not None and initial_equity is not None:
+            account["equity_change_until_yesterday"] = self._money(start_today - initial_equity)
 
     def _local_date(self) -> str:
         timezone_name = str(self.settings.raw.get("app", {}).get("timezone", "UTC"))
@@ -995,7 +1730,8 @@ class TradingEngine:
 
     async def force_sync(self) -> dict[str, int]:
         result = await self.reconciliation.run()
-        await self._heartbeat()
+        self._mark_reconciliation_completed(result)
+        await self._heartbeat(poll_stocks=False)
         self._drain_broker_audit()
         await self._broadcast_snapshot()
         return result
@@ -1008,6 +1744,7 @@ class TradingEngine:
         client_id: int | None = None,
     ) -> dict[str, Any]:
         broker_config = self.settings.raw["broker"]
+        connector = self._normalize_user_connector(connector)
         if host:
             broker_config["host"] = host
         if port is not None:
@@ -1025,9 +1762,7 @@ class TradingEngine:
         self.order_manager.broker = self.broker
         self.reconciliation.broker = self.broker
         self.settings.raw["broker"]["connector"] = connector
-        self.settings.raw["app"]["mode"] = (
-            "simulation" if connector == "simulated" else connector
-        )
+        self.settings.raw["app"]["mode"] = connector
         await self.broker.connect()
         broker_status = await self._broker_health_check()
         self._store_active_broker_selection()
@@ -1064,7 +1799,13 @@ class TradingEngine:
 
     def _store_active_broker_selection(self) -> None:
         broker_config = self.settings.raw["broker"]
-        connector = str(getattr(self.broker, "connector_name", broker_config.get("connector", "simulated")))
+        connector = str(
+            getattr(
+                self.broker,
+                "connector_name",
+                broker_config.get("connector", "paper"),
+            )
+        )
         broker_config["connector"] = connector
         broker_config["host"] = getattr(self.broker, "host", broker_config.get("host"))
         broker_config["port"] = getattr(self.broker, "port", broker_config.get("port"))
@@ -1091,13 +1832,98 @@ class TradingEngine:
         self.event_store.record(
             EventLevel.INFO,
             "setup_enabled_changed",
-            "Setup enabled" if enabled else "Setup disabled",
+            "Setup automatic TWS execution enabled"
+            if enabled
+            else "Setup automatic TWS execution disabled; monitoring continues",
             setup_id=setup_id,
             symbol=setup["symbol"],
             data={"enabled": enabled},
         )
         await self._broadcast_snapshot()
         return self.repository.get_setup(setup_id) or {}
+
+    async def set_all_setups_enabled(self, enabled: bool) -> dict[str, Any]:
+        setups = self.repository.list_setups()
+        for setup in setups:
+            self.repository.set_setup_enabled(str(setup["setup_id"]), enabled)
+        self.event_store.record(
+            EventLevel.INFO,
+            "all_setups_enabled_changed",
+            "Automatic TWS execution enabled for all setups"
+            if enabled
+            else "Automatic TWS execution disabled for all setups; monitoring continues",
+            data={
+                "enabled": enabled,
+                "updated_count": len(setups),
+                "setup_ids": [setup["setup_id"] for setup in setups],
+                "symbols": [setup["symbol"] for setup in setups],
+            },
+        )
+        await self._broadcast_snapshot()
+        return {
+            "ok": True,
+            "enabled": enabled,
+            "updated_count": len(setups),
+            "setups": self.repository.list_setups(),
+        }
+
+    def setup_config_template(self, template_type: str = "universal") -> dict[str, Any]:
+        return self.setup_template_service.setup_config_template()
+
+    def configuration_status(self) -> dict[str, Any]:
+        return self.setup_status_reporter.configuration_status()
+
+    def setup_arm_status(self, setup_id: str) -> dict[str, Any]:
+        setup = self.repository.get_setup(setup_id)
+        if setup is None:
+            raise KeyError(setup_id)
+        config = setup.get("config", {})
+        if not isinstance(config, dict):
+            config = {}
+        arm_validation = self.setup_engine.validate_for_arm(config)
+        lifecycle = self.setup_lifecycle.revalidate(setup)
+        lifecycle_armable = bool(lifecycle.get("can_be_armed", True))
+        disarm_errors = self._disarm_blockers(setup_id)
+        already_disarmed = str(setup.get("status") or "") == SetupStatus.DISABLED.value
+        disarm_warnings = ["setup is already DISABLED"] if already_disarmed else []
+        return {
+            "ok": True,
+            "setup_id": setup_id,
+            "symbol": setup.get("symbol"),
+            "status": setup.get("status"),
+            "status_reason": lifecycle.get("status_reason"),
+            "last_revalidated_at": lifecycle.get("last_revalidated_at"),
+            "lifecycle": lifecycle,
+            "enabled": bool(setup.get("enabled")),
+            "armable": arm_validation.valid and lifecycle_armable,
+            "target_status": (
+                arm_validation.details.get("arm_validation", {}).get("initial_status")
+                if arm_validation.valid
+                else None
+            ),
+            "arm_validation": {
+                "allowed": arm_validation.valid and lifecycle_armable,
+                "errors": [
+                    *arm_validation.errors,
+                    *(
+                        []
+                        if lifecycle_armable
+                        else [
+                            "Lifecycle revalidation blocks arming: "
+                            f"{lifecycle.get('status')} ({lifecycle.get('status_reason')})"
+                        ]
+                    ),
+                ],
+                "warnings": arm_validation.warnings,
+                "details": {**arm_validation.details, "lifecycle": lifecycle},
+            },
+            "disarmable": not disarm_errors and not already_disarmed,
+            "disarm_validation": {
+                "allowed": not disarm_errors and not already_disarmed,
+                "errors": disarm_errors,
+                "warnings": disarm_warnings,
+            },
+        }
 
     async def delete_setup(self, setup_id: str) -> dict[str, Any]:
         setup = self.repository.get_setup(setup_id)
@@ -1129,11 +1955,106 @@ class TradingEngine:
         return {"ok": True, "setup_id": setup_id, "file_deleted": file_deleted}
 
     async def save_setup(self, config: dict[str, Any]) -> dict[str, Any]:
+        canonical = self.setup_engine.canonicalize_config(config)
         validation = self.setup_engine.create_or_update_from_config(config)
         if not validation.valid:
-            return {"ok": False, "errors": validation.errors}
+            return {
+                "ok": False,
+                "errors": validation.errors,
+                "warnings": validation.warnings,
+                "details": validation.details,
+            }
         await self._broadcast_snapshot()
-        return {"ok": True, "setup": self.repository.get_setup(config["setup_id"])}
+        return {
+            "ok": True,
+            "setup": self.repository.get_setup(str(canonical.config["setup_id"])),
+            "warnings": validation.warnings,
+            "details": validation.details,
+        }
+
+    async def arm_setup(self, setup_id: str) -> dict[str, Any]:
+        setup = self.repository.get_setup(setup_id)
+        if setup is None:
+            raise KeyError(setup_id)
+        lifecycle = self.setup_lifecycle.revalidate(setup)
+        if not lifecycle.get("can_be_armed", True):
+            errors = [
+                "Setup cannot be armed: revalidation status "
+                f"{lifecycle.get('status')} ({lifecycle.get('status_reason')})",
+                *[str(reason) for reason in lifecycle.get("blocking_reasons", [])],
+            ]
+            self.event_store.record(
+                EventLevel.WARNING,
+                "setup_arm_blocked_by_lifecycle",
+                "; ".join(errors),
+                setup_id=setup_id,
+                symbol=str(setup.get("symbol", "")).upper() or None,
+                data={"lifecycle": lifecycle},
+            )
+            return {
+                "ok": False,
+                "errors": errors,
+                "warnings": list(lifecycle.get("warnings", [])),
+                "details": {"lifecycle": lifecycle},
+            }
+        validation = self.setup_engine.arm_setup(setup_id)
+        if not validation.valid:
+            return {
+                "ok": False,
+                "errors": validation.errors,
+                "warnings": validation.warnings,
+                "details": validation.details,
+            }
+        await self._broadcast_snapshot()
+        return {
+            "ok": True,
+            "setup": self.repository.get_setup(setup_id),
+            "warnings": validation.warnings,
+            "details": validation.details,
+        }
+
+    async def disarm_setup(self, setup_id: str) -> dict[str, Any]:
+        setup = self.repository.get_setup(setup_id)
+        if setup is None:
+            raise KeyError(setup_id)
+        blockers = self._disarm_blockers(setup_id)
+        if blockers:
+            self.event_store.record(
+                EventLevel.WARNING,
+                "setup_disarm_blocked",
+                "; ".join(blockers),
+                setup_id=setup_id,
+                symbol=str(setup.get("symbol", "")).upper() or None,
+                data={"errors": blockers},
+            )
+            raise ValueError("; ".join(blockers))
+        self.setup_engine.disarm_setup(setup_id)
+        await self._broadcast_snapshot()
+        return {
+            "ok": True,
+            "setup": self.repository.get_setup(setup_id),
+        }
+
+    def _disarm_blockers(self, setup_id: str) -> list[str]:
+        errors: list[str] = []
+        active_orders = self.repository.active_orders_for_setup(setup_id)
+        if active_orders:
+            order_ids = ", ".join(str(order.get("id") or "") for order in active_orders)
+            errors.append(
+                f"Cannot disarm setup with active orders: {order_ids}".rstrip(": ")
+            )
+        open_position = next(
+            (
+                position
+                for position in self.repository.list_positions()
+                if position.get("setup_id") == setup_id
+                and int(position.get("quantity") or 0) != 0
+            ),
+            None,
+        )
+        if open_position:
+            errors.append("Cannot disarm setup with an open position")
+        return errors
 
     async def process_market_snapshot(self, snapshot: MarketSnapshot) -> dict[str, Any]:
         runtime = self.runtime_state()
@@ -1152,714 +2073,58 @@ class TradingEngine:
         return {"ok": True, "processed": processed}
 
     async def _analyze_market_snapshot(self, snapshot: MarketSnapshot) -> list[dict[str, Any]]:
-        self._record_market_tick(snapshot)
-        symbol = snapshot.symbol.upper()
-        processed: list[dict[str, Any]] = []
-        for setup in self.repository.list_setups():
-            if not setup["enabled"] or setup["symbol"] != symbol:
-                continue
-            current_status = SetupStatus(setup["status"])
-            if current_status in {
-                SetupStatus.CLOSED,
-                SetupStatus.CANCELLED,
-                SetupStatus.EXPIRED,
-                SetupStatus.INVALIDATED,
-                SetupStatus.DISABLED,
-                SetupStatus.ERROR,
-                SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW,
-            }:
-                continue
-            strategy = SetupFactory.create(setup["config"])
-            signal = strategy.evaluate(snapshot, current_status)
-            trace = self._setup_analysis_trace(setup, snapshot, current_status, signal)
-            processed.append(
-                {
-                    "setup_id": setup["setup_id"],
-                    "setup_type": setup["setup_type"],
-                    "status": current_status.value,
-                    "action": signal.action.value,
-                    "reason": signal.reason,
-                    "target_status": signal.target_status.value
-                    if signal.target_status
-                    else None,
-                    "entry_price": signal.entry_price,
-                    "stop_loss": signal.stop_loss,
-                    "new_stop": signal.new_stop,
-                    "metadata": to_jsonable(signal.metadata),
-                    "trace": trace,
-                }
-            )
-            await self._handle_signal(setup, current_status, signal)
-        if processed:
-            self._record_stock_analysis(snapshot, processed)
-        else:
-            self._record_stock_analysis_skipped(snapshot, "no active setup for symbol")
-        self._health.update(
-            {
-                "last_market_analysis_at": self._utc_now_iso(),
-                "last_processed_setups": len(processed),
-            }
-        )
-        return processed
+        return await self.stock_market_monitor.analyze_market_snapshot(snapshot)
 
     def _record_stock_analysis(
         self,
         snapshot: MarketSnapshot,
         processed: list[dict[str, Any]],
     ) -> None:
-        symbol = snapshot.symbol.upper()
-        summary = self._stock_analysis_summary(processed)
-        message = f"Stock analysis {symbol}: {len(processed)} setup(s) evaluated"
-        if summary:
-            message = f"{message} ({summary})"
-        logger.info(message)
-        self.event_store.record(
-            EventLevel.INFO,
-            "stock_analysis",
-            message,
-            symbol=symbol,
-            data={
-                "snapshot": self._market_snapshot_payload(snapshot),
-                "processed": processed,
-            },
-        )
+        self.stock_market_monitor.record_stock_analysis(snapshot, processed)
 
     def _record_stock_analysis_skipped(
         self,
         snapshot: MarketSnapshot,
         reason: str,
     ) -> None:
-        symbol = snapshot.symbol.upper()
-        message = f"Stock analysis skipped {symbol}: {reason}"
-        logger.info(message)
-        self.event_store.record(
-            EventLevel.INFO,
-            "stock_analysis_skipped",
-            message,
-            symbol=symbol,
-            data={
-                "reason": reason,
-                "snapshot": self._market_snapshot_payload(snapshot),
-            },
-        )
+        self.stock_market_monitor.record_stock_analysis_skipped(snapshot, reason)
 
     @staticmethod
     def _stock_analysis_summary(processed: list[dict[str, Any]]) -> str:
-        counts: dict[str, int] = {}
-        for item in processed:
-            action = str(item.get("action") or "UNKNOWN")
-            counts[action] = counts.get(action, 0) + 1
-        return " ".join(
-            f"{action}={counts[action]}" for action in sorted(counts)
-        )
+        return stock_analysis_summary(processed)
 
-    def _setup_analysis_trace(
+    def _should_suppress_repeated_event(
         self,
-        setup: dict[str, Any],
-        snapshot: MarketSnapshot,
-        current_status: SetupStatus,
-        signal: Any,
-    ) -> dict[str, Any]:
-        config = setup.get("config", {})
-        entry = config.get("entry", {}) if isinstance(config.get("entry", {}), dict) else {}
-        setup_type = str(setup.get("setup_type") or config.get("setup_type") or "")
-        setup_role = str(config.get("setup_role", SetupRole.ENTRY_AND_MANAGEMENT.value))
-        checks: list[dict[str, Any]] = []
-
-        def add(
-            label: str,
-            state: str,
-            actual: Any = None,
-            expected: Any = None,
-            detail: str = "",
-        ) -> None:
-            check = {
-                "label": label,
-                "state": state,
-            }
-            if actual not in (None, ""):
-                check["actual"] = to_jsonable(actual)
-            if expected not in (None, ""):
-                check["expected"] = to_jsonable(expected)
-            if detail:
-                check["detail"] = detail
-            checks.append(check)
-
-        price = self._float_value(snapshot.price)
-        close = self._float_value(snapshot.close if snapshot.close is not None else snapshot.price)
-        volume_ratio = self._float_value(snapshot.volume_ratio)
-        entry_enabled = bool(entry.get("enabled", True))
-        allows_entry = setup_role in {
-            SetupRole.ENTRY_AND_MANAGEMENT.value,
-            SetupRole.ENTRY_ONLY.value,
-        }
-        status_text = current_status.value
-        status_waiting = status_text.startswith("WAITING") or status_text in {
-            SetupStatus.LOADED.value,
-            SetupStatus.VALIDATED.value,
-            SetupStatus.RECONCILING_EXISTING_POSITION.value,
-        }
-
-        add(
-            "Setup actif",
-            "ok" if setup.get("enabled") and config.get("enabled", True) is not False else "bad",
-            "ON" if setup.get("enabled") else "OFF",
-            "ON",
-        )
-        add(
-            "Role entree",
-            "ok" if allows_entry and entry_enabled else "info" if not allows_entry else "bad",
-            f"{setup_role} / {'entry ON' if entry_enabled else 'entry OFF'}",
-            "ENTRY_AND_MANAGEMENT ou ENTRY_ONLY + entry ON",
-        )
-        add(
-            "Statut suivi",
-            "wait" if status_waiting else "ok",
-            current_status.value,
-            "statut non terminal",
-        )
-        add(
-            "Donnees marche",
-            "ok" if price is not None and price > 0 else "bad",
-            price,
-            "prix exploitable",
-            f"timeframe={snapshot.timeframe} timestamp={snapshot.timestamp}",
+        event_type: str,
+        symbol: str,
+        signature: str,
+    ) -> bool:
+        return self.stock_market_monitor.should_suppress_repeated_event(
+            event_type,
+            symbol,
+            signature,
         )
 
-        if setup_type == "momentum_breakout":
-            metadata = signal.metadata if isinstance(signal.metadata, dict) else {}
-            analysis = metadata.get("analysis") if isinstance(metadata.get("analysis"), dict) else {}
-            market = analysis.get("market") if isinstance(analysis.get("market"), dict) else {}
-            spread_check = (
-                analysis.get("spread_check")
-                if isinstance(analysis.get("spread_check"), dict)
-                else {}
-            )
-            stale = analysis.get("stale") if isinstance(analysis.get("stale"), dict) else {}
-            validation = (
-                analysis.get("validation")
-                if isinstance(analysis.get("validation"), dict)
-                else {}
-            )
-            offsets = analysis.get("offsets") if isinstance(analysis.get("offsets"), dict) else {}
-            stop_meta = (
-                analysis.get("protective_stop")
-                if isinstance(analysis.get("protective_stop"), dict)
-                else {}
-            )
-            risk_preview = (
-                analysis.get("risk_preview")
-                if isinstance(analysis.get("risk_preview"), dict)
-                else {}
-            )
-            missed_retest = (
-                analysis.get("missed_retest")
-                if isinstance(analysis.get("missed_retest"), dict)
-                else {}
-            )
-            missing_conditions = analysis.get("missing_conditions")
-            blocking_conditions = analysis.get("blocking_conditions")
-            if not isinstance(missing_conditions, list):
-                missing_conditions = []
-            if not isinstance(blocking_conditions, list):
-                blocking_conditions = []
-            resistance = self._float_value(analysis.get("resistance"))
-            maximum_limit = self._float_value(
-                analysis.get("active_limit_price")
-                if analysis.get("active_limit_price") is not None
-                else analysis.get("maximum_limit_price")
-            )
-            add(
-                "Donnees obligatoires",
-                "bad" if missing_conditions else "ok",
-                ", ".join(missing_conditions) if missing_conditions else "completes",
-                "bid/ask/spread/ATR/tick/volume/structure",
-            )
-            add(
-                "Spread acceptable",
-                "ok" if spread_check.get("ok") else "bad" if spread_check else "wait",
-                (
-                    f"spread={spread_check.get('spread')} "
-                    f"bps={spread_check.get('spread_bps')}"
-                ),
-                (
-                    f"bps<={spread_check.get('max_spread_bps')} "
-                    f"spread<={spread_check.get('max_spread_atr')}"
-                ),
-            )
-            add(
-                "Trigger dynamique",
-                "bad" if "raw_trigger_offset above cap" in offsets.get("blocking", []) else "ok" if offsets else "wait",
-                offsets.get("trigger_offset"),
-                offsets.get("trigger_offset_cap"),
-                f"raw={offsets.get('raw_trigger_offset')} tick={offsets.get('minimum_tick')}",
-            )
-            add(
-                "Limite dynamique",
-                "bad" if "raw_limit_offset above cap" in offsets.get("blocking", []) else "ok" if offsets else "wait",
-                offsets.get("limit_offset"),
-                offsets.get("limit_offset_cap"),
-                f"raw={offsets.get('raw_limit_offset')}",
-            )
-            add(
-                "Prix vs resistance",
-                self._threshold_state(price, resistance, ">"),
-                price,
-                f"> {resistance}",
-            )
-            add(
-                "Transmission ask <= limite",
-                self._threshold_state(market.get("ask"), maximum_limit, "<="),
-                market.get("ask"),
-                maximum_limit,
-                "Le bot ne court pas apres le prix.",
-            )
-            add(
-                "Setup depasse",
-                "bad" if stale.get("is_missed_breakout") else "ok" if stale else "wait",
-                market.get("ask"),
-                f"{maximum_limit} + {stale.get('buffer')}",
-                f"buffer_raw={stale.get('buffer_raw')} hard_cap={stale.get('hard_cap')}",
-            )
-            add(
-                "Validation FAST_BREAKOUT",
-                "ok" if validation.get("fast_breakout_valid") else "wait",
-                validation.get("volume_ratio_closed_bar"),
-                "close>resistance et RVOL>=1.50",
-            )
-            add(
-                "Validation CONFIRMED_BREAKOUT",
-                "ok" if validation.get("confirmed_breakout_valid") else "wait",
-                (
-                    f"bars={validation.get('bars_above_resistance')} "
-                    f"avg_rvol={validation.get('average_volume_ratio_last_2_bars')}"
-                ),
-                "2 closes>resistance et RVOL moyen>=1.15",
-            )
-            if missed_retest:
-                add(
-                    "Validation BREAKOUT_RETEST",
-                    "ok" if validation.get("breakout_retest_valid") else "wait",
-                    (
-                        f"low={missed_retest.get('current_low')} "
-                        f"higher_low={missed_retest.get('new_higher_low_confirmed')}"
-                    ),
-                    self._range_text(
-                        self._float_value(missed_retest.get("zone_min")),
-                        self._float_value(missed_retest.get("zone_max")),
-                    ),
-                    "retest + close>=resistance + higher low + RVOL>=1.00",
-                )
-            add(
-                "Validation retenue",
-                "ok" if validation.get("valid") else "wait",
-                validation.get("path") or "aucune",
-                "FAST, CONFIRMED ou RETEST",
-            )
-            add(
-                "Trigger entree",
-                "info",
-                analysis.get("active_trigger_price", analysis.get("trigger_price")),
-                "round_up(resistance + trigger_offset)",
-            )
-            add(
-                "Stop structurel",
-                "bad" if stop_meta.get("missing") else "ok" if stop_meta else "wait",
-                stop_meta.get("initial_stop_loss"),
-                "support structurel - stop_buffer",
-                f"support={stop_meta.get('structural_support')} buffer={stop_meta.get('stop_buffer')}",
-            )
-            add(
-                "Risque worst-case",
-                "ok" if risk_preview.get("risk_per_share", 0) > 0 else "wait",
-                risk_preview.get("risk_per_share"),
-                "maximum_limit_price - initial_stop_loss",
-            )
-            add(
-                "Quantite maximale",
-                "bad" if risk_preview.get("maximum_quantity") == 0 else "ok" if risk_preview else "wait",
-                (
-                    f"capital={risk_preview.get('quantity_by_capital')} "
-                    f"risk={risk_preview.get('quantity_by_risk')}"
-                ),
-                risk_preview.get("maximum_quantity"),
-            )
-            add(
-                "Conditions bloquantes",
-                "bad" if blocking_conditions else "ok",
-                " | ".join(str(item) for item in blocking_conditions) if blocking_conditions else "aucune",
-                "aucune",
-            )
-        elif setup_type == "breakout_retest":
-            breakout = config.get("breakout", {}) if isinstance(config.get("breakout", {}), dict) else {}
-            retest = config.get("retest", {}) if isinstance(config.get("retest", {}), dict) else {}
-            daily_level = self._float_value(breakout.get("daily_close_above"))
-            zone_min = self._float_value(retest.get("zone_min"))
-            zone_max = self._float_value(retest.get("zone_max"))
-            no_close_below = self._float_value(retest.get("no_close_below")) or zone_min
-            daily_close = self._float_value(snapshot.daily_close if snapshot.daily_close is not None else close)
-            bullish = self._snapshot_bullish_confirmation(snapshot)
-            add(
-                "Invalidation retest",
-                self._threshold_state(close, no_close_below, ">="),
-                close,
-                f">= {no_close_below}",
-            )
-            add(
-                "Breakout journalier",
-                self._threshold_state(daily_close, daily_level, ">"),
-                daily_close,
-                f"> {daily_level}",
-            )
-            add(
-                "Prix dans zone retest",
-                self._range_state(price, zone_min, zone_max),
-                price,
-                self._range_text(zone_min, zone_max),
-            )
-            add(
-                "Bougie de confirmation",
-                "ok" if bullish else "wait",
-                "haussiere" if bullish else "non confirmee",
-                "close > open ou bullish_candle",
-            )
-        elif setup_type == "aggressive_rebound":
-            support = config.get("support_zone", {}) if isinstance(config.get("support_zone", {}), dict) else {}
-            invalidation = config.get("invalidation", {}) if isinstance(config.get("invalidation", {}), dict) else {}
-            zone_min = self._float_value(support.get("min"))
-            zone_max = self._float_value(support.get("max"))
-            close_below = self._float_value(invalidation.get("close_below")) or zone_min
-            previous_high = self._float_value(snapshot.previous_high or snapshot.high or zone_max)
-            bullish = self._snapshot_bullish_confirmation(snapshot)
-            add("Invalidation support", self._threshold_state(close, close_below, ">="), close, f">= {close_below}")
-            add("Prix dans support", self._range_state(price, zone_min, zone_max), price, self._range_text(zone_min, zone_max))
-            add("Bougie haussiere", "ok" if bullish else "wait", "oui" if bullish else "non", "confirmation")
-            add("Cloture au-dessus precedent high", self._threshold_state(close, previous_high, ">"), close, f"> {previous_high}")
-        elif setup_type == "range_breakout":
-            range_config = config.get("range", {}) if isinstance(config.get("range", {}), dict) else {}
-            high = self._float_value(range_config.get("high"))
-            low = self._float_value(range_config.get("low"))
-            add("Invalidation range", self._threshold_state(close, low, ">="), close, f">= {low}")
-            add("Cassure range high", self._threshold_state(price, high, ">"), price, f"> {high}")
-        elif setup_type == "pullback_continuation":
-            ema20 = self._float_value(snapshot.ema_20)
-            ema50 = self._float_value(snapshot.ema_50)
-            bullish = self._snapshot_bullish_confirmation(snapshot)
-            add("EMA disponibles", "ok" if ema20 is not None and ema50 is not None else "wait", f"EMA20={ema20} EMA50={ema50}", "EMA20 + EMA50")
-            add("Filtre tendance EMA50", self._threshold_state(price, ema50, ">="), price, f">= {ema50}")
-            add("Tendance EMA20 > EMA50", self._threshold_state(ema20, ema50, ">"), ema20, f"> {ema50}")
-            add("Pullback vers EMA20", self._threshold_state(price, ema20, "<="), price, f"<= {ema20}")
-            add("Bougie de reprise", "ok" if bullish else "wait", "haussiere" if bullish else "non confirmee", "close > open ou bullish_candle")
-        elif setup_type in {"position_management", "runner", "trailing_runner"}:
-            add(
-                "Mode gestion",
-                "info",
-                setup_type,
-                "position existante",
-                "Ce setup gere une position; il ne cherche pas une nouvelle entree.",
-            )
-
-        action = signal.action.value
-        if action == SignalAction.ENTRY_READY.value:
-            add("Signal entree", "ok", signal.entry_price, "ENTRY_READY")
-            add("Controle risque", "info", "a lancer", "apres signal entree")
-        elif action == SignalAction.INVALIDATE.value:
-            add("Signal entree", "bad", signal.reason, "setup valide")
-        else:
-            add("Signal entree", "wait", signal.reason, "ENTRY_READY")
-
-        return {
-            "phase": self._analysis_phase_label(setup_type, current_status),
-            "summary": f"{action}: {signal.reason}",
-            "next_step": self._analysis_next_step(signal),
-            "checks": checks,
-        }
-
     @staticmethod
-    def _analysis_phase_label(setup_type: str, status: SetupStatus) -> str:
-        if status == SetupStatus.WAITING_ACTIVATION:
-            return "Surveillance activation"
-        if status == SetupStatus.WAITING_ENTRY_SIGNAL:
-            return "Recherche signal entree"
-        if status == SetupStatus.MISSED_BREAKOUT:
-            return "Breakout manque"
-        if status == SetupStatus.WAITING_RETEST:
-            return "Attente retest apres breakout manque"
-        if status == SetupStatus.REARMED_ON_NEW_BASE:
-            return "Rearme sur nouvelle base"
-        if status == SetupStatus.EXPIRED:
-            return "Setup expire"
-        if status in {SetupStatus.IN_POSITION, SetupStatus.MANAGING_POSITION}:
-            return "Gestion position"
-        if setup_type in {"position_management", "runner", "trailing_runner"}:
-            return "Gestion uniquement"
-        return status.value
-
-    @staticmethod
-    def _analysis_next_step(signal: Any) -> str:
-        action = signal.action
-        if action == SignalAction.ENTRY_READY:
-            return "Verifier le risque, calculer la taille, puis envoyer l'ordre d'entree."
-        if action == SignalAction.STATUS_CHANGE and signal.target_status:
-            if signal.target_status == SetupStatus.MISSED_BREAKOUT:
-                return "Ne pas entrer au marche; attendre une zone de retest propre."
-            if signal.target_status == SetupStatus.WAITING_RETEST:
-                return "Observer le retest et exiger une confirmation avant de rearmer."
-            if signal.target_status == SetupStatus.REARMED_ON_NEW_BASE:
-                return "Surveiller la nouvelle resistance locale et le nouveau trigger."
-            if signal.target_status == SetupStatus.EXPIRED:
-                return "Arreter la recherche d'entree pour ce setup."
-            return f"Passer au statut {signal.target_status.value} et continuer la surveillance."
-        if action == SignalAction.INVALIDATE:
-            return "Invalider le setup et stopper la recherche d'entree."
-        if action == SignalAction.RAISE_STOP:
-            return "Monter le stop de protection selon la regle de gestion."
-        return f"Continuer a surveiller: {signal.reason}"
-
-    @staticmethod
-    def _threshold_state(actual: float | None, expected: float | None, operator: str) -> str:
-        if actual is None or expected is None:
-            return "wait"
-        if operator == ">":
-            return "ok" if actual > expected else "wait"
-        if operator == ">=":
-            return "ok" if actual >= expected else "wait"
-        if operator == "<":
-            return "ok" if actual < expected else "wait"
-        if operator == "<=":
-            return "ok" if actual <= expected else "wait"
-        return "info"
-
-    @staticmethod
-    def _range_state(actual: float | None, low: float | None, high: float | None) -> str:
-        if actual is None or low is None or high is None:
-            return "wait"
-        return "ok" if low <= actual <= high else "wait"
-
-    @staticmethod
-    def _range_text(low: float | None, high: float | None) -> str:
-        if low is None or high is None:
-            return "zone non renseignee"
-        return f"{low} - {high}"
-
-    @staticmethod
-    def _snapshot_bullish_confirmation(snapshot: MarketSnapshot) -> bool:
-        if snapshot.bullish_candle:
-            return True
-        if snapshot.close is not None and snapshot.open is not None:
-            return snapshot.close > snapshot.open
-        return False
+    def _stock_analysis_dedupe_key(
+        symbol: str,
+        processed: list[dict[str, Any]],
+    ) -> str:
+        return stock_analysis_dedupe_key(symbol, processed)
 
     @staticmethod
     def _market_snapshot_payload(snapshot: MarketSnapshot) -> dict[str, Any]:
-        payload: dict[str, Any] = {}
-        for key in (
-            "symbol",
-            "price",
-            "timestamp",
-            "timeframe",
-            "open",
-            "high",
-            "low",
-            "close",
-            "bid",
-            "ask",
-            "volume",
-            "current_bar_volume",
-            "previous_high",
-            "daily_close",
-            "volume_ratio",
-            "volume_ratio_closed_bar",
-            "volume_ratio_live",
-            "average_volume_ratio_last_2_bars",
-            "elapsed_ratio",
-            "projected_volume",
-            "bar_count",
-            "bars_above_resistance",
-            "minimum_tick",
-            "atr_15m",
-            "atr_1h",
-            "session",
-            "market_open_time",
-            "current_time",
-            "last_confirmed_higher_low",
-            "support_level",
-            "successful_retest_low",
-            "structural_support",
-            "breakout_already_detected",
-            "new_higher_low_confirmed",
-            "close_1h",
-            "ema_20",
-            "ema_50",
-            "bullish_candle",
-        ):
-            value = getattr(snapshot, key)
-            if key == "bullish_candle" or value not in (None, ""):
-                payload[key] = to_jsonable(value)
-        payload["symbol"] = snapshot.symbol.upper()
-        return payload
+        return market_snapshot_payload(snapshot)
 
     def _record_market_tick(self, snapshot: MarketSnapshot) -> None:
-        self.market_data.update(snapshot)
-        self._health.update(
-            {
-                "last_market_tick_at": self._utc_now_iso(),
-                "last_market_symbol": snapshot.symbol.upper(),
-            }
-        )
+        self.stock_market_monitor.record_market_tick(snapshot)
 
     async def _handle_signal(self, setup: dict[str, Any], current_status: SetupStatus, signal: Any) -> None:
-        if signal.action == SignalAction.HOLD:
+        if self.action_executor.execute_simple_action(setup, current_status, signal):
             return
-        if signal.action == SignalAction.INVALIDATE and signal.target_status:
-            self._transition_setup(setup, current_status, signal.target_status, signal.reason)
+        if self.position_action_executor.execute_raise_stop_signal(setup, current_status, signal):
             return
-        if signal.action == SignalAction.STATUS_CHANGE and signal.target_status:
-            self._transition_setup(setup, current_status, signal.target_status, signal.reason)
-            return
-        if signal.action == SignalAction.RAISE_STOP and signal.new_stop is not None:
-            moved = self.position_manager.raise_stop(setup["symbol"], signal.new_stop)
-            if moved and signal.target_status:
-                self._transition_setup(setup, current_status, signal.target_status, signal.reason)
-            return
-        if signal.action == SignalAction.ENTRY_READY:
-            setup_role = str(
-                setup.get("config", {}).get(
-                    "setup_role",
-                    SetupRole.ENTRY_AND_MANAGEMENT.value,
-                )
-            )
-            if setup_role == SetupRole.MANAGEMENT_ONLY.value:
-                self.event_store.record(
-                    EventLevel.CRITICAL,
-                    "management_only_entry_blocked",
-                    "MANAGEMENT_ONLY setup cannot place an entry order",
-                    setup_id=setup["setup_id"],
-                    symbol=setup["symbol"],
-                )
-                self.repository.update_setup_status(
-                    setup["setup_id"],
-                    SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value,
-                    "MANAGEMENT_ONLY entry signal blocked",
-                )
-                return
-            if signal.entry_price is None or signal.stop_loss is None:
-                self.event_store.record(
-                    EventLevel.ERROR,
-                    "entry_signal_rejected",
-                    "Entry signal missing price or stop",
-                    setup_id=setup["setup_id"],
-                    symbol=setup["symbol"],
-                )
-                return
-            effective_setup = self._setup_with_signal_overrides(setup, signal)
-            open_positions = len(self.repository.list_positions())
-            exposure = sum(
-                float(position["average_price"]) * int(position["quantity"])
-                for position in self.repository.list_positions()
-            )
-            daily_pnl = sum(float(position["unrealized_pnl"]) for position in self.repository.list_positions())
-            decision = self.risk_engine.evaluate(
-                setup_config=effective_setup["config"],
-                entry_price=signal.entry_price,
-                stop_loss=signal.stop_loss,
-                open_positions=open_positions,
-                current_exposure_usd=exposure,
-                daily_pnl_usd=daily_pnl,
-            )
-            if not decision.approved:
-                self.event_store.record(
-                    EventLevel.RISK,
-                    "entry_rejected_by_risk",
-                    decision.reason,
-                    setup_id=setup["setup_id"],
-                    symbol=setup["symbol"],
-                )
-                return
-            try:
-                await self.order_manager.place_entry_order(effective_setup, decision)
-            except BrokerModeMismatchError as exc:
-                self.event_store.record(
-                    EventLevel.RISK,
-                    "broker_mode_mismatch",
-                    str(exc),
-                    setup_id=setup["setup_id"],
-                    symbol=setup["symbol"],
-                )
-            except ManagementOnlyEntryError as exc:
-                self.event_store.record(
-                    EventLevel.CRITICAL,
-                    "management_only_entry_blocked",
-                    str(exc),
-                    setup_id=setup["setup_id"],
-                    symbol=setup["symbol"],
-                )
-                self.repository.update_setup_status(
-                    setup["setup_id"],
-                    SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value,
-                    str(exc),
-                )
-            except DuplicateOrderError as exc:
-                self.event_store.record(
-                    EventLevel.RISK,
-                    "duplicate_order_blocked",
-                    str(exc),
-                    setup_id=setup["setup_id"],
-                    symbol=setup["symbol"],
-                )
-
-    @staticmethod
-    def _setup_with_signal_overrides(
-        setup: dict[str, Any],
-        signal: Any,
-    ) -> dict[str, Any]:
-        metadata = signal.metadata if isinstance(signal.metadata, dict) else {}
-        entry_overrides = metadata.get("entry_overrides")
-        risk_overrides = metadata.get("risk_overrides")
-        if not isinstance(entry_overrides, dict) and not isinstance(risk_overrides, dict):
-            return setup
-        effective = deepcopy(setup)
-        config = effective.setdefault("config", {})
-        if isinstance(entry_overrides, dict):
-            entry = config.setdefault("entry", {})
-            for key, value in entry_overrides.items():
-                if value is not None:
-                    entry[key] = value
-        if isinstance(risk_overrides, dict):
-            risk = config.setdefault("risk", {})
-            for key, value in risk_overrides.items():
-                if value is not None:
-                    risk[key] = value
-        return effective
-
-    def _transition_setup(
-        self,
-        setup: dict[str, Any],
-        current_status: SetupStatus,
-        target_status: SetupStatus,
-        reason: str,
-    ) -> None:
-        try:
-            new_status = self.state_machine.transition(current_status, target_status)
-        except Exception as exc:
-            logger.warning("Rejected transition for %s: %s", setup["setup_id"], exc)
-            self.event_store.record(
-                EventLevel.ERROR,
-                "setup_transition_rejected",
-                str(exc),
-                setup_id=setup["setup_id"],
-                symbol=setup["symbol"],
-            )
-            return
-        self.repository.update_setup_status(setup["setup_id"], new_status.value, reason)
-        self.event_store.record(
-            EventLevel.INFO,
-            "setup_status_changed",
-            reason,
-            setup_id=setup["setup_id"],
-            symbol=setup["symbol"],
-            data={"from": current_status.value, "to": new_status.value},
-        )
+        await self.entry_order_executor.execute_entry_ready(setup, signal)
 
     async def simulate_fill_order(
         self,
@@ -1873,7 +2138,7 @@ class TradingEngine:
         return {"ok": True, "position": to_jsonable(position)}
 
     async def move_stop(self, symbol: str, new_stop: float) -> dict[str, Any]:
-        moved = self.position_manager.raise_stop(symbol, new_stop)
+        moved = self.position_action_executor.move_stop(symbol, new_stop)
         await self._broadcast_snapshot()
         return {"ok": moved}
 

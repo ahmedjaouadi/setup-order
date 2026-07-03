@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>Opportunities</h1>
+    <p class="subtitle">Candidats detectes par le scanner, non executables tant qu'ils ne deviennent pas des setups armes.</p>
+  </div>
+  <button type="button" id="v2-run-scan">Scan</button>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Shortlist</h2>
+      <p class="panel-subtitle">Classement par score, liquidite et contexte de selection.</p>
+    </div>
+    <span class="table-count" id="v2-opportunities-count"></span>
+  </div>
+  <div class="v2-table-wrap">
+    <table class="v2-table" id="v2-opportunities-table"></table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <h2>Blocked</h2>
+    <span class="table-count" id="v2-opportunities-blocked-count"></span>
+  </div>
+  <div class="v2-table-wrap">
+    <table class="v2-table" id="v2-opportunities-blocked-table"></table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <h2>Recently expired</h2>
+    <span class="table-count" id="v2-opportunities-expired-count"></span>
+  </div>
+  <div class="v2-table-wrap">
+    <table class="v2-table" id="v2-opportunities-expired-table"></table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <h2>Generated scenarios</h2>
+    <span class="table-count" id="v2-opportunities-scenarios-count"></span>
+  </div>
+  <div class="v2-table-wrap">
+    <table class="v2-table" id="v2-opportunities-scenarios-table"></table>
+  </div>
+</section>
+{% endblock %}

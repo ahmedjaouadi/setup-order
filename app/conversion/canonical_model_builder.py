@@ -294,7 +294,7 @@ def _coerce_scalar_value(canonical_path: str, value: Any) -> Any:
     return value
 
 
-def _parse_number(raw_value: str) -> float:
+def _parse_number(raw_value: str) -> float | str:
     cleaned = (
         raw_value.strip()
         .replace("$", "")
@@ -303,7 +303,10 @@ def _parse_number(raw_value: str) -> float:
         .replace(",", ".")
         .strip()
     )
-    return float(cleaned)
+    try:
+        return float(cleaned)
+    except ValueError:
+        return raw_value
 
 
 def _set_nested_value(target: dict[str, Any], path: str, value: Any) -> None:

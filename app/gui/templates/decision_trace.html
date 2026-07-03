@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>Decision Trace</h1>
+    <p class="subtitle">Decisions critiques, regles evaluees, inputs et verdict final.</p>
+  </div>
+</section>
+
+<section class="panel">
+  <form class="inline-form" id="v2-decision-filter">
+    <input name="symbol" placeholder="Symbol">
+    <input name="setup_id" placeholder="Setup ID">
+    <input name="opportunity_id" placeholder="Opportunity ID">
+    <select name="decision_type">
+      <option value="">Decision type</option>
+      <option value="OPPORTUNITY_REJECTED">OPPORTUNITY_REJECTED</option>
+      <option value="ENTRY_REJECTED">ENTRY_REJECTED</option>
+      <option value="ENTRY_APPROVED">ENTRY_APPROVED</option>
+    </select>
+    <input name="final_decision" placeholder="Final decision">
+    <input name="date" type="date">
+    <button type="submit">Filter</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <h2>Traces</h2>
+    <span class="table-count" id="v2-decision-count"></span>
+  </div>
+  <div class="v2-trace-list" id="v2-decision-traces"></div>
+</section>
+{% endblock %}

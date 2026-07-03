@@ -1,0 +1,188 @@
+symbols:
+  - symbol: AEHR
+    company_name: Aehr Test Systems
+    sector: Technology
+    industry: Semiconductors
+    sector_etf: SMH
+    custom_priority: 2
+  - symbol: ALGM
+    company_name: Allegro MicroSystems
+    sector: Technology
+    industry: Semiconductors
+    sector_etf: SMH
+    custom_priority: 2
+  - symbol: AMPX
+    company_name: Amprius Technologies
+    sector: Industrials
+    industry: Clean Energy Storage
+    sector_etf: ICLN
+    custom_priority: 2
+  - symbol: BGC
+    company_name: BGC Group
+    sector: Financials
+    industry: Capital Markets
+    sector_etf: XLF
+    custom_priority: 3
+  - symbol: CODI
+    company_name: Compass Diversified
+    sector: Financials
+    industry: Diversified Holdings
+    sector_etf: XLF
+    custom_priority: 2
+  - symbol: FLNC
+    company_name: Fluence Energy
+    sector: Industrials
+    industry: Clean Energy Storage
+    sector_etf: ICLN
+    custom_priority: 3
+  - symbol: GEV
+    company_name: GE Vernova
+    sector: Industrials
+    industry: Electrical Equipment
+    sector_etf: XLI
+    custom_priority: 5
+  - symbol: IREN
+    company_name: IREN
+    sector: Technology
+    industry: Data Centers
+    sector_etf: XLK
+    custom_priority: 3
+  - symbol: INTC
+    company_name: Intel
+    sector: Technology
+    industry: Semiconductors
+    sector_etf: SMH
+    custom_priority: 5
+  - symbol: JOBY
+    company_name: Joby Aviation
+    sector: Industrials
+    industry: Aerospace Defense
+    sector_etf: ITA
+    custom_priority: 3
+  - symbol: LPTH
+    company_name: LightPath Technologies
+    sector: Technology
+    industry: Electronic Components
+    sector_etf: XLK
+    custom_priority: 2
+  - symbol: MRVL
+    company_name: Marvell Technology
+    sector: Technology
+    industry: Semiconductors
+    sector_etf: SMH
+    custom_priority: 5
+  - symbol: NOK
+    company_name: Nokia
+    sector: Technology
+    industry: Communications Equipment
+    sector_etf: XLK
+    custom_priority: 5
+  - symbol: NVTS
+    company_name: Navitas Semiconductor
+    sector: Technology
+    industry: Semiconductors
+    sector_etf: SMH
+    custom_priority: 2
+  - symbol: ONDS
+    company_name: Ondas Holdings
+    sector: Technology
+    industry: Communications Equipment
+    sector_etf: XLK
+    custom_priority: 2
+  - symbol: RDW
+    company_name: Redwire
+    sector: Industrials
+    industry: Aerospace Defense
+    sector_etf: ITA
+    custom_priority: 3
+  - symbol: SMCI
+    company_name: Super Micro Computer
+    sector: Technology
+    industry: Computer Hardware
+    sector_etf: XLK
+    custom_priority: 5
+  - symbol: SOFI
+    company_name: SoFi Technologies
+    sector: Financials
+    industry: Consumer Finance
+    sector_etf: XLF
+    custom_priority: 4
+  - symbol: TXN
+    company_name: Texas Instruments
+    sector: Technology
+    industry: Semiconductors
+    sector_etf: SMH
+    custom_priority: 5
+  - symbol: UEC
+    company_name: Uranium Energy
+    sector: Energy
+    industry: Uranium
+    sector_etf: URA
+    custom_priority: 3
+  - symbol: VST
+    company_name: Vistra
+    sector: Utilities
+    industry: Independent Power Producers
+    sector_etf: XLU
+    custom_priority: 5
+symbol_overrides:
+  ACHR:
+    company_name: Archer Aviation
+    sector: Industrials
+    industry: Aerospace Defense / eVTOL
+    sector_etf: ITA
+    custom_priority: 3
+  HIMX:
+    company_name: Himax Technologies
+    sector: Technology
+    industry: Semiconductors
+    sector_etf: SMH
+    custom_priority: 2
+  IONQ:
+    company_name: IonQ
+    sector: Technology
+    industry: Quantum Computing
+    sector_etf: QTUM
+    custom_priority: 3
+  IRDM:
+    company_name: Iridium Communications
+    sector: Communication Services
+    industry: Satellite Communications
+    sector_etf: XLC
+    custom_priority: 3
+  LUNR:
+    company_name: Intuitive Machines
+    sector: Industrials
+    industry: Aerospace Defense / Space
+    sector_etf: ITA
+    custom_priority: 3
+  POWI:
+    company_name: Power Integrations
+    sector: Technology
+    industry: Semiconductors
+    sector_etf: SMH
+    custom_priority: 2
+  QBTS:
+    company_name: D-Wave Quantum
+    sector: Technology
+    industry: Quantum Computing
+    sector_etf: QTUM
+    custom_priority: 3
+  RGTI:
+    company_name: Rigetti Computing
+    sector: Technology
+    industry: Quantum Computing
+    sector_etf: QTUM
+    custom_priority: 3
+  RKLB:
+    company_name: Rocket Lab
+    sector: Industrials
+    industry: Aerospace Defense / Space
+    sector_etf: ITA
+    custom_priority: 4
+  STM:
+    company_name: STMicroelectronics
+    sector: Technology
+    industry: Semiconductors
+    sector_etf: SMH
+    custom_priority: 4

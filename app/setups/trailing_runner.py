@@ -4,9 +4,7 @@ from app.models import MarketSnapshot, SetupSignal, SetupStatus, SignalAction
 from app.setups.base_setup import BaseSetup
 
 
-class TrailingRunnerSetup(BaseSetup):
-    setup_type = "runner"
-
+class RunnerBaseSetup(BaseSetup):
     def estimated_entry_price(self) -> float | None:
         entry = self.config.get("entry", {})
         if entry.get("entry_price") is not None:
@@ -39,3 +37,10 @@ class TrailingRunnerSetup(BaseSetup):
             new_stop=max(candidates),
         )
 
+
+class RunnerSetup(RunnerBaseSetup):
+    setup_type = "runner"
+
+
+class TrailingRunnerSetup(RunnerBaseSetup):
+    setup_type = "trailing_runner"

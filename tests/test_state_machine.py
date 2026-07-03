@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app.engine.state_machine import InvalidTransitionError, StateMachine
-from app.models import SetupStatus
+from app.models import SetupRole, SetupStatus
 
 
 class StateMachineTests(unittest.TestCase):
@@ -44,6 +44,23 @@ class StateMachineTests(unittest.TestCase):
     def test_rejects_closed_to_in_position(self) -> None:
         with self.assertRaises(InvalidTransitionError):
             self.machine.transition(SetupStatus.CLOSED, SetupStatus.IN_POSITION)
+
+    def test_rejects_management_only_entry_flow_transition(self) -> None:
+        with self.assertRaises(InvalidTransitionError):
+            self.machine.transition(
+                SetupStatus.RECONCILING_EXISTING_POSITION,
+                SetupStatus.ENTRY_READY,
+                SetupRole.MANAGEMENT_ONLY,
+            )
+
+    def test_explains_transition_decision(self) -> None:
+        decision = self.machine.explain_transition(
+            SetupStatus.CLOSED,
+            SetupStatus.IN_POSITION,
+        )
+
+        self.assertFalse(decision.allowed)
+        self.assertIn("Invalid setup transition", decision.reason)
 
 
 if __name__ == "__main__":

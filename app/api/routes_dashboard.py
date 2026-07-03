@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from app.models import MarketSnapshot
+from app.market_data.snapshot_payload import market_snapshot_from_payload
 
 
 router = APIRouter()
@@ -86,55 +86,56 @@ async def tws_audit(request: Request):
 @router.post("/api/market/snapshot")
 async def market_snapshot(request: Request):
     payload = await request.json()
-    snapshot = MarketSnapshot(
-        symbol=str(payload["symbol"]).upper(),
-        price=float(payload["price"]),
-        timeframe=str(payload.get("timeframe", "15m")),
-        open=_float_or_none(payload.get("open")),
-        high=_float_or_none(payload.get("high")),
-        low=_float_or_none(payload.get("low")),
-        close=_float_or_none(payload.get("close")),
-        bid=_float_or_none(payload.get("bid")),
-        ask=_float_or_none(payload.get("ask")),
-        volume=_float_or_none(payload.get("volume")),
-        current_bar_volume=_float_or_none(payload.get("current_bar_volume")),
-        previous_high=_float_or_none(payload.get("previous_high")),
-        daily_close=_float_or_none(payload.get("daily_close")),
-        volume_ratio=_float_or_none(payload.get("volume_ratio")),
-        volume_ratio_closed_bar=_float_or_none(payload.get("volume_ratio_closed_bar")),
-        volume_ratio_live=_float_or_none(payload.get("volume_ratio_live")),
-        average_volume_ratio_last_2_bars=_float_or_none(
-            payload.get("average_volume_ratio_last_2_bars")
-        ),
-        elapsed_ratio=_float_or_none(payload.get("elapsed_ratio")),
-        projected_volume=_float_or_none(payload.get("projected_volume")),
-        bar_count=_int_or_none(payload.get("bar_count")),
-        bars_above_resistance=_int_or_none(payload.get("bars_above_resistance")),
-        minimum_tick=_float_or_none(payload.get("minimum_tick")),
-        atr_15m=_float_or_none(payload.get("atr_15m")),
-        atr_1h=_float_or_none(payload.get("atr_1h")),
-        session=str(payload["session"]).upper() if payload.get("session") else None,
-        market_open_time=str(payload["market_open_time"])
-        if payload.get("market_open_time")
-        else None,
-        current_time=str(payload["current_time"]) if payload.get("current_time") else None,
-        last_confirmed_higher_low=_float_or_none(
-            payload.get("last_confirmed_higher_low")
-        ),
-        support_level=_float_or_none(payload.get("support_level")),
-        successful_retest_low=_float_or_none(payload.get("successful_retest_low")),
-        structural_support=_float_or_none(payload.get("structural_support")),
-        breakout_already_detected=bool(payload.get("breakout_already_detected", False)),
-        new_higher_low_confirmed=bool(payload.get("new_higher_low_confirmed", False)),
-        close_1h=_float_or_none(payload.get("close_1h")),
-        historical_bars=payload.get("historical_bars")
-        if isinstance(payload.get("historical_bars"), list)
-        else [],
-        ema_20=_float_or_none(payload.get("ema_20")),
-        ema_50=_float_or_none(payload.get("ema_50")),
-        bullish_candle=bool(payload.get("bullish_candle", False)),
-    )
+    try:
+        snapshot = market_snapshot_from_payload(payload)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     return await request.app.state.engine.process_market_snapshot(snapshot)
+
+
+@router.get("/api/market-data/{symbol}/diagnostics")
+async def market_data_diagnostics(request: Request, symbol: str):
+    normalized_symbol = symbol.upper()
+    broker = request.app.state.engine.broker
+    diagnostics = getattr(broker, "market_data_diagnostics", None)
+    broker_payload = {}
+    if callable(diagnostics):
+        broker_payload = diagnostics(symbol)
+    latest = request.app.state.engine.market_data.latest(symbol)
+    latest_payload = (
+        request.app.state.engine._market_snapshot_payload(latest)
+        if latest is not None
+        else None
+    )
+    setup = next(
+        (
+            item
+            for item in request.app.state.repository.list_setups()
+            if str(item.get("symbol", "")).upper() == normalized_symbol
+        ),
+        {},
+    )
+    readiness = (
+        latest_payload.get("market_data_readiness", {})
+        if isinstance(latest_payload, dict)
+        else {}
+    )
+    summary = _market_diagnostics_summary(
+        normalized_symbol,
+        setup,
+        latest_payload,
+        readiness,
+        broker_payload,
+    )
+    return {
+        **broker_payload,
+        **summary,
+        "live_quote": latest_payload,
+        "message": (
+            broker_payload.get("message")
+            or ("" if callable(diagnostics) else "Broker diagnostics are not available.")
+        ),
+    }
 
 
 @router.get("/api/market/history/{symbol}")
@@ -145,13 +146,56 @@ async def market_history(request: Request, symbol: str, timeframe: str = "1d"):
         raise HTTPException(status_code=422, detail=str(exc))
 
 
-def _float_or_none(value):
-    if value in (None, ""):
-        return None
-    return float(value)
-
-
 def _int_or_none(value):
     if value in (None, ""):
         return None
     return int(value)
+
+
+def _market_diagnostics_summary(
+    symbol: str,
+    setup: dict,
+    latest_payload: dict | None,
+    readiness: dict,
+    broker_payload: dict,
+) -> dict:
+    latest_payload = latest_payload or {}
+    missing = readiness.get("missing") if isinstance(readiness, dict) else []
+    last_error_message = (
+        latest_payload.get("last_ibkr_error_message")
+        or broker_payload.get("last_ibkr_error_message")
+        or broker_payload.get("last_ibkr_error")
+    )
+    return {
+        "symbol": symbol,
+        "setup_id": setup.get("setup_id"),
+        "market_data_source": latest_payload.get("market_data_source"),
+        "live_quote_source": latest_payload.get("live_quote_source"),
+        "market_data_type_requested": latest_payload.get("market_data_type_requested"),
+        "market_data_type_actual": latest_payload.get("market_data_type_actual"),
+        "live_market_data_status": latest_payload.get("live_market_data_status"),
+        "bid": latest_payload.get("bid"),
+        "ask": latest_payload.get("ask"),
+        "spread": latest_payload.get("spread"),
+        "atr_15m": latest_payload.get("atr_15m"),
+        "atr_1h": latest_payload.get("atr_1h"),
+        "atr_1h_status": latest_payload.get("atr_1h_status"),
+        "atr_1h_bar_size": latest_payload.get("atr_1h_bar_size"),
+        "atr_1h_duration": latest_payload.get("atr_1h_duration"),
+        "atr_1h_use_rth": latest_payload.get("atr_1h_use_rth"),
+        "bars_15m_count": latest_payload.get("bars_15m_count"),
+        "bars_1h_count": latest_payload.get("bars_1h_count"),
+        "bars_required_for_atr": latest_payload.get("bars_required_for_atr"),
+        "historical_1h_available": latest_payload.get("historical_1h_available"),
+        "historical_1h_error": latest_payload.get("historical_1h_error"),
+        "last_successful_atr_1h": latest_payload.get("last_successful_atr_1h"),
+        "last_successful_atr_1h_at": latest_payload.get("last_successful_atr_1h_at"),
+        "atr_1h_age_seconds": latest_payload.get("atr_1h_age_seconds"),
+        "last_ibkr_error_code": (
+            latest_payload.get("last_ibkr_error_code")
+            or broker_payload.get("last_ibkr_error_code")
+        ),
+        "last_ibkr_error_message": last_error_message,
+        "readiness_level": readiness.get("status") if isinstance(readiness, dict) else None,
+        "missing_fields": missing if isinstance(missing, list) else [],
+    }

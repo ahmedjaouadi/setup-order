@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "setup.pullback_continuation.schema.json",
+  "title": "Pullback Continuation Setup",
+  "type": "object",
+  "required": ["pullback"],
+  "properties": {
+    "pullback": {
+      "type": "object",
+      "required": ["entry_reference"],
+      "properties": {
+        "entry_reference": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

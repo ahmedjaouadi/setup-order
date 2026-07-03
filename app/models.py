@@ -16,7 +16,6 @@ class SerializableEnum(str, Enum):
 
 
 class BotMode(SerializableEnum):
-    SIMULATION = "simulation"
     PAPER = "paper"
     LIVE = "live"
 
@@ -43,6 +42,9 @@ class SetupStatus(SerializableEnum):
     WAITING_ACTIVATION = "WAITING_ACTIVATION"
     WAITING_BREAKOUT = "WAITING_BREAKOUT"
     MISSED_BREAKOUT = "MISSED_BREAKOUT"
+    MISSED_BREAKOUT_WAIT_RETEST = "MISSED_BREAKOUT_WAIT_RETEST"
+    STALE_SETUP = "STALE_SETUP"
+    BLOCKED = "BLOCKED"
     WAITING_RETEST = "WAITING_RETEST"
     WAITING_REBOUND = "WAITING_REBOUND"
     WAITING_CONFIRMATION = "WAITING_CONFIRMATION"
@@ -74,6 +76,7 @@ class SetupType(SerializableEnum):
     MOMENTUM_BREAKOUT = "momentum_breakout"
     RANGE_BREAKOUT = "range_breakout"
     RUNNER = "runner"
+    TRAILING_RUNNER = "trailing_runner"
     POSITION_MANAGEMENT = "position_management"
 
 
@@ -129,14 +132,23 @@ class ValidationResult:
     valid: bool
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    details: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def ok(cls, warnings: list[str] | None = None) -> "ValidationResult":
-        return cls(valid=True, warnings=warnings or [])
+    def ok(
+        cls,
+        warnings: list[str] | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> "ValidationResult":
+        return cls(valid=True, warnings=warnings or [], details=details or {})
 
     @classmethod
-    def failed(cls, errors: list[str]) -> "ValidationResult":
-        return cls(valid=False, errors=errors)
+    def failed(
+        cls,
+        errors: list[str],
+        details: dict[str, Any] | None = None,
+    ) -> "ValidationResult":
+        return cls(valid=False, errors=errors, details=details or {})
 
 
 @dataclass(slots=True)
@@ -151,7 +163,12 @@ class MarketSnapshot:
     close: float | None = None
     bid: float | None = None
     ask: float | None = None
+    spread: float | None = None
+    spread_bps: float | None = None
     volume: float | None = None
+    bar_volume_15m: float | None = None
+    avg_volume_15m: float | None = None
+    volume_ratio_15m: float | None = None
     current_bar_volume: float | None = None
     previous_high: float | None = None
     daily_close: float | None = None
@@ -159,6 +176,11 @@ class MarketSnapshot:
     volume_ratio_closed_bar: float | None = None
     volume_ratio_live: float | None = None
     average_volume_ratio_last_2_bars: float | None = None
+    volume_status: str = ""
+    volume_timeframe: str = ""
+    volume_comparison_mode: str = ""
+    volume_sample_days: int | None = None
+    volume_sample_count: int | None = None
     elapsed_ratio: float | None = None
     projected_volume: float | None = None
     bar_count: int | None = None
@@ -166,6 +188,16 @@ class MarketSnapshot:
     minimum_tick: float | None = None
     atr_15m: float | None = None
     atr_1h: float | None = None
+    atr_1h_status: str = ""
+    atr_1h_bar_size: str = ""
+    atr_1h_duration: str = ""
+    atr_1h_use_rth: bool | None = None
+    bars_required_for_atr: int | None = None
+    historical_1h_available: bool | None = None
+    historical_1h_error: str = ""
+    last_successful_atr_1h: float | None = None
+    last_successful_atr_1h_at: str | None = None
+    atr_1h_age_seconds: float | None = None
     session: str | None = None
     market_open_time: str | None = None
     current_time: str | None = None
@@ -176,6 +208,20 @@ class MarketSnapshot:
     breakout_already_detected: bool = False
     new_higher_low_confirmed: bool = False
     close_1h: float | None = None
+    market_data_source: str = ""
+    live_quote_source: str = ""
+    market_data_type_requested: int | float | None = None
+    market_data_type_actual: int | float | None = None
+    live_market_data_status: str = ""
+    last_ibkr_error_code: int | None = None
+    last_ibkr_error_message: str = ""
+    bar_date: str = ""
+    bars_15m_count: int | float | None = None
+    bars_1h_count: int | float | None = None
+    hybrid_signal_bar_size: str = ""
+    hybrid_atr_1h_bar_size: str = ""
+    hybrid_sources: dict[str, Any] = field(default_factory=dict)
+    market_data_readiness: dict[str, Any] = field(default_factory=dict)
     historical_bars: list[dict[str, Any]] = field(default_factory=list)
     ema_20: float | None = None
     ema_50: float | None = None

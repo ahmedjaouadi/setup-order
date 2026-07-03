@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Setup Order</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/css/styles.css') }}?v=setup-chart-20260604-6">
+    <title>Setup Order Cockpit</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/styles.css') }}?v=cockpit-dark-20260702-2">
   </head>
   <body data-page="{{ page }}"{% if setup_id is defined %} data-setup-id="{{ setup_id }}"{% endif %}>
     <header class="topbar">
@@ -12,31 +12,40 @@
         <span class="brand-mark">SO</span>
         <div>
           <strong>Setup Order</strong>
-          <span id="mode-label">simulation</span>
+          <span id="mode-label">paper</span>
         </div>
       </div>
       <nav class="nav">
         <a href="/dashboard" data-nav="dashboard">Dashboard</a>
+        <a href="/opportunity-radar" data-nav="opportunity-radar">Radar</a>
         <a href="/setups" data-nav="setups">Setups</a>
-        <a href="/orders" data-nav="orders">Ordres</a>
-        <a href="/positions" data-nav="positions">Positions</a>
-        <a href="/logs" data-nav="logs">Logs</a>
+        <a href="/orders" data-nav="orders">Orders &amp; Positions</a>
+        <a href="/observability" data-nav="observability">Observability</a>
+        <a href="/research" data-nav="research">Research</a>
         <a href="/settings" data-nav="settings">Config</a>
       </nav>
       <div class="runtime">
-        <span class="pill" id="connection-status">DISCONNECTED</span>
-        <span class="pill" id="bot-status">PAUSED</span>
-        <span class="pill warn" id="engine-health-status">CHECKING</span>
-        <button class="icon-button" id="sync-button" type="button" title="Synchroniser">Sync</button>
-        <button class="icon-button" id="pause-button" type="button" title="Pause">Pause</button>
-        <button class="icon-button" id="resume-button" type="button" title="Run">Run</button>
-        <button class="danger-button" id="emergency-button" type="button">Emergency Stop</button>
+        <div class="runtime-status-rail" aria-label="Etat runtime">
+          <span class="pill" id="top-connection-status">DISCONNECTED</span>
+          <span class="pill" id="top-bot-status">PAUSED</span>
+          <span class="pill warn" id="engine-health-status">CHECKING</span>
+          <span class="pill" id="top-broker-tracker">UNKNOWN</span>
+          <span class="pill" id="top-sync-age">-</span>
+          <span class="pill" id="top-auto-execution">BLOCKED</span>
+          <span class="pill" id="top-emergency-risk">OK</span>
+        </div>
+        <div class="runtime-actions">
+          <button class="icon-button" id="sync-button" type="button" title="Synchroniser">Sync</button>
+          <button class="icon-button" id="pause-button" type="button" title="Pause">Pause</button>
+          <button class="icon-button" id="resume-button" type="button" title="Run">Run</button>
+          <button class="danger-button" id="emergency-button" type="button">Emergency Stop</button>
+        </div>
       </div>
     </header>
     <main class="page">
       {% block content %}{% endblock %}
     </main>
     <div class="toast" id="toast" hidden></div>
-    <script src="{{ url_for('static', path='/js/app.js') }}?v=setup-chart-20260604-6"></script>
+    <script src="{{ url_for('static', path='/js/app.js') }}?v=cockpit-dark-20260702-2"></script>
   </body>
 </html>

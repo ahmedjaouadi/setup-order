@@ -3,46 +3,203 @@
 <section class="page-header">
   <div>
     <h1>Dashboard</h1>
+    <p class="subtitle">Un cockpit de controle pour lire en 5 secondes l'etat du moteur, le risque, le broker et les opportunites.</p>
   </div>
 </section>
 
-<section class="metric-grid" id="metric-grid">
-  <article class="metric-card">
-    <span>Argent compte</span>
-    <strong id="metric-account-value">-</strong>
+<section class="dashboard-hero">
+  <div class="dashboard-hero-copy">
+    <span class="hero-kicker">Executive brief</span>
+    <h2>Decide vite ce qui est safe, ce qui bloque et ce qui merite une action maintenant.</h2>
+    <p>
+      Le dashboard met en avant la realite broker, les protections en place et les setups vraiment proches d'une
+      entree. Tout ce qui ralentit l'execution doit sauter aux yeux avant le moindre clic.
+    </p>
+    <div class="hero-actions">
+      <a class="hero-action hero-action-primary" href="/orders">Broker reality</a>
+      <a class="hero-action" href="/opportunity-radar">Opportunity radar</a>
+      <a class="hero-action" href="/setups">Setups</a>
+    </div>
+  </div>
+
+  <div class="dashboard-brief-grid">
+    <article class="brief-card" id="dashboard-brief-card" data-tone="neutral">
+      <span>Decision now</span>
+      <strong id="dashboard-brief-headline">-</strong>
+      <p id="dashboard-brief-summary">-</p>
+    </article>
+    <article class="brief-card" id="dashboard-brief-blockers" data-tone="neutral">
+      <span>Top blockers</span>
+      <strong id="dashboard-brief-blocker-count">-</strong>
+      <p id="dashboard-brief-blocker-details">-</p>
+    </article>
+    <article class="brief-card" id="dashboard-brief-ready" data-tone="neutral">
+      <span>Ready setups</span>
+      <strong id="dashboard-brief-ready-count">-</strong>
+      <p id="dashboard-brief-ready-details">-</p>
+    </article>
+    <article class="brief-card" id="dashboard-brief-freshness" data-tone="neutral">
+      <span>Freshness</span>
+      <strong id="dashboard-brief-freshness-value">-</strong>
+      <p id="dashboard-brief-freshness-note">-</p>
+    </article>
+  </div>
+</section>
+
+<section class="dashboard-status-strip">
+  <article>
+    <span>Broker Tracker</span>
+    <strong id="dashboard-broker-tracker">-</strong>
+    <small>Gate derived from broker reality and reconciliation.</small>
   </article>
-  <article class="metric-card">
-    <span>Cash disponible</span>
-    <strong id="metric-cash">-</strong>
+  <article>
+    <span>Sync age</span>
+    <strong id="dashboard-broker-sync-age">-</strong>
+    <small>Age of the last confirmed TWS snapshot.</small>
   </article>
-  <article class="metric-card">
-    <span>Gain jusqu'a hier</span>
-    <strong id="metric-pnl-yesterday">-</strong>
+  <article>
+    <span>Auto Execution</span>
+    <strong id="dashboard-auto-execution">-</strong>
+    <small>Blocked whenever safety or reconciliation diverges.</small>
   </article>
-  <article class="metric-card">
-    <span>Gain aujourd'hui</span>
-    <strong id="metric-pnl-today">-</strong>
+  <article>
+    <span>Emergency Risk</span>
+    <strong id="dashboard-emergency-risk">-</strong>
+    <small>Positions or orders without protection.</small>
   </article>
-  <article class="metric-card">
-    <span>Setups actifs</span>
-    <strong id="metric-active-setups">0</strong>
+  <article>
+    <span>Mode</span>
+    <strong id="dashboard-mode">-</strong>
+    <small>Execution profile for the active runtime.</small>
   </article>
-  <article class="metric-card">
-    <span>Positions ouvertes</span>
-    <strong id="metric-open-positions">0</strong>
+  <article>
+    <span>P&amp;L source</span>
+    <strong id="dashboard-pnl-source">-</strong>
+    <small>Where today's P&amp;L is coming from.</small>
   </article>
-  <article class="metric-card">
-    <span>Ordres ouverts</span>
-    <strong id="metric-open-orders">0</strong>
-  </article>
-  <article class="metric-card">
-    <span>PnL positions</span>
-    <strong id="metric-positions-pnl">0.00</strong>
-  </article>
-  <article class="metric-card">
-    <span>Perte restante</span>
-    <strong id="metric-loss-remaining">0.00</strong>
-  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <h2>Safety Gate</h2>
+    <div class="panel-actions">
+      <span id="safety-gate-reason-count">-</span>
+    </div>
+  </div>
+  <div class="safety-gate">
+    <div class="safety-gate-verdict" id="safety-gate-verdict" data-state="blocked">
+      <span>Auto execution</span>
+      <strong id="safety-gate-headline">-</strong>
+      <small id="safety-gate-note">-</small>
+    </div>
+    <ul class="safety-gate-conditions" id="safety-gate-conditions"></ul>
+  </div>
+</section>
+
+<section class="dashboard-kpi-groups" id="metric-grid">
+  <div class="kpi-group">
+    <h2>Compte</h2>
+    <div class="metric-grid compact-grid">
+      <article class="metric-card">
+        <span>Net Liquidation</span>
+        <strong id="metric-account-value">-</strong>
+      </article>
+      <article class="metric-card">
+        <span>Available Cash</span>
+        <strong id="metric-cash">-</strong>
+      </article>
+      <article class="metric-card">
+        <span>Buying Power</span>
+        <strong id="metric-buying-power">-</strong>
+      </article>
+      <article class="metric-card">
+        <span>Margin Used</span>
+        <strong id="metric-margin-used">-</strong>
+      </article>
+    </div>
+  </div>
+
+  <div class="kpi-group">
+    <h2>P&L</h2>
+    <div class="metric-grid compact-grid">
+      <article class="metric-card">
+        <span>Daily P&L</span>
+        <strong id="metric-pnl-today">-</strong>
+      </article>
+      <article class="metric-card">
+        <span>Unrealized P&L</span>
+        <strong id="metric-pnl-unrealized">-</strong>
+      </article>
+      <article class="metric-card">
+        <span>Realized P&L</span>
+        <strong id="metric-pnl-realized">-</strong>
+      </article>
+      <article class="metric-card">
+        <span>Total P&L</span>
+        <strong id="metric-pnl-total">-</strong>
+      </article>
+      <article class="metric-card wide-metric">
+        <span>Source P&L</span>
+        <strong id="metric-pnl-source">-</strong>
+      </article>
+    </div>
+  </div>
+
+  <div class="kpi-group">
+    <h2>Risque</h2>
+    <div class="metric-grid compact-grid">
+      <article class="metric-card">
+        <span>Remaining Risk</span>
+        <strong id="metric-loss-remaining">-</strong>
+      </article>
+      <article class="metric-card">
+        <span>Risk Status</span>
+        <strong id="metric-loss-remaining-status">-</strong>
+      </article>
+      <article class="metric-card">
+        <span>Unprotected Positions</span>
+        <strong id="metric-unprotected-positions">0</strong>
+      </article>
+      <article class="metric-card">
+        <span>Unprotected Orders</span>
+        <strong id="metric-unprotected-orders">0</strong>
+      </article>
+    </div>
+  </div>
+
+  <div class="kpi-group">
+    <h2>Activite</h2>
+    <div class="metric-grid compact-grid">
+      <article class="metric-card">
+        <span>Setups actifs</span>
+        <strong id="metric-active-setups">0</strong>
+      </article>
+      <article class="metric-card">
+        <span>Positions ouvertes</span>
+        <strong id="metric-open-positions">0</strong>
+      </article>
+      <article class="metric-card">
+        <span>Ordres actifs TWS</span>
+        <strong id="metric-active-broker-orders">0</strong>
+      </article>
+      <article class="metric-card">
+        <span>Prepared Orders</span>
+        <strong id="metric-prepared-orders">0</strong>
+      </article>
+      <article class="metric-card">
+        <span>Ordres ouverts</span>
+        <strong id="metric-open-orders">0</strong>
+      </article>
+      <article class="metric-card">
+        <span>PnL positions</span>
+        <strong id="metric-positions-pnl">0.00</strong>
+      </article>
+      <article class="metric-card">
+        <span>PnL realise jusqu'a hier</span>
+        <strong id="metric-pnl-yesterday">-</strong>
+      </article>
+    </div>
+  </div>
 </section>
 
 <section class="panel">
@@ -76,7 +233,7 @@
 
   <div class="panel">
     <div class="panel-heading">
-      <h2>Simulation marche</h2>
+      <h2>Injection marche</h2>
     </div>
     <form class="tool-form" id="market-form">
       <label>
@@ -105,6 +262,62 @@
       </label>
       <button type="submit">Envoyer tick</button>
     </form>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <h2>Broker Reality</h2>
+    <div class="panel-actions">
+      <span class="status" id="broker-reality-blocked">-</span>
+      <span id="broker-reality-mismatch-count">0 mismatch</span>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Position Qty</th>
+          <th>Avg Price</th>
+          <th>Current Price</th>
+          <th>Daily P&L</th>
+          <th>Unrealized P&L</th>
+          <th>Entry Order</th>
+          <th>Stop Order</th>
+          <th>Trailing Stop</th>
+          <th>Protection</th>
+          <th>Broker Status</th>
+          <th>Last Sync</th>
+          <th>Action Required</th>
+        </tr>
+      </thead>
+      <tbody id="broker-reality-table"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <h2>Risk & Protection</h2>
+  </div>
+  <div class="metric-grid compact-grid" id="risk-protection-summary"></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Qty</th>
+          <th>Stop actuel</th>
+          <th>Distance stop</th>
+          <th>Risque restant</th>
+          <th>Trailing</th>
+          <th>Protection</th>
+          <th>Action Required</th>
+        </tr>
+      </thead>
+      <tbody id="risk-protection-table"></tbody>
+    </table>
   </div>
 </section>
 

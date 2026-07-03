@@ -1,0 +1,8 @@
+# Aggregate optional forecasting providers for the app venv.
+# Install progressively if you want to validate each tier separately:
+# - requirements-forecasting-p1.txt: Chronos, Darts, Lag-Llama
+# - requirements-forecasting-p2.txt: NeuralForecast, AutoGluon-TimeSeries
+# - requirements-forecasting-p3.txt: Moirai / Uni2TS
+-r requirements-forecasting-p1.txt
+-r requirements-forecasting-p2.txt
+-r requirements-forecasting-p3.txt

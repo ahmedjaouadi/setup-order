@@ -40,6 +40,30 @@
   <div class="market-summary" id="setup-market-summary"></div>
 </section>
 
+<section class="panel forecast-panel">
+  <div class="panel-heading">
+    <h2>Forecast stack summary</h2>
+    <div class="config-actions">
+      <button class="secondary-button" type="button" id="setup-forecast-refresh">Recalculer</button>
+    </div>
+  </div>
+  <p class="field-message" id="setup-forecast-message" hidden></p>
+  <dl class="detail-list compact-detail-list" id="setup-forecast-stack-summary"></dl>
+  <div class="v2-table-wrap"><table class="v2-table" id="setup-forecast-stack-members"></table></div>
+  <div class="forecast-layout">
+    <div class="forecast-chart-wrap">
+      <canvas id="setup-forecast-chart"></canvas>
+      <div class="chart-empty" id="setup-forecast-empty" hidden></div>
+    </div>
+    <dl class="detail-list compact-detail-list forecast-summary" id="setup-forecast-summary"></dl>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading"><h2>Snapshot à la création</h2></div>
+  <dl class="detail-list compact-detail-list" id="setup-creation-snapshot"></dl>
+</section>
+
 <section class="panel entry-panel">
   <div class="panel-heading">
     <h2>Entree</h2>
@@ -57,11 +81,29 @@
   <div class="analysis-timeline" id="setup-analysis-timeline"></div>
 </section>
 
+<section class="panel intelligence-panel">
+  <div class="panel-heading">
+    <h2>Intelligence</h2>
+    <div class="config-actions">
+      <button type="button" id="setup-intelligence-analyze">Analyser ce setup</button>
+    </div>
+  </div>
+  <p class="field-message" id="setup-intelligence-message" hidden></p>
+  <div class="intelligence-overview" id="setup-intelligence-overview"></div>
+  <div class="intelligence-compare" id="setup-intelligence-compare"></div>
+  <div class="intelligence-scenarios" id="setup-intelligence-scenarios"></div>
+  <div class="intelligence-ambiguities" id="setup-intelligence-ambiguities"></div>
+  <div class="intelligence-fields" id="setup-intelligence-fields"></div>
+  <div class="intelligence-history" id="setup-intelligence-history"></div>
+</section>
+
 <section class="panel">
   <div class="panel-heading">
     <h2>Etat</h2>
+    <button class="secondary-button" type="button" id="setup-detail-json-button">Infos JSON</button>
   </div>
   <dl class="detail-list setup-state-detail" id="setup-detail-summary"></dl>
+  <pre class="config-view compact setup-detail-json-output" id="setup-detail-json-output" hidden></pre>
 </section>
 
 <section class="panel">
@@ -70,6 +112,8 @@
     <div class="config-actions">
       <button class="secondary-button" type="button" id="setup-config-format">Formater</button>
       <button class="secondary-button" type="button" id="setup-config-reset">Recharger</button>
+      <button class="secondary-button" type="button" id="setup-config-arm" title="Armer le setup sans sauvegarder la configuration">Armer setup</button>
+      <button class="secondary-button" type="button" id="setup-config-disarm" title="Desarmer le setup sans modifier la configuration">Desarmer setup</button>
       <button type="button" id="setup-config-save">Sauvegarder</button>
     </div>
   </div>

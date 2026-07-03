@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>System Health</h1>
+    <p class="subtitle">Health checks, metrics runtime, risque portefeuille et qualite de donnees recente.</p>
+  </div>
+</section>
+
+<section class="content-grid">
+  <div class="panel">
+    <div class="panel-heading">
+      <h2>Health</h2>
+    </div>
+    <div class="v2-kpi-grid" id="v2-health"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-heading">
+      <h2>Metrics</h2>
+    </div>
+    <div class="v2-kpi-grid" id="v2-metrics"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-heading">
+      <h2>Portfolio Risk</h2>
+    </div>
+    <pre class="config-view compact" id="v2-portfolio-risk"></pre>
+  </div>
+</section>
+{% endblock %}

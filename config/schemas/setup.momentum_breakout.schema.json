@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "setup.momentum_breakout.schema.json",
+  "title": "Momentum Breakout Setup",
+  "type": "object",
+  "required": ["breakout"],
+  "properties": {
+    "breakout": {
+      "type": "object",
+      "required": ["resistance"],
+      "properties": {
+        "resistance": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "fast_breakout_volume_ratio_min": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "confirmed_breakout_volume_ratio_min": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "confirmed_breakout_hold_bars": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "confirmed_breakout_timeframe": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "missed_breakout": {
+      "type": "object",
+      "properties": {
+        "retest_zone_min": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "retest_zone_max": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "rearm": {
+      "type": "object",
+      "properties": {
+        "new_local_resistance": {
+          "type": ["number", "null"],
+          "exclusiveMinimum": 0
+        },
+        "new_trigger": {
+          "type": ["number", "null"],
+          "exclusiveMinimum": 0
+        },
+        "new_limit": {
+          "type": ["number", "null"],
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "setup.breakout_retest.schema.json",
+  "title": "Breakout Retest Setup",
+  "type": "object",
+  "required": ["breakout", "retest"],
+  "properties": {
+    "breakout": {
+      "type": "object",
+      "required": ["daily_close_above"],
+      "properties": {
+        "daily_close_above": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "retest": {
+      "type": "object",
+      "required": ["zone_min", "zone_max"],
+      "properties": {
+        "zone_min": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "zone_max": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "no_close_below": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max_retest_days": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

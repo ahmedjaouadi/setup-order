@@ -9,7 +9,7 @@ from app.setups.momentum_breakout import MomentumBreakoutSetup
 from app.setups.position_management import PositionManagementSetup
 from app.setups.pullback_continuation import PullbackContinuationSetup
 from app.setups.range_breakout import RangeBreakoutSetup
-from app.setups.trailing_runner import TrailingRunnerSetup
+from app.setups.trailing_runner import RunnerSetup, TrailingRunnerSetup
 
 
 class UnknownSetupTypeError(ValueError):
@@ -24,6 +24,7 @@ class SetupFactory:
         MomentumBreakoutSetup.setup_type: MomentumBreakoutSetup,
         PositionManagementSetup.setup_type: PositionManagementSetup,
         RangeBreakoutSetup.setup_type: RangeBreakoutSetup,
+        RunnerSetup.setup_type: RunnerSetup,
         TrailingRunnerSetup.setup_type: TrailingRunnerSetup,
     }
 

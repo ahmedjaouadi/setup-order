@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>Market Context</h1>
+    <p class="subtitle">Regime local, secteurs, force relative et symboles suivis.</p>
+  </div>
+  <button type="button" id="v2-market-refresh">Refresh</button>
+</section>
+
+<section class="content-grid">
+  <div class="panel">
+    <div class="panel-heading">
+      <h2>Overview</h2>
+    </div>
+    <div class="v2-kpi-grid" id="v2-market-overview"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-heading">
+      <h2>Sectors</h2>
+    </div>
+    <div class="v2-table-wrap">
+      <table class="v2-table" id="v2-market-sectors"></table>
+    </div>
+  </div>
+</section>
+{% endblock %}

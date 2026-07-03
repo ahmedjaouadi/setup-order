@@ -1,6 +1,6 @@
 app:
   environment: "development"
-  mode: "simulation"
+  mode: "paper"
   timezone: "Europe/Paris"
 
 broker:
@@ -11,12 +11,30 @@ broker:
   client_id: 1001
   reconnect: true
   reconnect_interval_seconds: 5
-  market_data_source: "historical"
+  market_data_source: "hybrid"
+  market_data_type: 1
+  market_data_type_fallbacks: [3]
+  live_quote_wait_seconds: 2.0
+  historical_request_timeout_seconds: 12
+  market_data_ttl:
+    live_quote_seconds: 20
+    hybrid_signal_seconds: 60
+    atr_15m_seconds: 1200
+    atr_1h_seconds: 5400
+    historical_seconds: 300
   historical_duration: "30 D"
   historical_bar_size: "1 day"
+  hybrid_signal_duration: "5 D"
+  hybrid_signal_bar_size: "15 mins"
+  hybrid_atr_1h_duration: "30 D"
+  hybrid_atr_1h_bar_size: "1 hour"
   historical_what_to_show: "TRADES"
   historical_use_rth: true
-  connector: "simulated"
+  stock_exchange: "SMART"
+  primary_exchange: ""
+  primary_exchange_by_symbol:
+    NOK: "NYSE"
+  connector: "paper"
 
 risk:
   max_open_positions: 5
@@ -26,15 +44,416 @@ risk:
   max_total_exposure_usd: 1000
   allow_short: false
 
+trailing_stop_loss:
+  enabled_by_default: true
+  required_for_all_new_setups: true
+  legacy_fixed_stop_allowed: false
+  legacy_fields:
+    allow_initial_stop_loss: false
+    allow_protective_stop: false
+    migrate_existing_setups: true
+  default_mode: "AUTO_INTELLIGENT"
+  default_method: "HYBRID_ATR_STRUCTURE"
+  atr:
+    timeframe: "1h"
+    period: 14
+    multiplier_initial_mode: "AUTO"
+    multiplier_trailing_mode: "AUTO"
+    min_multiplier: 1.0
+    max_multiplier: 3.5
+  structure:
+    enabled: true
+    references:
+      - "HIGHER_LOW"
+      - "INTRADAY_SUPPORT"
+      - "RANGE_LOW"
+      - "BROKEN_RESISTANCE_AS_SUPPORT"
+      - "VWAP_PULLBACK"
+      - "PREVIOUS_DAY_LOW"
+    buffer_policy: "MAX_OF_TICK_SPREAD_ATR_FRACTION"
+    min_tick_buffer: 2
+    spread_buffer_multiplier: 2
+    atr_fraction_buffer: 0.1
+  stock_specific_adjustment:
+    enabled: true
+    use_volatility_regime: true
+    use_liquidity_regime: true
+    use_spread_regime: true
+    use_relative_volume: true
+    use_gap_percent: true
+    use_intraday_range_percent: true
+  ratchet:
+    enabled: true
+    update_on_closed_bar_only: true
+    timeframe: "15m"
+    never_lower_stop: true
+    do_not_update_outside_rth: true
+    do_not_update_if_spread_wide: true
+    min_improvement_atr_fraction: 0.15
+    allow_break_even_move: true
+    break_even_trigger_r_multiple: 1.0
+  broker:
+    prefer_native_ibkr_trailing: true
+    fallback_to_managed_stop_updates: true
+    require_attached_stop_before_entry_transmission: true
+    require_parent_child_bracket: true
+    block_if_broker_stop_not_confirmed: true
+  safety:
+    block_entry_if_initial_stop_missing: true
+    block_entry_if_trailing_stop_not_ready: true
+    block_entry_if_risk_unknown: true
+    block_entry_if_quantity_zero: true
+    block_if_position_without_stop: true
+    block_if_entry_order_without_stop: true
+    never_lower_stop: true
+
 market:
   allow_premarket: false
   allow_after_hours: false
   stale_data_seconds: 20
+  tws_stock_quote_timeout_seconds: 4
+  tws_stock_poll_total_timeout_seconds: 120
+  tws_historical_timeout_seconds: 15
+  heartbeat_stale_seconds: 180
+  event_deduplication:
+    enabled: true
+    repeated_hold_cooldown_seconds: 300
+
+market_data:
+  require_live_market_data_for_live_orders: true
+  require_live_market_data_for_paper_orders: false
+  allow_delayed_market_data_in_paper: true
+  allow_delayed_market_data_in_simulation: true
+
+broker_tracker:
+  enabled: true
+  refresh_seconds: 2
+  stale_after_seconds: 10
+  block_auto_execution_if_missing: true
+  block_auto_execution_if_stale: true
+
+execution_safety:
+  block_new_entries_if_broker_tracker_stale: true
+  block_new_entries_if_unprotected_order_exists: true
+  block_new_entries_if_position_without_stop_exists: true
+  block_new_entries_if_reconciliation_mismatch: true
+
+indicators:
+  atr_1h:
+    required_for_paper: false
+    required_for_live: true
+    allow_stale_in_paper: true
+    stale_after_minutes: 120
+
+forecasting:
+  enabled: true
+  provider: "timesfm"
+  model: "timesfm_2_5_200m"
+  default_models:
+    - "timesfm"
+    - "chronos"
+    - "lag_llama"
+    - "moirai"
+    - "moirai_uni2ts"
+    - "uni2ts"
+    - "neuralforecast"
+    - "autogluon"
+    - "naive_baseline"
+    - "atr_baseline"
+  model_repo: "google/timesfm-2.5-200m-pytorch"
+  python_executable: "C:/Users/AhmedJAOUADI/AppData/Local/Programs/Python/Python311/python.exe"
+  providers:
+    chronos:
+      runtime_mode: "external_worker"
+      python_executable: "C:/Users/AhmedJAOUADI/Workspace/Chronos/.venv/Scripts/python.exe"
+      use_for_scoring_only: true
+      model_repo: "amazon/chronos-2"
+      torch_dtype: "bfloat16"
+      hf_token_env: "HF_TOKEN"
+      local_files_only: true
+      worker_timeout_seconds: 300
+    darts:
+      runtime_mode: "external_worker"
+      python_executable: "C:/Users/AhmedJAOUADI/Workspace/Darts/.venv/Scripts/python.exe"
+      use_for_scoring_only: true
+    naive_baseline:
+      runtime_mode: "in_process"
+      use_for_scoring_only: true
+    atr_baseline:
+      runtime_mode: "in_process"
+      use_for_scoring_only: true
+    lag_llama:
+      runtime_mode: "external_worker"
+      python_executable: "C:/Users/AhmedJAOUADI/Workspace/Lag-Llama/.venv/Scripts/python.exe"
+      worker_script: "C:/Users/AhmedJAOUADI/Workspace/setup-order/app/forecasting/provider_worker.py"
+      strict_dependency_probe: true
+      timeout_seconds: 180
+      use_for_scoring_only: true
+      callable: "app.forecasting.provider_bridges:lag_llama_forecast"
+      checkpoint_repo: "time-series-foundation-models/Lag-Llama"
+      checkpoint_file: "lag-llama.ckpt"
+      num_samples: 100
+      worker_timeout_seconds: 300
+    moirai:
+      runtime_mode: "external_worker"
+      python_executable: "C:/Users/AhmedJAOUADI/Workspace/Uni2TS  Moirai/.venv/Scripts/python.exe"
+      worker_script: "C:/Users/AhmedJAOUADI/Workspace/setup-order/app/forecasting/provider_worker.py"
+      strict_dependency_probe: true
+      timeout_seconds: 180
+      use_for_scoring_only: true
+      callable: "app.forecasting.provider_bridges:moirai_uni2ts_forecast"
+      model_repo: "Salesforce/moirai-1.1-R-small"
+      num_samples: 100
+      worker_timeout_seconds: 300
+    moirai_uni2ts:
+      runtime_mode: "external_worker"
+      python_executable: "C:/Users/AhmedJAOUADI/Workspace/Uni2TS  Moirai/.venv/Scripts/python.exe"
+      worker_script: "C:/Users/AhmedJAOUADI/Workspace/setup-order/app/forecasting/provider_worker.py"
+      strict_dependency_probe: true
+      timeout_seconds: 180
+      use_for_scoring_only: true
+      callable: "app.forecasting.provider_bridges:moirai_uni2ts_forecast"
+      model_repo: "Salesforce/moirai-1.1-R-small"
+      num_samples: 100
+      worker_timeout_seconds: 300
+    uni2ts:
+      runtime_mode: "external_worker"
+      python_executable: "C:/Users/AhmedJAOUADI/Workspace/Uni2TS  Moirai/.venv/Scripts/python.exe"
+      worker_script: "C:/Users/AhmedJAOUADI/Workspace/setup-order/app/forecasting/provider_worker.py"
+      strict_dependency_probe: true
+      timeout_seconds: 180
+      use_for_scoring_only: true
+      callable: "app.forecasting.provider_bridges:moirai_uni2ts_forecast"
+      model_repo: "Salesforce/moirai-1.1-R-small"
+      num_samples: 100
+      worker_timeout_seconds: 300
+    neuralforecast:
+      runtime_mode: "external_worker"
+      python_executable: "C:/Users/AhmedJAOUADI/Workspace/NeuralForecast/.venv/Scripts/python.exe"
+      worker_script: "C:/Users/AhmedJAOUADI/Workspace/setup-order/app/forecasting/provider_worker.py"
+      strict_dependency_probe: true
+      timeout_seconds: 120
+      use_for_scoring_only: true
+      model_path: ""
+      models: ["NHITS", "NBEATS", "PatchTST", "iTransformer"]
+      max_steps: 25
+      worker_timeout_seconds: 300
+    autogluon:
+      runtime_mode: "external_worker"
+      python_executable: "C:/Users/AhmedJAOUADI/Workspace/AutoGluonTS/.venv/Scripts/python.exe"
+      worker_script: "C:/Users/AhmedJAOUADI/Workspace/setup-order/app/forecasting/provider_worker.py"
+      strict_dependency_probe: true
+      timeout_seconds: 120
+      use_for_scoring_only: true
+      model_path: ""
+      presets: "fast_training"
+      time_limit_seconds: 60
+      worker_timeout_seconds: 300
+  worker_timeout_seconds: 180
+  auto_recalc_interval_seconds: 900
+  backend: "torch"
+  device: "auto"
+  timeframe: "15m"
+  target: "log_return"
+  context_bars: 256
+  # Minimum bars before a forecast is produced. Forecasts are advisory
+  # (use_for_decision: false) and confidence already downgrades to LOW when the
+  # available context is below context_bars, so a lower floor lets
+  # thinly-traded / recently-listed symbols still get an advisory forecast
+  # instead of a hard INSUFFICIENT_DATA refusal.
+  min_context_bars: 48
+  horizon_bars: 4
+  recalc_on_closed_bar_only: true
+  stale_after_minutes: 20
+  use_for_decision: false
+  display_in_gui: true
+  persist_results: true
+  score_thresholds:
+    bullish: 75
+    neutral_bullish: 60
+    neutral: 40
+
+forecast_accuracy:
+  auto_evaluate_interval_seconds: 900
+  min_required_samples: 30
+  grades:
+    A: {min_direction_accuracy: 0.62, max_mape: 0.04}
+    B: {min_direction_accuracy: 0.57, max_mape: 0.06}
+    C: {min_direction_accuracy: 0.52, max_mape: 0.08}
+    D: {min_direction_accuracy: 0.48, max_mape: 0.12}
+
+forecast_stack:
+  enabled: true
+  execution_mode: "scoring_only"
+  primary_model: "timesfm"
+  active_models:
+    - "timesfm"
+    - "chronos"
+    - "lag_llama"
+    - "moirai"
+    - "moirai_uni2ts"
+    - "uni2ts"
+    - "neuralforecast"
+    - "autogluon"
+    - "naive_baseline"
+    - "atr_baseline"
+    - "darts"
+  comparison_models: ["chronos", "lag_llama", "darts"]
+  advanced_models: ["neuralforecast", "autogluon"]
+  experimental_models: ["moirai", "moirai_uni2ts", "uni2ts"]
+  horizons:
+    "15m": [4, 8, 16]
+    "1h": [4, 8, 24]
+    "1d": [3, 5, 10]
+  providers:
+    timesfm: {enabled: true, priority: 0, role: "primary", use_for_setup_score: true, use_for_execution: false, use_for_model_lab: true}
+    naive_baseline: {enabled: true, priority: 0, role: "baseline", use_for_setup_score: true, use_for_model_lab: true}
+    atr_baseline: {enabled: true, priority: 0, role: "baseline", use_for_setup_score: true, use_for_model_lab: true}
+    chronos: {enabled: true, auto_enable_when_ready: true, priority: 1, role: "direct_competitor", use_for_setup_score: true, use_for_execution: false, use_for_model_lab: true}
+    lag_llama: {enabled: true, auto_enable_when_ready: true, priority: 1, role: "probabilistic", use_for_setup_score: true, use_for_execution: false, use_for_model_lab: true}
+    darts:
+      enabled: true
+      auto_enable_when_ready: true
+      priority: 1
+      role: "benchmark_framework"
+      use_for_runtime_forecast: false
+      use_for_model_lab: true
+      runtime_mode: "in_process"
+      worker_timeout_seconds: 180
+    neuralforecast: {enabled: true, auto_enable_when_ready: true, priority: 2, role: "deep_learning_models", use_for_setup_score: true, use_for_execution: false, use_for_model_lab: true}
+    autogluon: {enabled: true, auto_enable_when_ready: true, priority: 2, role: "automl_baseline", use_for_setup_score: true, use_for_execution: false, use_for_model_lab: true}
+    moirai: {enabled: true, auto_enable_when_ready: true, priority: 3, role: "experimental_foundation_benchmark", use_for_setup_score: true, use_for_execution: false, use_for_model_lab: true}
+    moirai_uni2ts: {enabled: true, auto_enable_when_ready: true, priority: 3, role: "experimental_foundation_benchmark", use_for_setup_score: true, use_for_execution: false, use_for_model_lab: true}
+    uni2ts: {enabled: true, auto_enable_when_ready: true, priority: 3, role: "experimental_foundation_benchmark", use_for_setup_score: true, use_for_execution: false, use_for_model_lab: true}
+  safety:
+    block_order_from_forecast: true
+    use_forecast_for_scoring_only: true
+    require_accuracy_history_before_score_boost: true
+    min_accuracy_samples_for_boost: 30
+
+opportunity_scanner:
+  enabled: true
+  default_timeframes: ["15m", "1h", "1d"]
+  max_candidates_per_scan: 100
+  max_shortlisted: 20
+  scan_interval_seconds: 30
+  universe:
+    source: "watchlist"
+    max_symbols: 200
+    default_watchlist_file: "data/watchlists/default.yaml"
+    include_active_setups: true
+    include_open_positions: true
+    include_recent_quotes: true
+  filters:
+    min_price: 1.0
+    max_price: 1000.0
+    min_volume: 100000
+    min_volume_ratio: 0.8
+    max_spread_pct: 0.35
+    allow_missing_quote_for_setup: true
+  context_thresholds:
+    detected: 70
+    watchlist: 40
+    weak: 20
+    strong_perf: 5
+    very_strong_perf: 10
+    rs_spy: 3
+    rs_sector: 2
+    volume_ratio: 1.5
+    max_spread_pct: 0.35
+  scanners:
+    momentum_breakout:
+      enabled: true
+      min_volume_ratio: 1.5
+    breakout_retest:
+      enabled: true
+      retest_max_distance_atr: 1.0
+    reclaim:
+      enabled: true
+      min_volume_ratio: 1.0
+    pullback_continuation:
+      enabled: true
+
+opportunities:
+  shortlist:
+    max_items: 25
+    min_score: 55
+    include_blocked_with_reason: true
+    expire_after_minutes:
+      "15m": 60
+      "1h": 240
+      "1d": 1440
+    priority_order:
+      - "DATA_QUALITY_OK"
+      - "SETUP_SCORE"
+      - "VOLUME_SCORE"
+      - "DISTANCE_TO_TRIGGER"
+      - "FORECAST_ALIGNMENT"
+
+data_quality:
+  max_last_tick_age_seconds: 20
+  max_spread_pct_default: 0.35
+  reject_bid_greater_than_ask: true
+  require_closed_candle_for_close_conditions: true
+  block_entry_on_unknown_quality: true
+
+features:
+  enabled: true
+  persist_snapshots: true
+  max_age_seconds:
+    tick_features: 20
+    candle_1m: 90
+    candle_5m: 360
+    candle_15m: 1200
+    daily: 172800
+
+scoring:
+  enabled: true
+  weights:
+    technical_score: 0.20
+    volume_score: 0.15
+    liquidity_score: 0.15
+    risk_score: 0.15
+    trend_score: 0.10
+    market_context_score: 0.10
+    forecast_alignment_score: 0.10
+    backtest_score: 0.05
+
+portfolio_risk:
+  enabled: true
+  max_total_exposure_usd: 1000
+  max_sector_exposure_pct: 40
+  max_theme_exposure_pct: 50
+  max_correlated_positions: 3
+  max_single_symbol_exposure_pct: 20
+  high_correlation_threshold: 0.75
+  reduce_size_if_high_correlation: true
+
+observability:
+  enabled: true
+  persist_decision_traces: true
+  expose_metrics_endpoint: true
+  audit_report_enabled: true
+
+runtime:
+  use_event_bus: true
+  max_event_queue_size: 10000
+  reconciliation_interval_seconds: 45
+  scanner_interval_seconds: 60
+  forecast_jobs_max_concurrency: 2
+  backtest_jobs_max_concurrency: 1
 
 orders:
   default_entry_order_type: "STP_LMT"
   default_stop_order_type: "STP"
   cancel_unfilled_entry_after_minutes: 30
+
+# Revalidation automatique du cycle de vie des setups (WAITING_ACTIVATION,
+# BLOCKED, STALE_SETUP, MISSED_BREAKOUT_WAIT_RETEST).
+lifecycle:
+  revalidate_interval_seconds: 30
+  max_age_days: 30
+  price_too_far_percent: 1.5
 
 setup_defaults:
   timeframes:
@@ -53,6 +472,61 @@ setup_defaults:
     volume_above_average: 1.5
   range:
     min_days_inside_range: 5
+
+entry_decision:
+  use_final_engine_decision_for_gui: true
+  gui_must_not_rebuild_decision_from_partial_checks: true
+  anti_chase:
+    enabled: true
+    long_rule: "ASK_ABOVE_MAXIMUM_LIMIT_PLUS_STALE_BUFFER"
+    short_rule: "BID_BELOW_MINIMUM_LIMIT_MINUS_STALE_BUFFER"
+    action_if_triggered: "MISSED_BREAKOUT"
+    next_action: "WAITING_RETEST"
+  risk:
+    recalculate_current_executable_risk: true
+    block_if_current_risk_exceeds_max_risk: true
+    show_planned_vs_current_risk: true
+  session_consistency:
+    enabled: true
+    warn_if_signal_bar_from_previous_rth: true
+    block_entry_if_pre_market_gap_invalidates_setup: true
+    require_current_session_confirmation: true
+
+session_policy:
+  enabled: true
+  require_regular_trading_hours_for_entry: true
+  allow_premarket_entry: false
+  allow_after_hours_entry: false
+  wait_after_open_minutes: 30
+  wait_closed_bars_after_open: 2
+  wait_bars_timeframe: "15m"
+  require_rth_volume_confirmation: true
+  require_rth_spread_check: true
+  require_rth_risk_recalculation: true
+  extended_hours:
+    allow_detection: true
+    allow_auto_execution: false
+    allow_manual_review: true
+
+volume_confirmation_policy_by_setup_type:
+  momentum_breakout:
+    required_for_entry: true
+    weak_volume_action: "WAITING_VOLUME_CONFIRMATION"
+  breakout_retest:
+    required_for_entry: false
+    weak_volume_action: "WARNING_ONLY"
+  pullback_continuation:
+    required_for_entry: false
+    weak_volume_action: "WARNING_ONLY"
+  position_management:
+    required_for_entry: false
+    weak_volume_action: "IGNORE_FOR_MANAGEMENT"
+  runner:
+    required_for_entry: false
+    weak_volume_action: "IGNORE_FOR_MANAGEMENT"
+  trailing_runner:
+    required_for_entry: false
+    weak_volume_action: "IGNORE_FOR_MANAGEMENT"
 
 storage:
   database_file: "data/trading_state.sqlite"

@@ -1,0 +1,4 @@
+# P2: offline deep-learning and AutoML benchmarks.
+pandas
+neuralforecast
+autogluon.timeseries

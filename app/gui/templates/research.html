@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>Research</h1>
+    <p class="subtitle">Une page pour les modeles, la stack de forecast, les benchmarks et les backtests.</p>
+  </div>
+  <div class="hub-nav" aria-label="Raccourcis research">
+    <a href="#model-catalog">Models</a>
+    <a href="#provider-stack">Providers</a>
+    <a href="#benchmarks">Benchmarks</a>
+    <a href="#experiments">Experiments</a>
+    <a href="#backtests">Backtests</a>
+  </div>
+</section>
+
+<section class="hub-guide">
+  <article class="hub-guide-card">
+    <strong>Ce qui existe</strong>
+    <p>Models et Providers montrent les briques disponibles, leurs roles et leurs garde-fous.</p>
+  </article>
+  <article class="hub-guide-card">
+    <strong>Ce qui marche</strong>
+    <p>Benchmarks et experiments servent a comparer les modeles hors runtime live.</p>
+  </article>
+  <article class="hub-guide-card">
+    <strong>Ce qui prouve</strong>
+    <p>Backtests aident a voir si une regle ou un modele apporte vraiment une valeur exploitable.</p>
+  </article>
+</section>
+
+<section class="content-grid two-col" id="model-catalog">
+  <div class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Model catalog</h2>
+        <p class="panel-subtitle">Baselines et modeles charges par le moteur forecasting.</p>
+      </div>
+    </div>
+    <div class="v2-table-wrap">
+      <table class="v2-table" id="v2-forecast-models"></table>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Default policy</h2>
+        <p class="panel-subtitle">Politique par defaut, selection et mode d'usage du forecasting.</p>
+      </div>
+    </div>
+    <pre class="config-view compact" id="v2-forecast-defaults"></pre>
+  </div>
+</section>
+
+<section class="content-grid two-col" id="provider-stack">
+  <div class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Forecast providers</h2>
+        <p class="panel-subtitle">Disponibilite reelle, role, priorite et statut de chaque fournisseur.</p>
+      </div>
+    </div>
+    <div class="v2-table-wrap">
+      <table class="v2-table" id="forecast-stack-providers"></table>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Safety policy</h2>
+        <p class="panel-subtitle">Rappel des protections pour eviter tout usage executionnel direct.</p>
+      </div>
+    </div>
+    <pre class="config-view compact" id="forecast-stack-safety"></pre>
+  </div>
+</section>
+
+<section class="panel" id="forecast-accuracy">
+  <div class="panel-heading">
+    <div>
+      <h2>Forecast accuracy</h2>
+      <p class="panel-subtitle">Historique de performance par modele, symbole, timeframe et horizon.</p>
+    </div>
+  </div>
+  <div class="tool-form inline" id="forecast-accuracy-filters">
+    <label>
+      <span>Model</span>
+      <select id="forecast-accuracy-model"></select>
+    </label>
+    <label>
+      <span>Symbol</span>
+      <select id="forecast-accuracy-symbol"></select>
+    </label>
+    <label>
+      <span>Timeframe</span>
+      <select id="forecast-accuracy-timeframe"></select>
+    </label>
+    <label>
+      <span>Horizon</span>
+      <select id="forecast-accuracy-horizon"></select>
+    </label>
+    <button class="primary-button" id="forecast-accuracy-refresh" type="button">Refresh</button>
+  </div>
+  <div class="content-grid two-col">
+    <div>
+      <div class="v2-table-wrap">
+        <table class="v2-table" id="forecast-accuracy-scorecards"></table>
+      </div>
+    </div>
+    <div>
+      <div class="v2-table-wrap">
+        <table class="v2-table" id="forecast-accuracy-outcomes"></table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="panel" id="benchmarks">
+  <div class="panel-heading">
+    <div>
+      <h2>Model benchmarks</h2>
+      <p class="panel-subtitle">Historique des comparaisons rapides symbole par symbole.</p>
+    </div>
+  </div>
+  <div class="v2-table-wrap">
+    <table class="v2-table" id="v2-model-benchmarks"></table>
+  </div>
+</section>
+
+<section class="panel" id="experiments">
+  <div class="panel-heading">
+    <div>
+      <h2>Forecast stack experiments</h2>
+      <p class="panel-subtitle">Experiences offline, resumes et statut des runs compares.</p>
+    </div>
+  </div>
+  <div class="v2-table-wrap">
+    <table class="v2-table" id="forecast-stack-experiments"></table>
+  </div>
+  <div class="v2-table-wrap">
+    <table class="v2-table" id="forecast-stack-results"></table>
+  </div>
+</section>
+
+<section class="panel" id="backtests">
+  <div class="panel-heading">
+    <div>
+      <h2>Backtests</h2>
+      <p class="panel-subtitle">Runs locaux relies aux setups ou scenarios pour valider une idee avant usage.</p>
+    </div>
+  </div>
+  <div class="v2-table-wrap">
+    <table class="v2-table" id="v2-backtests"></table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>Observability</h1>
+    <p class="subtitle">Une page pour la sante runtime, les evenements, les echanges TWS et les traces de decision.</p>
+  </div>
+  <div class="hub-nav" aria-label="Raccourcis observability">
+    <a href="#runtime-health">Health</a>
+    <a href="#event-stream">Events</a>
+    <a href="#tws-stream">TWS</a>
+    <a href="#decision-traces">Decision trace</a>
+  </div>
+</section>
+
+<section class="hub-guide">
+  <article class="hub-guide-card">
+    <strong>Etat global</strong>
+    <p>Health et Metrics disent si le moteur tourne bien et si le portefeuille reste dans les garde-fous.</p>
+  </article>
+  <article class="hub-guide-card">
+    <strong>Chronologie</strong>
+    <p>Events et TWS montrent ce qui vient de se passer, avec le detail technique utile pour diagnostiquer.</p>
+  </article>
+  <article class="hub-guide-card">
+    <strong>Pourquoi</strong>
+    <p>Decision Trace explique les refus, validations et arbitrages critiques du moteur.</p>
+  </article>
+</section>
+
+<section class="content-grid" id="runtime-health">
+  <div class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Health</h2>
+        <p class="panel-subtitle">Sante runtime, connexion broker et checks critiques.</p>
+      </div>
+    </div>
+    <div class="v2-kpi-grid" id="v2-health"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Metrics</h2>
+        <p class="panel-subtitle">Compteurs operationnels utiles pour voir l'activite sans lire les logs.</p>
+      </div>
+    </div>
+    <div class="v2-kpi-grid" id="v2-metrics"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Portfolio risk</h2>
+        <p class="panel-subtitle">Resume brut du risque ouvert, concentration et exposition totale.</p>
+      </div>
+    </div>
+    <pre class="config-view compact" id="v2-portfolio-risk"></pre>
+  </div>
+</section>
+
+<section class="panel" id="event-stream">
+  <div class="panel-heading">
+    <div>
+      <h2>Event stream</h2>
+      <p class="panel-subtitle">Filtres communs pour retrouver rapidement un symbole, un setup ou un niveau d'alerte.</p>
+    </div>
+  </div>
+  <form class="inline-form" id="logs-filter">
+    <label>
+      Symbole
+      <input name="symbol">
+    </label>
+    <label>
+      Setup ID
+      <input name="setup_id">
+    </label>
+    <label>
+      Niveau
+      <select name="level">
+        <option value="">Tous</option>
+        <option>INFO</option>
+        <option>WARNING</option>
+        <option>ERROR</option>
+        <option>CRITICAL</option>
+        <option>TRADE</option>
+        <option>ORDER</option>
+        <option>RISK</option>
+        <option>SYNC</option>
+      </select>
+    </label>
+    <button type="submit">Filtrer</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Events</h2>
+      <p class="panel-subtitle">Journal applicatif recent: runtime, risque, execution et synchro.</p>
+    </div>
+  </div>
+  <div class="event-list" id="logs-events"></div>
+</section>
+
+<section class="panel" id="tws-stream">
+  <div class="panel-heading">
+    <div>
+      <h2>TWS exchanges</h2>
+      <p class="panel-subtitle">Requetes envoyees a TWS et reponses recues avec statut, message et latence.</p>
+    </div>
+  </div>
+  <div class="event-list" id="logs-tws-events"></div>
+</section>
+
+<section class="panel" id="decision-traces">
+  <div class="panel-heading">
+    <div>
+      <h2>Decision trace</h2>
+      <p class="panel-subtitle">Pourquoi un signal a ete bloque, accepte ou requalifie.</p>
+    </div>
+  </div>
+  <form class="inline-form" id="v2-decision-filter">
+    <input name="symbol" placeholder="Symbol">
+    <input name="setup_id" placeholder="Setup ID">
+    <input name="opportunity_id" placeholder="Opportunity ID">
+    <select name="decision_type">
+      <option value="">Decision type</option>
+      <option value="OPPORTUNITY_REJECTED">OPPORTUNITY_REJECTED</option>
+      <option value="ENTRY_REJECTED">ENTRY_REJECTED</option>
+      <option value="ENTRY_APPROVED">ENTRY_APPROVED</option>
+    </select>
+    <input name="final_decision" placeholder="Final decision">
+    <input name="date" type="date">
+    <button type="submit">Filter</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Trace results</h2>
+      <p class="panel-subtitle">Lecture detaillee des decisions critiques les plus recentes.</p>
+    </div>
+    <span class="table-count" id="v2-decision-count"></span>
+  </div>
+  <div class="v2-trace-list" id="v2-decision-traces"></div>
+</section>
+{% endblock %}

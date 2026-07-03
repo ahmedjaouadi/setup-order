@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>Forecasting</h1>
+    <p class="subtitle">Providers multi-modeles, disponibilite locale et politique scoring-only.</p>
+  </div>
+</section>
+
+<section class="content-grid two-col">
+  <div class="panel">
+    <div class="panel-heading">
+      <h2>Models</h2>
+    </div>
+    <div class="v2-table-wrap">
+      <table class="v2-table" id="v2-forecast-models"></table>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-heading">
+      <h2>Defaults</h2>
+    </div>
+    <pre class="config-view compact" id="v2-forecast-defaults"></pre>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header opportunity-radar-header">
+  <div>
+    <h1>Radar</h1>
+    <p class="subtitle">Vue unique pour reperer ce qui chauffe, verifier le scanner et suivre le pipeline des opportunites sans changer d'ecran.</p>
+  </div>
+  <div class="hub-nav" aria-label="Raccourcis radar">
+    <a href="#hot-zone">Hot zone</a>
+    <a href="#market-context">Contexte</a>
+    <a href="#scanner-control">Scanner</a>
+    <a href="#opportunity-pipeline">Pipeline</a>
+  </div>
+</section>
+
+<section class="opportunity-radar-hero">
+  <div class="opportunity-radar-hero-copy">
+    <span class="opportunity-radar-kicker">Live scan</span>
+    <h2>Repere d'abord ce qui peut partir maintenant, puis ce qui chauffe juste derriere.</h2>
+    <p>Le radar met en avant les setups en hot zone, affiche leur proximite et rappelle le dernier blocage a lever.</p>
+  </div>
+  <div class="opportunity-radar-summary" id="opportunity-radar-summary"></div>
+</section>
+
+<section class="hub-guide">
+  <article class="hub-guide-card">
+    <strong>Maintenant</strong>
+    <p>Hot zone et radar detaille montrent les setups les plus proches d'une entree.</p>
+  </article>
+  <article class="hub-guide-card">
+    <strong>Pourquoi</strong>
+    <p>Market Context aide a comprendre si le secteur, la force relative et TWS soutiennent vraiment le signal.</p>
+  </article>
+  <article class="hub-guide-card">
+    <strong>Ensuite</strong>
+    <p>Scanner et Pipeline servent a voir ce qui est detecte, bloque, expire ou converti en scenario.</p>
+  </article>
+</section>
+
+<section class="panel market-context-panel" id="market-context" data-market-context-root>
+  <div class="panel-heading">
+    <div>
+      <h2>Market Context</h2>
+      <p class="panel-subtitle">Synthese des setups par force relative, contexte secteur et autorisation TWS.</p>
+    </div>
+    <div class="market-context-filters" aria-label="Filtres Market Context">
+      <button type="button" class="active" data-market-context-view="WATCHLIST">Tous</button>
+      <button type="button" data-market-context-view="AUTO_ALLOWED">Auto</button>
+      <button type="button" data-market-context-view="WATCH_ONLY">Watch</button>
+      <button type="button" data-market-context-view="ENTRY_READY">Ready</button>
+      <button type="button" data-market-context-view="BLOCKED">Blocked</button>
+    </div>
+  </div>
+  <div class="market-context-layout">
+    <div>
+      <div class="market-context-sector-strip" id="market-context-sectors"></div>
+      <div class="market-context-heatmap" id="market-context-heatmap"></div>
+    </div>
+    <aside class="market-context-detail" id="market-context-detail"></aside>
+  </div>
+</section>
+
+<section class="content-grid opportunity-radar-grid" id="hot-zone">
+  <div class="panel opportunity-radar-focus-panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Hot Zone</h2>
+        <p class="panel-subtitle">Setups prets ou deja tres proches du declenchement.</p>
+      </div>
+      <span class="table-count" id="opportunity-radar-count"></span>
+    </div>
+    <div class="opportunity-radar-launchpad" id="opportunity-radar-launchpad"></div>
+  </div>
+
+  <div class="panel opportunity-radar-panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Radar detaille</h2>
+        <p class="panel-subtitle">Le reste des setups suivis, trie par proximite, avec le dernier blocage et le temps depuis la derniere analyse.</p>
+      </div>
+      <span class="table-count" id="opportunity-radar-secondary-count"></span>
+    </div>
+    <div class="opportunity-radar-list" id="opportunity-radar-list"></div>
+  </div>
+</section>
+
+<section class="content-grid two-col" id="scanner-control">
+  <div class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Scanner</h2>
+        <p class="panel-subtitle">Etat runtime, dernier passage, pause/reprise et volume du flux detecte.</p>
+      </div>
+      <div class="runtime">
+        <button type="button" id="v2-scanner-run">Run</button>
+        <button type="button" id="v2-scanner-pause">Pause</button>
+        <button type="button" id="v2-scanner-resume">Resume</button>
+      </div>
+    </div>
+    <div class="v2-kpi-grid" id="v2-scanner-status"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Scanner config</h2>
+        <p class="panel-subtitle">Univers, filtres liquidite et cadence de scan. C'est ici qu'on verifie le cadre du detecteur.</p>
+      </div>
+    </div>
+    <pre class="config-view compact" id="v2-scanner-config"></pre>
+  </div>
+</section>
+
+<section class="section-stack" id="opportunity-pipeline">
+  <div class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Opportunity shortlist</h2>
+        <p class="panel-subtitle">Les meilleurs candidats du scanner, deja tries pour la revue rapide.</p>
+      </div>
+      <div class="runtime">
+        <button type="button" id="v2-run-scan">Scan</button>
+      </div>
+    </div>
+    <div class="v2-table-wrap">
+      <table class="v2-table" id="v2-opportunities-table"></table>
+    </div>
+    <span class="table-count" id="v2-opportunities-count"></span>
+  </div>
+
+  <div class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Blocked</h2>
+        <p class="panel-subtitle">Opportunites valides en apparence mais bloquees par liquidite, spread ou data quality.</p>
+      </div>
+      <span class="table-count" id="v2-opportunities-blocked-count"></span>
+    </div>
+    <div class="v2-table-wrap">
+      <table class="v2-table" id="v2-opportunities-blocked-table"></table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Recently expired</h2>
+        <p class="panel-subtitle">Ce qui etait interessant mais n'est plus exploitable dans la fenetre courante.</p>
+      </div>
+      <span class="table-count" id="v2-opportunities-expired-count"></span>
+    </div>
+    <div class="v2-table-wrap">
+      <table class="v2-table" id="v2-opportunities-expired-table"></table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Generated scenarios</h2>
+        <p class="panel-subtitle">Les opportunites deja converties en brouillons de scenario avant un vrai setup arme.</p>
+      </div>
+      <span class="table-count" id="v2-opportunities-scenarios-count"></span>
+    </div>
+    <div class="v2-table-wrap">
+      <table class="v2-table" id="v2-opportunities-scenarios-table"></table>
+    </div>
+  </div>
+</section>
+
+<section class="panel market-map-panel" data-market-context-root>
+  <div class="panel-heading">
+    <div>
+      <h2>Heatmap marche</h2>
+      <p class="panel-subtitle">Vue par secteurs et industries. Couleur = perf stock 1D, taille = priorite locale ou nombre de setups.</p>
+    </div>
+    <span class="table-count" id="market-map-count"></span>
+  </div>
+  <div class="market-map" id="market-context-market-map"></div>
+</section>
+{% endblock %}

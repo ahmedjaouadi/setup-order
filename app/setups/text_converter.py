@@ -336,6 +336,22 @@ def _build_config(
                 or momentum_defaults.get("volume_above_average", 1.5),
                 "relative_strength_required": "relative" in text,
             },
+            "volume_confirmation": {
+                "enabled": True,
+                "signal_timeframe": timeframe_defaults.get("signal", "15m"),
+                "comparison_mode": "SAME_TIME_OF_DAY",
+                "average_sample_days": 20,
+                "fast_volume_ratio_min": momentum_defaults.get("volume_above_average", 1.5),
+                "normal_volume_ratio_min": 1.0,
+                "confirmed_volume_ratio_min": confirmation_defaults.get(
+                    "min_volume_ratio",
+                    0.8,
+                ),
+                "confirmed_hold_bars": 2,
+                "close_above_level_required": True,
+                "reject_detection_enabled": True,
+                "max_upper_wick_ratio": 0.5,
+            },
         }
 
     if setup_type == "range_breakout":

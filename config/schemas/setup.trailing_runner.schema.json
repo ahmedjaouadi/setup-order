@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "setup.trailing_runner.schema.json",
+  "title": "Trailing Runner Setup",
+  "type": "object",
+  "properties": {
+    "position_source": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string"
+        },
+        "require_existing_position": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "management": {
+      "type": "object",
+      "properties": {
+        "stop_management": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string"
+            },
+            "never_lower_stop": {
+              "type": "boolean"
+            },
+            "trail_type": {
+              "type": "string"
+            },
+            "atr_timeframe": {
+              "type": "string"
+            },
+            "atr_multiplier": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "when_price_above": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "new_stop": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

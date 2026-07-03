@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "setup.aggressive_rebound.schema.json",
+  "title": "Aggressive Rebound Setup",
+  "type": "object",
+  "required": ["support_zone"],
+  "properties": {
+    "support_zone": {
+      "type": "object",
+      "required": ["min", "max"],
+      "properties": {
+        "min": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "invalidation": {
+      "type": "object",
+      "properties": {
+        "close_below": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "hard_stop": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

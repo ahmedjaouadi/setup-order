@@ -1,0 +1,32 @@
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: ["main", "master"]
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile Python
+        run: python -m py_compile $(find app tests scripts -name "*.py")
+      - name: Unit tests
+        run: python -m unittest discover -s tests
+      - name: Migration dry-run
+        run: |
+          mkdir -p data
+          python - <<'PY'
+          from pathlib import Path
+          from app.storage.database import Database
+          db = Database(Path("data/trading_state.sqlite"))
+          db.initialize()
+          db.close()
+          PY
+          python scripts/migrate_sqlite.py --database data/trading_state.sqlite

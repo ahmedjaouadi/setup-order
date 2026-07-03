@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>Forecast Stack</h1>
+    <p class="subtitle">Disponibilité réelle, rôle et garde-fous de chaque fournisseur.</p>
+  </div>
+</section>
+<section class="panel">
+  <div class="panel-heading"><h2>Providers</h2></div>
+  <div class="v2-table-wrap"><table class="v2-table" id="forecast-stack-providers"></table></div>
+</section>
+<section class="panel">
+  <div class="panel-heading"><h2>Safety policy</h2></div>
+  <pre class="config-view compact" id="forecast-stack-safety"></pre>
+</section>
+{% endblock %}
