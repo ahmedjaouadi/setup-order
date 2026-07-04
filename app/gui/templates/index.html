@@ -1,85 +1,75 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="page-header">
+<section class="page-header dash-header">
   <div>
     <h1>Dashboard</h1>
-    <p class="subtitle">Un cockpit de controle pour lire en 5 secondes l'etat du moteur, le risque, le broker et les opportunites.</p>
+    <p class="subtitle">L'etat du capital, du risque et des protections en un coup d'oeil. Le detail vit dans les autres onglets.</p>
+  </div>
+  <div class="live-indicator" id="dash-live" data-state="idle">
+    <span class="live-dot" aria-hidden="true"></span>
+    <span class="live-text">LIVE</span>
+    <span class="live-ago" id="dash-updated-ago">--</span>
   </div>
 </section>
 
-<section class="dashboard-hero">
-  <div class="dashboard-hero-copy">
-    <span class="hero-kicker">Executive brief</span>
-    <h2>Decide vite ce qui est safe, ce qui bloque et ce qui merite une action maintenant.</h2>
-    <p>
-      Le dashboard met en avant la realite broker, les protections en place et les setups vraiment proches d'une
-      entree. Tout ce qui ralentit l'execution doit sauter aux yeux avant le moindre clic.
-    </p>
-    <div class="hero-actions">
-      <a class="hero-action hero-action-primary" href="/orders">Broker reality</a>
-      <a class="hero-action" href="/opportunity-radar">Opportunity radar</a>
-      <a class="hero-action" href="/setups">Setups</a>
+<section class="dash-hero-metrics">
+  <article class="hero-metric hero-metric-primary reveal">
+    <span class="hero-metric-label">Valeur du portefeuille</span>
+    <strong class="hero-metric-value tabular" id="hero-portfolio-value">--</strong>
+    <span class="hero-metric-sub" id="hero-portfolio-sub">Net liquidation</span>
+  </article>
+  <article class="hero-metric reveal">
+    <span class="hero-metric-label">P&amp;L du jour</span>
+    <strong class="hero-metric-value tabular" id="hero-daily-pnl">--</strong>
+    <span class="hero-metric-sub" id="hero-daily-pnl-sub">--</span>
+  </article>
+  <article class="hero-metric reveal">
+    <span class="hero-metric-label">P&amp;L latent</span>
+    <strong class="hero-metric-value tabular" id="hero-unrealized-pnl">--</strong>
+    <span class="hero-metric-sub">Positions ouvertes: <span id="hero-open-positions">0</span></span>
+  </article>
+</section>
+
+<section class="panel equity-panel reveal">
+  <div class="panel-heading">
+    <div>
+      <h2>Courbe d'equite</h2>
+      <p class="panel-subtitle">Evolution de la net liquidation enregistree dans le temps par le moteur.</p>
+    </div>
+    <div class="equity-legend">
+      <strong class="tabular" id="equity-change">--</strong>
+      <span id="equity-range">En attente de donnees</span>
     </div>
   </div>
-
-  <div class="dashboard-brief-grid">
-    <article class="brief-card" id="dashboard-brief-card" data-tone="neutral">
-      <span>Decision now</span>
-      <strong id="dashboard-brief-headline">-</strong>
-      <p id="dashboard-brief-summary">-</p>
-    </article>
-    <article class="brief-card" id="dashboard-brief-blockers" data-tone="neutral">
-      <span>Top blockers</span>
-      <strong id="dashboard-brief-blocker-count">-</strong>
-      <p id="dashboard-brief-blocker-details">-</p>
-    </article>
-    <article class="brief-card" id="dashboard-brief-ready" data-tone="neutral">
-      <span>Ready setups</span>
-      <strong id="dashboard-brief-ready-count">-</strong>
-      <p id="dashboard-brief-ready-details">-</p>
-    </article>
-    <article class="brief-card" id="dashboard-brief-freshness" data-tone="neutral">
-      <span>Freshness</span>
-      <strong id="dashboard-brief-freshness-value">-</strong>
-      <p id="dashboard-brief-freshness-note">-</p>
-    </article>
+  <div class="equity-chart" id="equity-chart">
+    <div class="chart-empty" id="equity-empty">Historique en cours de collecte&hellip;</div>
   </div>
 </section>
 
-<section class="dashboard-status-strip">
-  <article>
-    <span>Broker Tracker</span>
-    <strong id="dashboard-broker-tracker">-</strong>
-    <small>Gate derived from broker reality and reconciliation.</small>
+<section class="dashboard-brief-grid reveal">
+  <article class="brief-card" id="dashboard-brief-card" data-tone="neutral">
+    <span>Decision now</span>
+    <strong id="dashboard-brief-headline">-</strong>
+    <p id="dashboard-brief-summary">-</p>
   </article>
-  <article>
-    <span>Sync age</span>
-    <strong id="dashboard-broker-sync-age">-</strong>
-    <small>Age of the last confirmed TWS snapshot.</small>
+  <article class="brief-card" id="dashboard-brief-blockers" data-tone="neutral">
+    <span>Top blockers</span>
+    <strong id="dashboard-brief-blocker-count">-</strong>
+    <p id="dashboard-brief-blocker-details">-</p>
   </article>
-  <article>
-    <span>Auto Execution</span>
-    <strong id="dashboard-auto-execution">-</strong>
-    <small>Blocked whenever safety or reconciliation diverges.</small>
+  <article class="brief-card" id="dashboard-brief-ready" data-tone="neutral">
+    <span>Ready setups</span>
+    <strong id="dashboard-brief-ready-count">-</strong>
+    <p id="dashboard-brief-ready-details">-</p>
   </article>
-  <article>
-    <span>Emergency Risk</span>
-    <strong id="dashboard-emergency-risk">-</strong>
-    <small>Positions or orders without protection.</small>
-  </article>
-  <article>
-    <span>Mode</span>
-    <strong id="dashboard-mode">-</strong>
-    <small>Execution profile for the active runtime.</small>
-  </article>
-  <article>
-    <span>P&amp;L source</span>
-    <strong id="dashboard-pnl-source">-</strong>
-    <small>Where today's P&amp;L is coming from.</small>
+  <article class="brief-card" id="dashboard-brief-freshness" data-tone="neutral">
+    <span>Freshness</span>
+    <strong id="dashboard-brief-freshness-value">-</strong>
+    <p id="dashboard-brief-freshness-note">-</p>
   </article>
 </section>
 
-<section class="panel">
+<section class="panel reveal">
   <div class="panel-heading">
     <h2>Safety Gate</h2>
     <div class="panel-actions">
@@ -96,7 +86,7 @@
   </div>
 </section>
 
-<section class="dashboard-kpi-groups" id="metric-grid">
+<section class="dashboard-kpi-groups reveal" id="metric-grid">
   <div class="kpi-group">
     <h2>Compte</h2>
     <div class="metric-grid compact-grid">
@@ -202,154 +192,18 @@
   </div>
 </section>
 
-<section class="panel">
+<section class="panel reveal">
   <div class="panel-heading">
-    <h2>Surveillance moteur</h2>
-  </div>
-  <dl class="detail-list health-list" id="dashboard-engine-health"></dl>
-</section>
-
-<section class="content-grid two-col">
-  <div class="panel">
-    <div class="panel-heading">
-      <h2>Setups suivis</h2>
-      <a class="text-link" href="/setups">Voir tout</a>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Symbole</th>
-            <th>Type</th>
-            <th>Role</th>
-            <th>Statut</th>
-            <th>Risque</th>
-          </tr>
-        </thead>
-        <tbody id="dashboard-setups"></tbody>
-      </table>
+    <div>
+      <h2>Allocation</h2>
+      <p class="panel-subtitle">Repartition de l'exposition par position (valeur de marche).</p>
     </div>
   </div>
-
-  <div class="panel">
-    <div class="panel-heading">
-      <h2>Injection marche</h2>
+  <div class="allocation-wrap">
+    <div class="allocation-donut" id="allocation-donut">
+      <div class="chart-empty" id="allocation-empty">Aucune position ouverte</div>
     </div>
-    <form class="tool-form" id="market-form">
-      <label>
-        Symbole
-        <input name="symbol" required autocomplete="off">
-      </label>
-      <label>
-        Prix
-        <input name="price" type="number" step="0.01" required>
-      </label>
-      <label>
-        Close daily
-        <input name="daily_close" type="number" step="0.01">
-      </label>
-      <label>
-        High
-        <input name="high" type="number" step="0.01">
-      </label>
-      <label>
-        Close
-        <input name="close" type="number" step="0.01">
-      </label>
-      <label class="checkbox-line">
-        <input name="bullish_candle" type="checkbox" checked>
-        Bougie haussiere
-      </label>
-      <button type="submit">Envoyer tick</button>
-    </form>
+    <ul class="allocation-legend" id="allocation-legend"></ul>
   </div>
-</section>
-
-<section class="panel">
-  <div class="panel-heading">
-    <h2>Broker Reality</h2>
-    <div class="panel-actions">
-      <span class="status" id="broker-reality-blocked">-</span>
-      <span id="broker-reality-mismatch-count">0 mismatch</span>
-    </div>
-  </div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Symbol</th>
-          <th>Position Qty</th>
-          <th>Avg Price</th>
-          <th>Current Price</th>
-          <th>Daily P&L</th>
-          <th>Unrealized P&L</th>
-          <th>Entry Order</th>
-          <th>Stop Order</th>
-          <th>Trailing Stop</th>
-          <th>Protection</th>
-          <th>Broker Status</th>
-          <th>Last Sync</th>
-          <th>Action Required</th>
-        </tr>
-      </thead>
-      <tbody id="broker-reality-table"></tbody>
-    </table>
-  </div>
-</section>
-
-<section class="panel">
-  <div class="panel-heading">
-    <h2>Risk & Protection</h2>
-  </div>
-  <div class="metric-grid compact-grid" id="risk-protection-summary"></div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Symbol</th>
-          <th>Qty</th>
-          <th>Stop actuel</th>
-          <th>Distance stop</th>
-          <th>Risque restant</th>
-          <th>Trailing</th>
-          <th>Protection</th>
-          <th>Action Required</th>
-        </tr>
-      </thead>
-      <tbody id="risk-protection-table"></tbody>
-    </table>
-  </div>
-</section>
-
-<section class="panel">
-  <div class="panel-heading">
-    <h2>PnL par stock</h2>
-  </div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Symbole</th>
-          <th>Quantite</th>
-          <th>Prix moyen</th>
-          <th>Prix actuel</th>
-          <th>Valeur</th>
-          <th>PnL</th>
-          <th>%</th>
-          <th>Stop</th>
-          <th>Setup</th>
-        </tr>
-      </thead>
-      <tbody id="dashboard-stock-pnl"></tbody>
-    </table>
-  </div>
-</section>
-
-<section class="panel">
-  <div class="panel-heading">
-    <h2>Derniers evenements</h2>
-    <a class="text-link" href="/logs">Logs</a>
-  </div>
-  <div class="event-list" id="dashboard-events"></div>
 </section>
 {% endblock %}

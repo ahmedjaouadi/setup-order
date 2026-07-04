@@ -759,6 +759,51 @@ class TradingRepository:
         ).fetchone()
         return _row_to_dict(row) if row else None
 
+    def record_equity_snapshot(
+        self,
+        *,
+        net_liquidation: float | None,
+        daily_pnl: float | None,
+        positions_pnl: float | None,
+        open_positions: int,
+        source: str,
+        captured_at: str | None = None,
+    ) -> None:
+        self.database.execute(
+            """
+            INSERT INTO equity_snapshots (
+                captured_at, net_liquidation, daily_pnl, positions_pnl,
+                open_positions, source
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                captured_at or utc_now_iso(),
+                net_liquidation,
+                daily_pnl,
+                positions_pnl,
+                int(open_positions),
+                source,
+            ),
+        )
+
+    def list_equity_snapshots(self, limit: int = 500) -> list[dict[str, Any]]:
+        rows = self.database.execute(
+            """
+            SELECT * FROM (
+                SELECT * FROM equity_snapshots ORDER BY id DESC LIMIT ?
+            ) ORDER BY id ASC
+            """,
+            (limit,),
+        ).fetchall()
+        return [_row_to_dict(row) for row in rows]
+
+    def latest_equity_snapshot(self) -> dict[str, Any] | None:
+        row = self.database.execute(
+            "SELECT * FROM equity_snapshots ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return _row_to_dict(row) if row else None
+
     def add_event(self, record: EventRecord) -> None:
         self.database.execute(
             """

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Setup Order Cockpit</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/css/styles.css') }}?v=cockpit-dark-20260702-2">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/styles.css') }}?v=cockpit-dark-20260704-1">
   </head>
   <body data-page="{{ page }}"{% if setup_id is defined %} data-setup-id="{{ setup_id }}"{% endif %}>
     <header class="topbar">
@@ -46,6 +46,6 @@
       {% block content %}{% endblock %}
     </main>
     <div class="toast" id="toast" hidden></div>
-    <script src="{{ url_for('static', path='/js/app.js') }}?v=cockpit-dark-20260702-2"></script>
+    <script src="{{ url_for('static', path='/js/app.js') }}?v=cockpit-dark-20260704-1"></script>
   </body>
 </html>

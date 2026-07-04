@@ -454,6 +454,16 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS equity_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    captured_at TEXT NOT NULL,
+                    net_liquidation REAL,
+                    daily_pnl REAL,
+                    positions_pnl REAL,
+                    open_positions INTEGER NOT NULL DEFAULT 0,
+                    source TEXT NOT NULL DEFAULT ''
+                );
+
                 CREATE TABLE IF NOT EXISTS daily_reports (
                     report_id TEXT PRIMARY KEY,
                     report_date TEXT NOT NULL,
@@ -645,6 +655,8 @@ class Database:
                     ON setup_creation_snapshots(symbol, captured_at);
                 CREATE INDEX IF NOT EXISTS idx_forecast_stack_results_experiment
                     ON forecast_stack_results(experiment_id, rank_overall);
+                CREATE INDEX IF NOT EXISTS idx_equity_snapshots_captured
+                    ON equity_snapshots(captured_at);
                 """)
             conn.execute("""
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)

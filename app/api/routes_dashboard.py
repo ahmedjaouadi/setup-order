@@ -38,6 +38,38 @@ async def dashboard_data(request: Request):
     return await request.app.state.engine.snapshot()
 
 
+@router.get("/api/equity/history")
+async def equity_history(request: Request, limit: int = 500):
+    limit = max(2, min(int(limit or 500), 2000))
+    rows = request.app.state.repository.list_equity_snapshots(limit=limit)
+    points = [
+        {
+            "t": row.get("captured_at"),
+            "equity": row.get("net_liquidation"),
+            "daily_pnl": row.get("daily_pnl"),
+            "positions_pnl": row.get("positions_pnl"),
+            "open_positions": row.get("open_positions"),
+            "source": row.get("source"),
+        }
+        for row in rows
+        if row.get("net_liquidation") is not None
+    ]
+    first = points[0]["equity"] if points else None
+    last = points[-1]["equity"] if points else None
+    return {
+        "points": points,
+        "count": len(points),
+        "first_equity": first,
+        "last_equity": last,
+        "change": (round(last - first, 2) if first is not None and last is not None else None),
+        "change_pct": (
+            round((last - first) / first * 100, 2)
+            if first not in (None, 0) and last is not None
+            else None
+        ),
+    }
+
+
 @router.post("/api/runtime/emergency-stop")
 async def emergency_stop(request: Request):
     return await request.app.state.engine.emergency_stop()

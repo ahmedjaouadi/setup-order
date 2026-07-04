@@ -70,6 +70,7 @@ HEARTBEAT_INTERVAL_SECONDS = 5
 HEARTBEAT_STALE_SECONDS = HEARTBEAT_INTERVAL_SECONDS * 3
 ACCOUNT_SNAPSHOT_TTL_SECONDS = 30
 BROKER_RUNTIME_SNAPSHOT_TTL_SECONDS = 10
+EQUITY_SNAPSHOT_INTERVAL_SECONDS = 120
 CHART_TIMEFRAMES: dict[str, dict[str, str]] = {
     "3m": {"label": "3mn", "duration": "2 D", "bar_size": "3 mins"},
     "10m": {"label": "10mn", "duration": "5 D", "bar_size": "10 mins"},
@@ -189,6 +190,7 @@ class TradingEngine:
             lifecycle_service=self.setup_lifecycle,
         )
         self._monitor_task: asyncio.Task | None = None
+        self._last_equity_record_at: float = 0.0
         self._account_summary_cache: dict[str, Any] | None = None
         self._account_summary_cached_at: float = 0.0
         self._broker_positions_cache: list[dict[str, Any]] | None = None
@@ -446,6 +448,13 @@ class TradingEngine:
                 "broker_reality_mismatch_count": broker_reality.get("mismatch_count", 0),
             }
         )
+        self._maybe_record_equity(
+            net_liquidation=account.get("net_liquidation"),
+            daily_pnl=daily_pnl,
+            positions_pnl=positions_pnl,
+            open_positions=open_positions_count,
+            source=pnl_source,
+        )
         return {
             "runtime": runtime,
             "config": {
@@ -514,6 +523,36 @@ class TradingEngine:
             "events": events[:20],
             "market": [to_jsonable(item) for item in self.market_data.all_latest()],
         }
+
+    def _maybe_record_equity(
+        self,
+        *,
+        net_liquidation: float | None,
+        daily_pnl: float | None,
+        positions_pnl: float | None,
+        open_positions: int,
+        source: str,
+    ) -> None:
+        # Persist a portfolio equity point at most once per interval so the
+        # dashboard can draw a real equity curve without flooding the table
+        # (snapshot() is also called on every dashboard GET request).
+        if net_liquidation is None:
+            return
+        now = time.monotonic()
+        if now - self._last_equity_record_at < EQUITY_SNAPSHOT_INTERVAL_SECONDS:
+            return
+        try:
+            self.repository.record_equity_snapshot(
+                net_liquidation=net_liquidation,
+                daily_pnl=daily_pnl,
+                positions_pnl=positions_pnl,
+                open_positions=int(open_positions or 0),
+                source=source,
+            )
+        except Exception:
+            logger.exception("Failed to record equity snapshot")
+            return
+        self._last_equity_record_at = now
 
     def _mark_engine_started(self) -> None:
         now = self._utc_now_iso()
