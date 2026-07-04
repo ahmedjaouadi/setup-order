@@ -371,6 +371,14 @@ const STATUS_BADGE_LABELS = {
   WORKER_NOT_RUNNING: "Worker not running",
   WORKER_READY: "Worker ready",
   WORKER_UNREACHABLE: "Worker unreachable",
+  MARKET_CLOSED: "Marche ferme",
+  MISSING_MARKET_DATA: "Donnees marche manquantes",
+  BROKER_DISCONNECTED: "Broker deconnecte",
+  BROKER_TRACKER_STALE: "Broker tracker obsolete",
+  RISK_UNKNOWN: "Risque inconnu",
+  SPREAD_TOO_WIDE: "Spread trop large",
+  MANAGEMENT_ONLY_POSITION_MISSING: "Position IBKR absente",
+  TRAILING_STOP_NOT_READY: "Trailing stop pas pret",
 };
 
 function statusBadge(value, detail = "") {
@@ -429,6 +437,7 @@ const SETUP_REVALIDATION_REASON_LABELS = {
   MANAGEMENT_ONLY_POSITION_MISSING: "Position IBKR absente",
   POSITION_FOUND: "Position retrouvee",
   REVALIDATION_SKIPPED_NO_DATA: "Revalidation ignoree (pas de donnees)",
+  MARKET_CLOSED: "Marche ferme",
 };
 
 function setupStatusReason(setup) {
@@ -6208,6 +6217,13 @@ function displaySetupStatus(setup) {
   const autoExecutionEnabled = setupAutoExecutionEnabled(setup);
   const currentStatus = String(setup.status || "");
 
+  // A bare "BLOCKED" badge hides what is actually wrong: surface the concrete
+  // blocking reason (broker down, spread, missing data...) as the badge itself.
+  if (currentStatus.toUpperCase() === "BLOCKED") {
+    const reason = setupStatusReason(setup);
+    if (reason) return { status: reason, detail: "Statut moteur: BLOCKED" };
+  }
+
   if (currentStatus !== "WAITING_ACTIVATION" || currentPrice === null || levels.trigger === null) {
     return { status: currentStatus, detail: "" };
   }
@@ -7380,8 +7396,6 @@ async function renderV2OpportunitiesPage(options = {}) {
   }
   const result = await api("/api/opportunities/shortlist?limit=25");
   const rows = result.top_opportunities || result.items || [];
-  const blocked = result.blocked_opportunities || [];
-  const expired = result.recently_expired || [];
   const scenarios = result.generated_scenarios || [];
   setText("v2-opportunities-count", `${rows.length} items`);
   renderV2Table("v2-opportunities-table", [
@@ -7397,25 +7411,6 @@ async function renderV2OpportunitiesPage(options = {}) {
     reason: (item.payload && item.payload.reason) || "",
     status: statusBadge(item.status),
   })));
-  setText("v2-opportunities-blocked-count", `${blocked.length} items`);
-  renderV2Table("v2-opportunities-blocked-table", [
-    ["symbol", "Symbol"],
-    ["opportunity_type", "Type"],
-    ["score", "Score"],
-    ["status", "Status"],
-    ["blocking_reasons", "Reasons"],
-  ], blocked.map((item) => ({
-    ...item,
-    status: statusBadge(item.status),
-    blocking_reasons: (item.blocking_reasons || []).join(", "),
-  })));
-  setText("v2-opportunities-expired-count", `${expired.length} items`);
-  renderV2Table("v2-opportunities-expired-table", [
-    ["symbol", "Symbol"],
-    ["opportunity_type", "Type"],
-    ["score", "Score"],
-    ["detected_at", "Detected"],
-  ], expired);
   setText("v2-opportunities-scenarios-count", `${scenarios.length} items`);
   renderV2Table("v2-opportunities-scenarios-table", [
     ["scenario_id", "Scenario"],

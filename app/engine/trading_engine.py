@@ -71,6 +71,11 @@ HEARTBEAT_STALE_SECONDS = HEARTBEAT_INTERVAL_SECONDS * 3
 ACCOUNT_SNAPSHOT_TTL_SECONDS = 30
 BROKER_RUNTIME_SNAPSHOT_TTL_SECONDS = 10
 EQUITY_SNAPSHOT_INTERVAL_SECONDS = 120
+# Full dashboard snapshots are expensive (broker RPCs + DB aggregation) and the
+# GUI requests one on every page navigation. A short server-side cache makes
+# tab switches instant; state-changing engine methods invalidate it so the GUI
+# never reads stale data right after an action.
+SNAPSHOT_CACHE_TTL_SECONDS = 2.5
 CHART_TIMEFRAMES: dict[str, dict[str, str]] = {
     "3m": {"label": "3mn", "duration": "2 D", "bar_size": "3 mins"},
     "10m": {"label": "10mn", "duration": "5 D", "bar_size": "10 mins"},
@@ -190,6 +195,8 @@ class TradingEngine:
             lifecycle_service=self.setup_lifecycle,
         )
         self._monitor_task: asyncio.Task | None = None
+        self._snapshot_cache: dict[str, Any] | None = None
+        self._snapshot_cache_at: float = 0.0
         self._last_equity_record_at: float = 0.0
         self._account_summary_cache: dict[str, Any] | None = None
         self._account_summary_cached_at: float = 0.0
@@ -345,7 +352,22 @@ class TradingEngine:
             return normalized
         return "paper"
 
+    def invalidate_snapshot_cache(self) -> None:
+        self._snapshot_cache = None
+        self._snapshot_cache_at = 0.0
+
     async def snapshot(self) -> dict[str, Any]:
+        if (
+            self._snapshot_cache is not None
+            and time.monotonic() - self._snapshot_cache_at < SNAPSHOT_CACHE_TTL_SECONDS
+        ):
+            return self._snapshot_cache
+        result = await self._build_snapshot()
+        self._snapshot_cache = result
+        self._snapshot_cache_at = time.monotonic()
+        return result
+
+    async def _build_snapshot(self) -> dict[str, Any]:
         runtime = self.runtime_state()
         setups = self.repository.list_setups()
         local_orders = self.repository.list_orders()
@@ -1686,6 +1708,7 @@ class TradingEngine:
             return None
 
     async def emergency_stop(self) -> dict[str, Any]:
+        self.invalidate_snapshot_cache()
         runtime = self.runtime_state()
         runtime["status"] = BotStatus.EMERGENCY_STOP.value
         self.repository.set_bot_state("runtime", runtime)
@@ -1702,6 +1725,7 @@ class TradingEngine:
         return await self.snapshot()
 
     async def resume(self) -> dict[str, Any]:
+        self.invalidate_snapshot_cache()
         runtime = self.runtime_state()
         broker_status = await self._broker_health_check()
         if broker_status != ConnectionStatus.CONNECTED:
@@ -1728,6 +1752,7 @@ class TradingEngine:
         return await self.snapshot()
 
     async def pause(self) -> dict[str, Any]:
+        self.invalidate_snapshot_cache()
         broker_status = await self._broker_health_check()
         runtime = self._runtime_payload(
             status=BotStatus.PAUSED.value,
@@ -1739,6 +1764,7 @@ class TradingEngine:
         return await self.snapshot()
 
     async def force_sync(self) -> dict[str, int]:
+        self.invalidate_snapshot_cache()
         result = await self.reconciliation.run()
         self._mark_reconciliation_completed(result)
         await self._heartbeat(poll_stocks=False)
@@ -1753,6 +1779,7 @@ class TradingEngine:
         port: int | None = None,
         client_id: int | None = None,
     ) -> dict[str, Any]:
+        self.invalidate_snapshot_cache()
         broker_config = self.settings.raw["broker"]
         connector = self._normalize_user_connector(connector)
         if host:
@@ -1795,6 +1822,7 @@ class TradingEngine:
         return await self.snapshot()
 
     async def set_tws_audit_enabled(self, enabled: bool) -> dict[str, Any]:
+        self.invalidate_snapshot_cache()
         state = {"enabled": bool(enabled)}
         self.repository.set_bot_state("tws_audit", state)
         self._apply_tws_audit_settings()
@@ -1835,6 +1863,7 @@ class TradingEngine:
         )
 
     async def set_setup_enabled(self, setup_id: str, enabled: bool) -> dict[str, Any]:
+        self.invalidate_snapshot_cache()
         setup = self.repository.get_setup(setup_id)
         if setup is None:
             raise KeyError(setup_id)
@@ -1855,6 +1884,7 @@ class TradingEngine:
         return self.repository.get_setup(setup_id) or {}
 
     async def set_all_setups_enabled(self, enabled: bool) -> dict[str, Any]:
+        self.invalidate_snapshot_cache()
         setups = self.repository.list_setups()
         for setup in setups:
             self.repository.set_setup_enabled(str(setup["setup_id"]), enabled)
@@ -1940,6 +1970,7 @@ class TradingEngine:
         }
 
     async def delete_setup(self, setup_id: str) -> dict[str, Any]:
+        self.invalidate_snapshot_cache()
         setup = self.repository.get_setup(setup_id)
         if setup is None:
             raise KeyError(setup_id)
@@ -1969,6 +2000,7 @@ class TradingEngine:
         return {"ok": True, "setup_id": setup_id, "file_deleted": file_deleted}
 
     async def save_setup(self, config: dict[str, Any]) -> dict[str, Any]:
+        self.invalidate_snapshot_cache()
         canonical = self.setup_engine.canonicalize_config(config)
         validation = self.setup_engine.create_or_update_from_config(config)
         if not validation.valid:
@@ -1987,6 +2019,7 @@ class TradingEngine:
         }
 
     async def arm_setup(self, setup_id: str) -> dict[str, Any]:
+        self.invalidate_snapshot_cache()
         setup = self.repository.get_setup(setup_id)
         if setup is None:
             raise KeyError(setup_id)
@@ -2028,6 +2061,7 @@ class TradingEngine:
         }
 
     async def disarm_setup(self, setup_id: str) -> dict[str, Any]:
+        self.invalidate_snapshot_cache()
         setup = self.repository.get_setup(setup_id)
         if setup is None:
             raise KeyError(setup_id)
@@ -2068,6 +2102,7 @@ class TradingEngine:
         return errors
 
     async def process_market_snapshot(self, snapshot: MarketSnapshot) -> dict[str, Any]:
+        self.invalidate_snapshot_cache()
         runtime = self.runtime_state()
         if runtime.get("status") != BotStatus.RUNNING.value:
             self._record_market_tick(snapshot)
