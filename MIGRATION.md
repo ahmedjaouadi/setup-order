@@ -9,13 +9,17 @@ ceux qui cassent le plus souvent une migration : lisez-les.
 ## 0. Résumé express (TL;DR)
 
 1. Installer **Python 3.11.x** (pas 3.12/3.13), **Git**, et **IBKR TWS / IB Gateway**.
-2. `git clone` du dépôt GitHub.
+2. `git clone` du dépôt GitHub — **vos 59 setups et votre watchlist sont dedans**, aucune
+   copie manuelle de fichiers n'est nécessaire pour ça.
 3. Créer un environnement virtuel `.venv` et installer `requirements.txt`.
-4. **Copier le dossier `data\`** de l'ancien PC (setups, base SQLite, watchlists) — il n'est *pas* sur GitHub. ⚠️ voir la Partie 4 (la base fait ~86 Go).
+4. **Ne rien copier depuis l'ancien PC pour `data\`** : on laisse l'app créer une base neuve.
+   (La base `trading_state.sqlite` de l'ancien PC ne contient que des journaux internes
+   régénérables — voir Partie 4.)
 5. Pour le forecasting : installer les dépendances par tier **et** récupérer les modèles (copier le cache Hugging Face ou les laisser se re-télécharger).
 6. Configurer la connexion TWS puis lancer `start.bat`.
+7. ⚠️ **Au premier démarrage, vos setups reviennent tous en statut `DISABLED`** — il faut les réarmer un par un dans l'interface (voir Partie 4.3). C'est normal, pas un bug.
 
-Temps estimé : 20–30 min pour l'app de base, +30–90 min si on installe tout le stack forecasting (gros téléchargements).
+Temps estimé : 15–20 min pour l'app de base, +30–90 min si on installe tout le stack forecasting (gros téléchargements), + quelques minutes pour réarmer les setups.
 
 ---
 
@@ -44,12 +48,20 @@ Temps estimé : 20–30 min pour l'app de base, +30–90 min si on installe tout
 |---|---|---|
 | **Code de l'application** | `git clone` depuis GitHub | Inclut `app\`, `config\`, `scripts\`, les scripts `.bat`, les `requirements*.txt` |
 | **`config\`** (schémas de setups, alias, métadonnées) | Vient **automatiquement** avec le clone | Rien à faire |
-| **`data\`** (base SQLite, setups sauvegardés, watchlists, exports, logs) | **Copie manuelle** depuis l'ancien PC | ⚠️ **N'est PAS sur GitHub** (ignoré par `.gitignore`). Voir Partie 4 |
+| **`data\setups\`** (vos 59 setups JSON) | Vient **automatiquement** avec le clone | ✅ Suivi par Git (repo **privé**). Revient en statut `DISABLED` — voir 4.3 |
+| **`data\watchlists\`** (`default.yaml`) | Vient **automatiquement** avec le clone | ✅ Suivi par Git |
+| **`data\trading_state.sqlite`** (base, ~80-90 Go) | **NE PAS transporter** | Ignoré par Git (`.gitignore`). Journaux internes régénérables uniquement — voir Partie 4.1 |
+| **`data\exports\`, `data\logs\`** | **NE PAS transporter** | Ignorés par Git, régénérables |
 | **Modèles de forecast** (TimesFM, Chronos, Lag-Llama, Moirai) | Copie du cache Hugging Face **ou** re-téléchargement | Voir Partie 5 |
 | **`.env`** (token Hugging Face `HF_TOKEN`) | **Recréer à la main** | ⚠️ Ignoré par Git (secret). Voir Partie 5 |
 | **`.venv\`** (environnement Python) | **NE PAS copier** | On le recrée proprement sur le nouveau PC |
 
-> Règle simple : **le code vient de Git ; les données et les modèles se copient à part.**
+> Règle simple : **`git clone` ramène le code ET vos setups/watchlist. Seuls le cache de
+> modèles et le `.env` restent à gérer à part. La base ne voyage jamais.**
+>
+> ⚠️ Le dépôt GitHub doit rester **privé** : `data\setups\` contient vos stratégies de
+> trading (prix, stops, règles). Pas de secret technique dedans, mais c'est votre logique
+> de trading — ne rendez pas le dépôt public sans y penser.
 
 ---
 
@@ -99,54 +111,74 @@ python run.py
 
 - Le lanceur choisit automatiquement un port libre à partir de **8000** et ouvre le navigateur.
 - Ou double-cliquez simplement sur **`start.bat`**.
-- Ouvrez `http://127.0.0.1:8000`. Le Dashboard doit s'afficher (vide au début, c'est normal).
+- Ouvrez `http://127.0.0.1:8000`. Le Dashboard doit s'afficher (vide au début pour l'historique, c'est normal).
 
-À ce stade l'app tourne, mais **sans vos setups ni votre historique** (base vide) et **sans modèles de forecast**. On règle ça en Parties 4 et 5.
+À ce lancement, l'app crée une base `trading_state.sqlite` **neuve** et **recharge automatiquement
+vos 59 setups** depuis `data\setups\*.json` (déjà présents grâce au clone) — voir Partie 4 pour
+le détail de ce qui se passe et le point d'attention sur leur statut.
 
 ---
 
-## 4. Migrer vos données (setups, base, watchlists)
+## 4. Vos setups au démarrage — ce qui se passe et le point d'attention
 
-Tout votre état vit dans le dossier **`data\`** de l'ancien PC :
+### 4.1 D'où viennent les setups, et pourquoi on ne copie pas la base
 
-```
-data\
-├── trading_state.sqlite        <- LA base (setups, ordres, positions, events, historique équité)
-├── trading_state.sqlite-wal    <- journal WAL (à copier AVEC la base)
-├── trading_state.sqlite-shm    <- fichier partagé (à copier AVEC la base)
-├── setups\                     <- setups sauvegardés en JSON
-├── watchlists\                 <- default.yaml (liste de surveillance)
-├── exports\                    <- exports générés
-└── logs\                       <- logs runtime
-```
+Avant, il fallait copier manuellement le dossier `data\` de l'ancien PC. Ce n'est plus le cas :
+`data\setups\` (59 fichiers JSON, ~569 Ko) et `data\watchlists\` sont maintenant **suivis par
+Git** et arrivent automatiquement avec le `git clone` de la Partie 3.1.
 
-### Procédure
+La seule chose qui **ne vient jamais** avec le code, et qu'on ne cherche pas non plus à copier
+depuis l'ancien PC, c'est la base **`trading_state.sqlite`** (souvent 80–90 Go sur une
+installation qui tourne depuis un moment). Elle reste `.gitignore`e, et c'est volontaire :
 
-1. **Arrêter l'application sur l'ancien PC** (fermer la fenêtre / Ctrl+C). Ne copiez jamais la base pendant qu'elle tourne.
-2. Copier **tout le dossier `data\`** vers le même emplacement dans le projet sur le nouveau PC (`setup-order\data\`).
-3. Copier bien les **trois** fichiers `trading_state.sqlite`, `-wal` et `-shm` **ensemble**.
+- Les infos de compte (net liquidation, cash, P&L, positions) viennent **en direct de TWS**
+  à chaque rafraîchissement — elles ne dépendent pas de la base.
+- L'essentiel de son volume (>99 %), ce sont des **journaux internes** que le moteur écrit en
+  continu : `runtime_events`, `events`, `decision_traces`, `setup_scores`,
+  `feature_snapshots`, les tables `forecast_*`. Rien de tout ça n'est nécessaire pour que
+  l'app reparte.
 
-> ⚠️ **Piège n°2 — la base fait ~86 Go.**
-> Le fichier `trading_state.sqlite` est très volumineux (historique accumulé).
-> Deux options :
->
-> - **Option A — Repartir propre (recommandé si vous ne tenez pas à l'historique complet)** :
->   ne copiez **que** `data\setups\`, `data\watchlists\` et éventuellement `data\exports\`.
->   Laissez l'app recréer une base neuve au premier lancement. Vos setups JSON pourront être ré-importés.
->
-> - **Option B — Tout garder** : copier la base entière. Prévoyez un disque/USB assez grand et du temps.
->   Vous pouvez d'abord **compacter** la base sur l'ancien PC pour la réduire fortement :
->   ```powershell
->   # App arrêtée, dans le venv :
->   python -c "import sqlite3; c=sqlite3.connect(r'data\trading_state.sqlite'); c.execute('VACUUM'); c.close()"
->   ```
->   (Le `VACUUM` fusionne le WAL et récupère l'espace ; la base résultante est souvent bien plus petite.)
+**Conclusion : ne transportez pas la base.** Laissez l'app en créer une neuve sur le nouveau PC ;
+vos setups (la seule chose qui compte et ne se régénère pas) sont déjà là grâce au clone.
 
-4. Relancer `start.bat` : vos setups et votre historique réapparaissent.
+> Si malgré tout vous voulez garder l'historique complet de l'ancien PC (compliance, debug),
+> copiez sa base **à part** de la migration standard, après l'avoir compactée avec `VACUUM`
+> (app arrêtée) :
+> ```powershell
+> python -c "import sqlite3; c=sqlite3.connect(r'data\trading_state.sqlite'); c.execute('VACUUM'); c.close()"
+> ```
+> Ce n'est **pas nécessaire** pour que l'app fonctionne normalement sur le nouveau PC.
 
-> Note : la configuration runtime (connecteur broker, port TWS, mode paper/live, audit TWS)
-> est stockée **dans la base**. Si vous repartez sur une base neuve (Option A), il faudra
-> **reconfigurer la connexion TWS via l'interface** (voir Partie 6).
+### 4.2 Garder les setups synchronisés entre les deux PC
+
+Comme `data\setups\` est maintenant dans Git, traitez-le comme du code :
+
+- Après avoir créé/modifié un setup sur une machine, pensez à `git add data\setups\ && git commit && git push`
+  si vous voulez le retrouver sur l'autre machine.
+- Sur l'autre machine, `git pull` avant de démarrer l'app pour récupérer les derniers setups.
+- Le rechargement en base se fait **automatiquement à chaque démarrage** de l'app
+  (`setup_engine.load_all()`) — pas besoin de bouton "importer".
+
+### 4.3 ⚠️ Point d'attention — vos setups reviennent tous en statut `DISABLED`
+
+C'est le point le plus important à connaître **avant** de migrer, pour ne pas croire que
+"quelque chose ne fonctionne plus" :
+
+- Sur une base neuve, chaque setup rechargé démarre **volontairement** en statut `DISABLED`,
+  même si son fichier JSON contient `"enabled": true`. C'est un comportement intentionnel de
+  l'app (même règle que pour un setup nouvellement importé).
+- **Concrètement** : vos 59 setups seront bien visibles dans l'onglet *Setups*, avec leur
+  configuration intacte — mais le moteur ne les surveille pas tant qu'ils ne sont pas réarmés.
+- **Il n'y a pas de bouton "tout réarmer"** : le bouton *Auto ON pour tous les stocks* ne
+  change que le flag d'auto-exécution, il ne réarme pas le statut runtime. Il faut ouvrir
+  **chaque setup** et cliquer **`Armer setup`** individuellement.
+- Pour 59 setups, prévoyez quelques minutes de clics. Vérifiez avant de réarmer que le
+  contexte marché de chacun est toujours valable (un setup conçu pour une configuration de
+  marché passée n'a pas forcément de sens à réarmer tel quel).
+
+> La configuration runtime globale (connecteur broker, port TWS, mode paper/live, audit TWS)
+> est, elle, stockée dans la base — donc réinitialisée par défaut sur une base neuve. Il faut
+> la **reconfigurer une fois via l'interface** (voir Partie 6).
 
 ---
 
@@ -273,7 +305,8 @@ Cochez dans l'ordre :
 - [ ] `py -3.11 --version` répond bien du **3.11.x**.
 - [ ] `.venv` créé et activé, `pip install -r requirements.txt` sans erreur.
 - [ ] `python run.py` ouvre `http://127.0.0.1:8000`, le **Dashboard** s'affiche.
-- [ ] Dossier `data\` en place → vos **setups** apparaissent dans l'onglet *Setups*.
+- [ ] Vos **59 setups** apparaissent dans l'onglet *Setups* (venus automatiquement du clone).
+- [ ] ⚠️ Réarmer les setups voulus un par un (`Armer setup`) — ils démarrent en `DISABLED`.
 - [ ] TWS lancé, API activée → pastille **CONNECTED** en haut de l'interface.
 - [ ] (Optionnel) `python scripts\check_forecasting_stack.py` liste les providers **prêts**.
 - [ ] (Optionnel) Un setup affiche un **Forecast stack** après *Recalculer*.
@@ -287,13 +320,14 @@ Cochez dans l'ordre :
 ## 8. Les pièges à éviter (récap « pas de surprise »)
 
 1. **Python 3.11**, pas 3.12/3.13 → même version que la machine qui fonctionne.
-2. **`data\` n'est pas sur GitHub** → à copier à part, sinon vous perdez setups + historique.
-3. **Base SQLite ~86 Go** → `VACUUM` avant copie, ou repartir propre (garder seulement `setups\` + `watchlists\`).
+2. **Vos setups reviennent en `DISABLED`** après le clone → à réarmer un par un, pas de bouton "tout réarmer".
+3. **La base SQLite (~86-90 Go) ne se copie jamais** → elle ne contient que des journaux internes régénérables ; vos vraies données (setups) sont dans Git.
 4. **Chronos `local_files_only: true`** → copiez le cache Hugging Face ou pré-téléchargez `amazon/chronos-2`.
 5. **`.env` (HF_TOKEN)** → à recréer à la main, jamais committé.
 6. **Ne pas copier `.venv\`** de l'ancien PC → toujours recréer le venv sur la nouvelle machine.
-7. **App arrêtée avant de copier la base** → sinon corruption possible (WAL en cours d'écriture).
+7. **Dépôt GitHub privé obligatoire** → `data\setups\` contient vos stratégies de trading.
 8. **TWS : API activée + IP de confiance `127.0.0.1`** → sinon « DISCONNECTED ».
+9. **Setups modifiés sur une machine ?** → `git push` là-bas, `git pull` ici avant de démarrer, sinon désynchro entre les deux PC.
 
 ---
 
