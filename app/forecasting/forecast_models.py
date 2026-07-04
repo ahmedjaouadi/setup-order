@@ -46,7 +46,7 @@ class ForecastConfig:
     )
 
     @classmethod
-    def from_settings(cls, settings: dict[str, Any]) -> "ForecastConfig":
+    def from_settings(cls, settings: dict[str, Any]) -> ForecastConfig:
         raw = settings.get("forecasting", {})
         if not isinstance(raw, dict):
             raw = {}
@@ -85,12 +85,15 @@ class ForecastConfig:
             device=str(raw.get("device", defaults.device)),
             timeframe=str(raw.get("timeframe", defaults.timeframe)),
             target=str(raw.get("target", defaults.target)),
-            context_bars=int(raw.get("context_bars", defaults.context_bars) or defaults.context_bars),
-            min_context_bars=int(
-                raw.get("min_context_bars", defaults.min_context_bars)
-                or defaults.min_context_bars
+            context_bars=int(
+                raw.get("context_bars", defaults.context_bars) or defaults.context_bars
             ),
-            horizon_bars=int(raw.get("horizon_bars", defaults.horizon_bars) or defaults.horizon_bars),
+            min_context_bars=int(
+                raw.get("min_context_bars", defaults.min_context_bars) or defaults.min_context_bars
+            ),
+            horizon_bars=int(
+                raw.get("horizon_bars", defaults.horizon_bars) or defaults.horizon_bars
+            ),
             recalc_on_closed_bar_only=bool(
                 raw.get("recalc_on_closed_bar_only", defaults.recalc_on_closed_bar_only)
             ),

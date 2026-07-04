@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any, Callable, Iterable
+from collections.abc import Callable, Iterable
+from typing import Any
 
 from app.engine.opportunity_alert_service import score_processed_item
 from app.engine.session_policy import apply_entry_session_policy
@@ -187,11 +188,7 @@ def missed_opportunities_for(
     expected_opportunities: list[ExpectedOpportunity],
 ) -> list[MissedOpportunity]:
     missed: list[MissedOpportunity] = []
-    evaluations = [
-        evaluation
-        for step in steps
-        for evaluation in step.evaluations
-    ]
+    evaluations = [evaluation for step in steps for evaluation in step.evaluations]
     for expected in expected_opportunities:
         expected_action = SignalAction(expected.expected_action).value
         window_end = (
@@ -235,11 +232,7 @@ def summary_for(
     expected_opportunities: list[ExpectedOpportunity],
     missed_opportunities: list[MissedOpportunity],
 ) -> dict[str, Any]:
-    evaluations = [
-        evaluation
-        for step in steps
-        for evaluation in step.evaluations
-    ]
+    evaluations = [evaluation for step in steps for evaluation in step.evaluations]
     action_counts = Counter(evaluation.action for evaluation in evaluations)
     setup_ids = sorted({evaluation.setup_id for evaluation in evaluations})
     return {

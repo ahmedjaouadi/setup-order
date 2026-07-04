@@ -23,7 +23,9 @@ def market_context_score(
     if stock_perf_1d is not None:
         score += 25 if stock_perf_1d > 0 else -20 if stock_perf_1d < 0 else 0
     if stock_perf_1d is not None and sector_perf_1d is not None:
-        score += 25 if stock_perf_1d > sector_perf_1d else -20 if stock_perf_1d < sector_perf_1d else 0
+        score += (
+            25 if stock_perf_1d > sector_perf_1d else -20 if stock_perf_1d < sector_perf_1d else 0
+        )
     if stock_perf_1d is not None and spy_perf_1d is not None:
         score += 25 if stock_perf_1d > spy_perf_1d else -20 if stock_perf_1d < spy_perf_1d else 0
     if sector_perf_1d is not None:

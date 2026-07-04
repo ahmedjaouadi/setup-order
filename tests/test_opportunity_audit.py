@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import unittest
+from copy import deepcopy
 
 from app.models import MarketSnapshot, SetupStatus, SignalAction
 from app.opportunity_audit import (

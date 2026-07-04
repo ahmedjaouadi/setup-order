@@ -57,7 +57,7 @@ def simple_average_true_range(rows: list[dict], period: int = 14) -> float | Non
     if period <= 0 or len(rows) < period + 1:
         return None
     ranges: list[float] = []
-    tail = rows[-(period + 1):]
+    tail = rows[-(period + 1) :]
     for index in range(1, len(tail)):
         row = tail[index]
         previous = tail[index - 1]

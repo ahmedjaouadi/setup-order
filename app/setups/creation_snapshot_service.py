@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, is_dataclass
-from typing import Any, Callable
+from typing import Any
 
 from app.conversion import canonicalize_setup_config
 from app.models import utc_now_iso
 from app.storage.repositories import TradingRepository
 from app.utils.id_generator import new_id
-
 
 SnapshotProvider = Callable[[str], Any | None]
 
@@ -34,7 +34,9 @@ class SetupCreationSnapshotService:
         last = _first_number(raw.get("price"), raw.get("last_price"))
         bid, ask = _number(raw.get("bid")), _number(raw.get("ask"))
         mid = (bid + ask) / 2 if bid is not None and ask is not None else last
-        spread_pct = ((ask - bid) / mid * 100) if bid is not None and ask is not None and mid else None
+        spread_pct = (
+            ((ask - bid) / mid * 100) if bid is not None and ask is not None and mid else None
+        )
         trigger = _first_number(entry.get("trigger_price"), setup.get("entry_trigger"))
         limit_price = _first_number(entry.get("limit_price"), setup.get("maximum_limit_price"))
         trailing = (
@@ -52,14 +54,23 @@ class SetupCreationSnapshotService:
         if raw_quality in {"WARNING", "STALE", "INVALID", "UNKNOWN"}:
             issues.append(f"market_data_quality_{raw_quality.lower()}")
         snapshot = {
-            "snapshot_id": new_id("scs"), "setup_id": setup_id,
-            "scenario_id": config.get("scenario_id"), "opportunity_id": config.get("opportunity_id"),
-            "symbol": symbol, "captured_at": utc_now_iso(), "last_price": last,
-            "bid": bid, "ask": ask, "mid_price": mid, "spread_pct": _round(spread_pct),
+            "snapshot_id": new_id("scs"),
+            "setup_id": setup_id,
+            "scenario_id": config.get("scenario_id"),
+            "opportunity_id": config.get("opportunity_id"),
+            "symbol": symbol,
+            "captured_at": utc_now_iso(),
+            "last_price": last,
+            "bid": bid,
+            "ask": ask,
+            "mid_price": mid,
+            "spread_pct": _round(spread_pct),
             "volume": _number(raw.get("volume")),
             "volume_ratio": _first_number(raw.get("volume_ratio"), raw.get("volume_ratio_15m")),
-            "atr_15m": _number(raw.get("atr_15m")), "atr_1h": _number(raw.get("atr_1h")),
-            "vwap": _number(raw.get("vwap")), "entry_trigger_price": trigger,
+            "atr_15m": _number(raw.get("atr_15m")),
+            "atr_1h": _number(raw.get("atr_1h")),
+            "vwap": _number(raw.get("vwap")),
+            "entry_trigger_price": trigger,
             "entry_limit_price": limit_price,
             "trailing_stop_loss": {"initial_stop": stop},
             "distance_to_trigger_pct": _distance(last, trigger),
@@ -87,10 +98,14 @@ class SetupCreationSnapshotService:
         current = _first_number(raw.get("price"), raw.get("last_price"))
         created = _number(snapshot.get("last_price"))
         return {
-            "setup_id": setup_id, "symbol": snapshot["symbol"],
-            "creation_price": created, "current_price": current,
+            "setup_id": setup_id,
+            "symbol": snapshot["symbol"],
+            "creation_price": created,
+            "current_price": current,
             "move_since_creation_pct": _distance(created, current),
-            "distance_current_to_trigger_pct": _distance(current, _number(snapshot.get("entry_trigger_price"))),
+            "distance_current_to_trigger_pct": _distance(
+                current, _number(snapshot.get("entry_trigger_price"))
+            ),
             "captured_at": snapshot["captured_at"],
         }
 

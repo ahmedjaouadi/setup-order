@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -76,9 +75,7 @@ def _series_and_closes(request: dict[str, Any], *, target: str) -> tuple[list[fl
         return series, closes
     candles = request.get("candles")
     if isinstance(candles, list):
-        closes = _float_values(
-            [item.get("close") for item in candles if isinstance(item, dict)]
-        )
+        closes = _float_values([item.get("close") for item in candles if isinstance(item, dict)])
         if target == "log_return":
             series = [
                 math.log(current / previous)
@@ -115,7 +112,9 @@ def _direction(path: list[float]) -> str:
 
 def _forecast_config(payload: Any, model_name: str) -> ForecastConfig:
     data = payload if isinstance(payload, dict) else {}
-    provider_options = data.get("provider_options") if isinstance(data.get("provider_options"), dict) else {}
+    provider_options = (
+        data.get("provider_options") if isinstance(data.get("provider_options"), dict) else {}
+    )
     sanitized_options: dict[str, dict[str, Any]] = {}
     for key, value in provider_options.items():
         if not isinstance(value, dict):

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import tempfile
+import unittest
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
-import tempfile
-import unittest
 
 from fastapi import HTTPException
 
@@ -229,9 +229,7 @@ class SetupToolsTests(unittest.IsolatedAsyncioTestCase):
         config["enabled"] = False
         setup = MomentumBreakoutSetup(config)
         self.repository.upsert_setup(setup.to_record(SetupStatus.DISABLED))
-        request = SimpleNamespace(
-            app=SimpleNamespace(state=SimpleNamespace(engine=self.engine))
-        )
+        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(engine=self.engine)))
 
         with self.assertRaises(HTTPException) as ctx:
             await routes_setups.arm_setup(request, setup.setup_id)
@@ -242,9 +240,7 @@ class SetupToolsTests(unittest.IsolatedAsyncioTestCase):
     async def test_disarm_setup_route_updates_runtime_status(self) -> None:
         setup = MomentumBreakoutSetup(valid_momentum_config())
         self.repository.upsert_setup(setup.to_record(SetupStatus.WAITING_ACTIVATION))
-        request = SimpleNamespace(
-            app=SimpleNamespace(state=SimpleNamespace(engine=self.engine))
-        )
+        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(engine=self.engine)))
 
         result = await routes_setups.disarm_setup(request, setup.setup_id)
 
@@ -294,9 +290,7 @@ class SetupToolsTests(unittest.IsolatedAsyncioTestCase):
                 status=SetupStatus.IN_POSITION.value,
             )
         )
-        request = SimpleNamespace(
-            app=SimpleNamespace(state=SimpleNamespace(engine=self.engine))
-        )
+        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(engine=self.engine)))
 
         with self.assertRaises(HTTPException) as ctx:
             await routes_setups.disarm_setup(request, setup.setup_id)
@@ -314,7 +308,9 @@ class SetupToolsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("expected_output", template["skeleton"])
         self.assertIn("volume_confirmation_policy_by_setup_type", template["skeleton"])
         self.assertIn("trailing_runner", template["supported_setup_types"])
-        self.assertIn("breakout.resistance", template["required_by_setup_type"]["momentum_breakout"])
+        self.assertIn(
+            "breakout.resistance", template["required_by_setup_type"]["momentum_breakout"]
+        )
         self.assertIn(
             "trailing_stop_loss.enabled=true",
             template["required_by_setup_type"]["momentum_breakout"],

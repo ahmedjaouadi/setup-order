@@ -33,9 +33,7 @@ class PositionManagementSetup(BaseSetup):
             errors.append("position_management setup_role must be MANAGEMENT_ONLY")
         source = self.config.get("position_source", {})
         if source.get("mode") != "adopt_existing_ibkr_position":
-            errors.append(
-                "position_source.mode must be adopt_existing_ibkr_position"
-            )
+            errors.append("position_source.mode must be adopt_existing_ibkr_position")
         if not bool(source.get("require_existing_position", True)):
             errors.append("position_source.require_existing_position must be true")
         return ValidationResult(valid=not errors, errors=errors)
@@ -66,10 +64,7 @@ class PositionManagementSetup(BaseSetup):
         )
 
     def _next_stop_rule(self, snapshot: MarketSnapshot) -> dict[str, object] | None:
-        stop_management = (
-            self.config.get("management", {})
-            .get("stop_management", {})
-        )
+        stop_management = self.config.get("management", {}).get("stop_management", {})
         mode = str(stop_management.get("mode", "")).lower()
         if mode == "structure_based_trailing":
             return self._structure_based_trailing_stop(snapshot, stop_management)
@@ -139,13 +134,7 @@ class PositionManagementSetup(BaseSetup):
         ask = _first_float(snapshot.ask)
         tick = _first_float(snapshot.minimum_tick)
         atr_1h = _first_float(snapshot.atr_1h)
-        if (
-            support is None
-            or bid is None
-            or ask is None
-            or tick is None
-            or atr_1h is None
-        ):
+        if support is None or bid is None or ask is None or tick is None or atr_1h is None:
             return None
         if support <= 0 or bid <= 0 or ask <= 0 or tick <= 0 or atr_1h <= 0:
             return None

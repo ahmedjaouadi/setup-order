@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from threading import RLock
 from typing import Any
 
@@ -19,14 +19,14 @@ class ForecastCache:
             if item is None:
                 return None
             created_at, value = item
-            if datetime.now(timezone.utc) - created_at > self.ttl:
+            if datetime.now(UTC) - created_at > self.ttl:
                 self._items.pop(key, None)
                 return None
             return value
 
     def set(self, key: str, value: Any) -> None:
         with self._lock:
-            self._items[key] = (datetime.now(timezone.utc), value)
+            self._items[key] = (datetime.now(UTC), value)
 
     def invalidate(self, key: str | None = None) -> None:
         with self._lock:

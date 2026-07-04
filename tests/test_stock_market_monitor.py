@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from copy import deepcopy
-from pathlib import Path
 import tempfile
 import unittest
+from copy import deepcopy
+from pathlib import Path
 
 from app.engine.signal_engine import SignalEngine
 from app.engine.stock_market_monitor import (
@@ -94,7 +94,11 @@ class StockMarketMonitorHelpersTests(unittest.TestCase):
                 {"symbol": "UEC", "enabled": True, "status": SetupStatus.WAITING_ACTIVATION.value},
                 {"symbol": "NOK", "enabled": False, "status": SetupStatus.WAITING_ACTIVATION.value},
                 {"symbol": "AMD", "enabled": True, "status": SetupStatus.CLOSED.value},
-                {"symbol": "UEC", "enabled": True, "status": SetupStatus.WAITING_ENTRY_SIGNAL.value},
+                {
+                    "symbol": "UEC",
+                    "enabled": True,
+                    "status": SetupStatus.WAITING_ENTRY_SIGNAL.value,
+                },
             ]
         )
 
@@ -185,12 +189,12 @@ class StockMarketMonitorPollingTests(unittest.IsolatedAsyncioTestCase):
         self.database.close()
         self.tmp.cleanup()
 
-    async def test_poll_active_stock_quotes_collects_symbols_in_parallel_and_logs_timing(self) -> None:
+    async def test_poll_active_stock_quotes_collects_symbols_in_parallel_and_logs_timing(
+        self,
+    ) -> None:
         for symbol in ("AAA", "BBB", "CCC"):
             self.repository.upsert_setup(
-                BreakoutRetestSetup(setup_config(symbol)).to_record(
-                    SetupStatus.WAITING_ACTIVATION
-                )
+                BreakoutRetestSetup(setup_config(symbol)).to_record(SetupStatus.WAITING_ACTIVATION)
             )
 
         await self.monitor.poll_active_stock_quotes(

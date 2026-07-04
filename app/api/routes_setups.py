@@ -9,7 +9,6 @@ from app.setups.setup_factory import SetupFactory
 from app.setups.text_converter import convert_text_to_setup
 from app.utils.id_generator import new_id
 
-
 router = APIRouter()
 
 
@@ -62,7 +61,9 @@ async def get_setup(request: Request, setup_id: str):
         "setup": setup,
         "orders": orders,
         "events": events,
-        "creation_market_snapshot": request.app.state.repository.get_setup_creation_snapshot(setup_id),
+        "creation_market_snapshot": request.app.state.repository.get_setup_creation_snapshot(
+            setup_id
+        ),
     }
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.models import utc_now_iso
@@ -160,7 +160,9 @@ class FeatureStore:
             self.repository.get_bot_state(self._invalidation_key("*", "*"), {}),
         ]
         for invalidation in invalidations:
-            invalidated_at = invalidation.get("invalidated_at") if isinstance(invalidation, dict) else None
+            invalidated_at = (
+                invalidation.get("invalidated_at") if isinstance(invalidation, dict) else None
+            )
             if invalidated_at and _compare_iso(invalidated_at, created_at) >= 0:
                 return True
         return False
@@ -229,7 +231,9 @@ class FeatureStore:
             "realized_volatility_20": _stddev(returns[-20:]) if returns else None,
             "historical_ema_20": _ema(closes, 20),
             "historical_ema_50": _ema(closes, 50),
-            "average_volume_20": round(sum(volumes[-20:]) / len(volumes[-20:]), 4) if volumes else None,
+            "average_volume_20": (
+                round(sum(volumes[-20:]) / len(volumes[-20:]), 4) if volumes else None
+            ),
             "relative_volume_20": (
                 round(volumes[-1] / (sum(volumes[-20:]) / len(volumes[-20:])), 4)
                 if len(volumes) >= 2 and sum(volumes[-20:]) > 0
@@ -291,7 +295,7 @@ def _stddev(values: list[float]) -> float | None:
         return None
     average = sum(values) / len(values)
     variance = sum((value - average) ** 2 for value in values) / (len(values) - 1)
-    return round(variance ** 0.5, 6)
+    return round(variance**0.5, 6)
 
 
 def _age_seconds(timestamp: Any) -> float | None:
@@ -302,8 +306,8 @@ def _age_seconds(timestamp: Any) -> float | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return (datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).total_seconds()
+        parsed = parsed.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - parsed.astimezone(UTC)).total_seconds()
 
 
 def _compare_iso(left: Any, right: Any) -> int:
@@ -324,5 +328,5 @@ def _timestamp(value: Any) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)

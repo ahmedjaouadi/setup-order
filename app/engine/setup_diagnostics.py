@@ -5,7 +5,6 @@ from typing import Any
 from app.models import MarketSnapshot, SetupStatus, SignalAction, to_jsonable
 from app.setups.setup_roles import setup_allows_entry, setup_role_from_config
 
-
 TERMINAL_SETUP_STATUSES = {
     SetupStatus.CLOSED.value,
     SetupStatus.CANCELLED.value,
@@ -68,21 +67,14 @@ def build_setup_analysis_trace(
     close = _float_value(snapshot.close if snapshot.close is not None else snapshot.price)
     entry_enabled = bool(entry.get("enabled", True))
     allows_entry = setup_allows_entry(setup_role)
-    auto_execution_enabled = (
-        bool(setup.get("enabled"))
-        and config.get("enabled", True) is not False
-    )
+    auto_execution_enabled = bool(setup.get("enabled")) and config.get("enabled", True) is not False
     metadata = signal.metadata if isinstance(signal.metadata, dict) else {}
     analysis = metadata.get("analysis") if isinstance(metadata.get("analysis"), dict) else {}
     entry_decision = (
-        metadata.get("entry_decision")
-        if isinstance(metadata.get("entry_decision"), dict)
-        else {}
+        metadata.get("entry_decision") if isinstance(metadata.get("entry_decision"), dict) else {}
     )
     session_policy = (
-        analysis.get("session_policy")
-        if isinstance(analysis.get("session_policy"), dict)
-        else {}
+        analysis.get("session_policy") if isinstance(analysis.get("session_policy"), dict) else {}
     )
     decision_status = str(analysis.get("decision_status") or "")
     status_text = current_status.value
@@ -123,9 +115,7 @@ def build_setup_analysis_trace(
         "prix exploitable",
         f"timeframe={snapshot.timeframe} timestamp={snapshot.timestamp}",
     )
-    session_value = (
-        str(session_policy.get("session") or snapshot.session or "").upper() or "-"
-    )
+    session_value = str(session_policy.get("session") or snapshot.session or "").upper() or "-"
     session_detail = ""
     if decision_status == "WAITING_AFTER_OPEN_BARS":
         session_state = "wait"
@@ -142,7 +132,9 @@ def build_setup_analysis_trace(
         session_state = "bad"
         session_expected = "RTH"
     else:
-        session_state = "ok" if session_value == "RTH" else "info" if session_value != "-" else "wait"
+        session_state = (
+            "ok" if session_value == "RTH" else "info" if session_value != "-" else "wait"
+        )
         session_expected = "RTH"
     add(
         "Session reguliere",
@@ -155,15 +147,11 @@ def build_setup_analysis_trace(
     if setup_type == "momentum_breakout":
         market = analysis.get("market") if isinstance(analysis.get("market"), dict) else {}
         spread_check = (
-            analysis.get("spread_check")
-            if isinstance(analysis.get("spread_check"), dict)
-            else {}
+            analysis.get("spread_check") if isinstance(analysis.get("spread_check"), dict) else {}
         )
         stale = analysis.get("stale") if isinstance(analysis.get("stale"), dict) else {}
         validation = (
-            analysis.get("validation")
-            if isinstance(analysis.get("validation"), dict)
-            else {}
+            analysis.get("validation") if isinstance(analysis.get("validation"), dict) else {}
         )
         offsets = analysis.get("offsets") if isinstance(analysis.get("offsets"), dict) else {}
         stop_meta = (
@@ -172,14 +160,10 @@ def build_setup_analysis_trace(
             else {}
         )
         risk_preview = (
-            analysis.get("risk_preview")
-            if isinstance(analysis.get("risk_preview"), dict)
-            else {}
+            analysis.get("risk_preview") if isinstance(analysis.get("risk_preview"), dict) else {}
         )
         missed_retest = (
-            analysis.get("missed_retest")
-            if isinstance(analysis.get("missed_retest"), dict)
-            else {}
+            analysis.get("missed_retest") if isinstance(analysis.get("missed_retest"), dict) else {}
         )
         missing_conditions = analysis.get("missing_conditions")
         blocking_conditions = analysis.get("blocking_conditions")
@@ -202,10 +186,7 @@ def build_setup_analysis_trace(
         add(
             "Spread acceptable",
             "ok" if spread_check.get("ok") else "bad" if spread_check else "wait",
-            (
-                f"spread={spread_check.get('spread')} "
-                f"bps={spread_check.get('spread_bps')}"
-            ),
+            (f"spread={spread_check.get('spread')} " f"bps={spread_check.get('spread_bps')}"),
             (
                 f"bps<={spread_check.get('max_spread_bps')} "
                 f"spread<={spread_check.get('max_spread_atr')}"
@@ -213,14 +194,22 @@ def build_setup_analysis_trace(
         )
         add(
             "Trigger dynamique",
-            "bad" if "raw_trigger_offset above cap" in offsets.get("blocking", []) else "ok" if offsets else "wait",
+            (
+                "bad"
+                if "raw_trigger_offset above cap" in offsets.get("blocking", [])
+                else "ok" if offsets else "wait"
+            ),
             offsets.get("trigger_offset"),
             offsets.get("trigger_offset_cap"),
             f"raw={offsets.get('raw_trigger_offset')} tick={offsets.get('minimum_tick')}",
         )
         add(
             "Limite dynamique",
-            "bad" if "raw_limit_offset above cap" in offsets.get("blocking", []) else "ok" if offsets else "wait",
+            (
+                "bad"
+                if "raw_limit_offset above cap" in offsets.get("blocking", [])
+                else "ok" if offsets else "wait"
+            ),
             offsets.get("limit_offset"),
             offsets.get("limit_offset_cap"),
             f"raw={offsets.get('raw_limit_offset')}",
@@ -256,14 +245,24 @@ def build_setup_analysis_trace(
             if isinstance(validation.get("volume_confirmation"), dict)
             else {}
         )
-        volume_state = "ok" if volume.get("status") in {
-            "FAST_VOLUME_CONFIRMED",
-            "VOLUME_CONFIRMED",
-        } else "bad" if volume.get("status") in {
-            "WEAK_VOLUME",
-            "VOLUME_REJECTED",
-            "VOLUME_DATA_MISSING",
-        } else "wait"
+        volume_state = (
+            "ok"
+            if volume.get("status")
+            in {
+                "FAST_VOLUME_CONFIRMED",
+                "VOLUME_CONFIRMED",
+            }
+            else (
+                "bad"
+                if volume.get("status")
+                in {
+                    "WEAK_VOLUME",
+                    "VOLUME_REJECTED",
+                    "VOLUME_DATA_MISSING",
+                }
+                else "wait"
+            )
+        )
         add(
             "Volume",
             volume_state,
@@ -324,7 +323,11 @@ def build_setup_analysis_trace(
         )
         add(
             "Quantite maximale",
-            "bad" if risk_preview.get("maximum_quantity") == 0 else "ok" if risk_preview else "wait",
+            (
+                "bad"
+                if risk_preview.get("maximum_quantity") == 0
+                else "ok" if risk_preview else "wait"
+            ),
             (
                 f"capital={risk_preview.get('quantity_by_capital')} "
                 f"risk={risk_preview.get('quantity_by_risk')}"
@@ -334,17 +337,25 @@ def build_setup_analysis_trace(
         add(
             "Conditions bloquantes",
             "bad" if blocking_conditions else "ok",
-            " | ".join(str(item) for item in blocking_conditions) if blocking_conditions else "aucune",
+            (
+                " | ".join(str(item) for item in blocking_conditions)
+                if blocking_conditions
+                else "aucune"
+            ),
             "aucune",
         )
     elif setup_type == "breakout_retest":
-        breakout = config.get("breakout", {}) if isinstance(config.get("breakout", {}), dict) else {}
+        breakout = (
+            config.get("breakout", {}) if isinstance(config.get("breakout", {}), dict) else {}
+        )
         retest = config.get("retest", {}) if isinstance(config.get("retest", {}), dict) else {}
         daily_level = _float_value(breakout.get("daily_close_above"))
         zone_min = _float_value(retest.get("zone_min"))
         zone_max = _float_value(retest.get("zone_max"))
         no_close_below = _float_value(retest.get("no_close_below")) or zone_min
-        daily_close = _float_value(snapshot.daily_close if snapshot.daily_close is not None else close)
+        daily_close = _float_value(
+            snapshot.daily_close if snapshot.daily_close is not None else close
+        )
         bullish = snapshot_bullish_confirmation(snapshot)
         add(
             "Invalidation retest",
@@ -371,17 +382,45 @@ def build_setup_analysis_trace(
             "close > open ou bullish_candle",
         )
     elif setup_type == "aggressive_rebound":
-        support = config.get("support_zone", {}) if isinstance(config.get("support_zone", {}), dict) else {}
-        invalidation = config.get("invalidation", {}) if isinstance(config.get("invalidation", {}), dict) else {}
+        support = (
+            config.get("support_zone", {})
+            if isinstance(config.get("support_zone", {}), dict)
+            else {}
+        )
+        invalidation = (
+            config.get("invalidation", {})
+            if isinstance(config.get("invalidation", {}), dict)
+            else {}
+        )
         zone_min = _float_value(support.get("min"))
         zone_max = _float_value(support.get("max"))
         close_below = _float_value(invalidation.get("close_below")) or zone_min
         previous_high = _float_value(snapshot.previous_high or snapshot.high or zone_max)
         bullish = snapshot_bullish_confirmation(snapshot)
-        add("Invalidation support", threshold_state(close, close_below, ">="), close, f">= {close_below}")
-        add("Prix dans support", range_state(price, zone_min, zone_max), price, range_text(zone_min, zone_max))
-        add("Bougie haussiere", "ok" if bullish else "wait", "oui" if bullish else "non", "confirmation")
-        add("Cloture au-dessus precedent high", threshold_state(close, previous_high, ">"), close, f"> {previous_high}")
+        add(
+            "Invalidation support",
+            threshold_state(close, close_below, ">="),
+            close,
+            f">= {close_below}",
+        )
+        add(
+            "Prix dans support",
+            range_state(price, zone_min, zone_max),
+            price,
+            range_text(zone_min, zone_max),
+        )
+        add(
+            "Bougie haussiere",
+            "ok" if bullish else "wait",
+            "oui" if bullish else "non",
+            "confirmation",
+        )
+        add(
+            "Cloture au-dessus precedent high",
+            threshold_state(close, previous_high, ">"),
+            close,
+            f"> {previous_high}",
+        )
     elif setup_type == "range_breakout":
         range_config = config.get("range", {}) if isinstance(config.get("range", {}), dict) else {}
         high = _float_value(range_config.get("high"))
@@ -392,11 +431,21 @@ def build_setup_analysis_trace(
         ema20 = _float_value(snapshot.ema_20)
         ema50 = _float_value(snapshot.ema_50)
         bullish = snapshot_bullish_confirmation(snapshot)
-        add("EMA disponibles", "ok" if ema20 is not None and ema50 is not None else "wait", f"EMA20={ema20} EMA50={ema50}", "EMA20 + EMA50")
+        add(
+            "EMA disponibles",
+            "ok" if ema20 is not None and ema50 is not None else "wait",
+            f"EMA20={ema20} EMA50={ema50}",
+            "EMA20 + EMA50",
+        )
         add("Filtre tendance EMA50", threshold_state(price, ema50, ">="), price, f">= {ema50}")
         add("Tendance EMA20 > EMA50", threshold_state(ema20, ema50, ">"), ema20, f"> {ema50}")
         add("Pullback vers EMA20", threshold_state(price, ema20, "<="), price, f"<= {ema20}")
-        add("Bougie de reprise", "ok" if bullish else "wait", "haussiere" if bullish else "non confirmee", "close > open ou bullish_candle")
+        add(
+            "Bougie de reprise",
+            "ok" if bullish else "wait",
+            "haussiere" if bullish else "non confirmee",
+            "close > open ou bullish_candle",
+        )
     elif setup_type in {"position_management", "runner", "trailing_runner"}:
         add(
             "Mode gestion",
@@ -416,7 +465,9 @@ def build_setup_analysis_trace(
             entry_decision.get("status") or "ENTRY_READY",
         )
         if auto_execution_enabled:
-            if entry_decision.get("protective_stop_order_ready") is True and entry_decision.get("can_send_order"):
+            if entry_decision.get("protective_stop_order_ready") is True and entry_decision.get(
+                "can_send_order"
+            ):
                 add(
                     "Controle risque",
                     "ok",
@@ -491,7 +542,9 @@ def analysis_next_step(signal: Any, auto_execution_enabled: bool = True) -> str:
     if action == SignalAction.ENTRY_READY:
         if not auto_execution_enabled:
             return "Setup pret: continuer la surveillance, execution TWS bloquee tant que Auto est OFF."
-        return "Verifier le risque, construire le bracket entree + stop, puis envoyer l'ordre protege."
+        return (
+            "Verifier le risque, construire le bracket entree + stop, puis envoyer l'ordre protege."
+        )
     if action == SignalAction.STATUS_CHANGE and signal.target_status:
         if signal.target_status == SetupStatus.MISSED_BREAKOUT:
             return "Ne pas entrer au marche; attendre une zone de retest propre."

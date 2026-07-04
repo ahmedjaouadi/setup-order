@@ -1,7 +1,9 @@
 # P1: primary TimesFM, Chronos, Darts, and deterministic baselines.
+# timesfm[torch] is left unpinned: it is not installed in the reference venv used to
+# generate these pins (see TODO.md). Pin it once it has been installed and verified.
 timesfm[torch]
-torch
-pandas
-huggingface-hub
-chronos-forecasting
-u8darts[torch]
+torch==2.12.1
+pandas==2.3.3
+huggingface-hub==1.20.1
+chronos-forecasting==2.3.0
+u8darts[torch]==0.40.0

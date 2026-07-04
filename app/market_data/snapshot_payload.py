@@ -4,7 +4,6 @@ from typing import Any
 
 from app.models import MarketSnapshot
 
-
 FLOAT_FIELDS = {
     "open",
     "high",

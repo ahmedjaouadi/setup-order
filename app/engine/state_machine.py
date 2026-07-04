@@ -5,7 +5,6 @@ from typing import Any
 
 from app.models import SetupRole, SetupStatus
 
-
 ALLOWED_TRANSITIONS: dict[SetupStatus, set[SetupStatus]] = {
     SetupStatus.DRAFT: {SetupStatus.LOADED, SetupStatus.CANCELLED},
     SetupStatus.LOADED: {SetupStatus.VALIDATED, SetupStatus.ERROR},

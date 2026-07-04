@@ -7,7 +7,6 @@ from typing import Any
 from app.conversion.alias_resolver import AliasResolver, normalize_key
 from app.conversion.canonical_field_registry import load_canonical_fields
 
-
 NUMERIC_FIELDS = {
     "breakout.daily_close_above",
     "breakout.resistance",
@@ -168,9 +167,7 @@ def _canonicalize_mapping(
     parent_path: str = "",
 ) -> dict[str, Any]:
     canonical: dict[str, Any] = {}
-    canonical_parent = resolver.canonical_path(parent_path) or _normalize_section_path(
-        parent_path
-    )
+    canonical_parent = resolver.canonical_path(parent_path) or _normalize_section_path(parent_path)
 
     for raw_key, raw_value in payload.items():
         canonical_path = _resolve_canonical_path(
@@ -399,7 +396,11 @@ def _normalize_setup_metadata(
         trailing.setdefault("never_lower_stop", True)
         config["trailing_stop_loss"] = _merge_trailing_stop_defaults(
             trailing,
-            initial_stop=trailing.get("initial_stop") if trailing.get("initial_stop") is not None else legacy_stop,
+            initial_stop=(
+                trailing.get("initial_stop")
+                if trailing.get("initial_stop") is not None
+                else legacy_stop
+            ),
             migrated=trailing.get("migration_status") == "MIGRATED_TO_TRAILING_STOP",
         )
     elif initial_stop is not None or protective_stop is not None:
@@ -422,12 +423,9 @@ def _normalize_setup_metadata(
         trailing_stop = trailing.get("initial_stop")
         risk = config.setdefault("risk", {})
         if isinstance(risk, dict):
-            if (
-                trailing_stop is not None
-                and (
+            if trailing_stop is not None and (
                 risk.get("initial_stop_loss") not in (None, trailing_stop)
                 or risk.get("protective_stop") not in (None, trailing_stop)
-                )
             ):
                 warnings.append("LEGACY_STOP_FIELDS_IGNORED_IN_FAVOR_OF_TRAILING_STOP")
             risk.pop("initial_stop_loss", None)
@@ -435,9 +433,7 @@ def _normalize_setup_metadata(
             risk.pop("never_lower_stop", None)
             risk.pop("trailing_stop_loss", None)
 
-    default_mode = str(
-        ((defaults or {}).get("app") or {}).get("mode", "paper")
-    ).strip().lower()
+    default_mode = str(((defaults or {}).get("app") or {}).get("mode", "paper")).strip().lower()
     if default_mode not in {"paper", "live"}:
         default_mode = "paper"
 

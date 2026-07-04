@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 import unittest
+from types import SimpleNamespace
 
 from app.api import routes_opportunity_radar
 
@@ -17,11 +17,7 @@ class OpportunityRadarPageTests(unittest.IsolatedAsyncioTestCase):
                 captured["context"] = context
                 return {"template": template_name, "context": context}
 
-        request = SimpleNamespace(
-            app=SimpleNamespace(
-                state=SimpleNamespace(templates=Templates())
-            )
-        )
+        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(templates=Templates())))
 
         result = await routes_opportunity_radar.opportunity_radar_page(request)
 

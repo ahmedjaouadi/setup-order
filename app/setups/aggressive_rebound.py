@@ -63,7 +63,9 @@ class AggressiveReboundSetup(BaseSetup):
         if current_status == SetupStatus.WAITING_ENTRY_SIGNAL:
             previous_high = snapshot.previous_high or snapshot.high or high
             if bullish_confirmation(snapshot) and close > previous_high:
-                entry = previous_high + float(self.config.get("entry", {}).get("trigger_offset", 0.02))
+                entry = previous_high + float(
+                    self.config.get("entry", {}).get("trigger_offset", 0.02)
+                )
                 return SetupSignal(
                     action=SignalAction.ENTRY_READY,
                     reason="Bullish rebound confirmed",
@@ -72,4 +74,3 @@ class AggressiveReboundSetup(BaseSetup):
                     stop_loss=self.stop_loss,
                 )
         return SetupSignal.hold("Waiting for support rebound")
-

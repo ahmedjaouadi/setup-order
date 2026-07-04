@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from copy import deepcopy
-from datetime import datetime, timezone
-from typing import Any, Callable
+from datetime import UTC, datetime
+from typing import Any
 
 from app.engine.broker_reality import broker_reality_blocking_reasons
 from app.engine.order_manager import (
@@ -36,7 +37,7 @@ class EntryOrderExecutor:
         self.risk_engine = risk_engine
         self.order_manager = order_manager
         self.settings = settings if isinstance(settings, dict) else {}
-        self.current_time_provider = current_time_provider or (lambda: datetime.now(timezone.utc))
+        self.current_time_provider = current_time_provider or (lambda: datetime.now(UTC))
         self.lifecycle_service = lifecycle_service
 
     async def execute_entry_ready(
@@ -48,11 +49,17 @@ class EntryOrderExecutor:
             return False
 
         if signal_blocked_by_session_policy(signal):
-            analysis = signal.metadata.get("analysis", {}) if isinstance(signal.metadata, dict) else {}
+            analysis = (
+                signal.metadata.get("analysis", {}) if isinstance(signal.metadata, dict) else {}
+            )
             self.event_store.record(
                 EventLevel.WARNING,
                 "entry_blocked_by_session_policy",
-                str(analysis.get("display_message") or signal.reason or "Entry blocked by session policy"),
+                str(
+                    analysis.get("display_message")
+                    or signal.reason
+                    or "Entry blocked by session policy"
+                ),
                 setup_id=setup["setup_id"],
                 symbol=setup["symbol"],
                 data={
@@ -105,9 +112,11 @@ class EntryOrderExecutor:
                     "entry_price": signal.entry_price,
                     "stop_loss": signal.stop_loss,
                     "enabled": bool(setup.get("enabled")),
-                    "config_enabled": setup.get("config", {}).get("enabled", True)
-                    if isinstance(setup.get("config"), dict)
-                    else True,
+                    "config_enabled": (
+                        setup.get("config", {}).get("enabled", True)
+                        if isinstance(setup.get("config"), dict)
+                        else True
+                    ),
                 },
             )
             return True
@@ -155,8 +164,7 @@ class EntryOrderExecutor:
         positions = self.repository.list_positions()
         open_positions = len(positions)
         exposure = sum(
-            float(position["average_price"]) * int(position["quantity"])
-            for position in positions
+            float(position["average_price"]) * int(position["quantity"]) for position in positions
         )
         daily_pnl = sum(float(position["unrealized_pnl"]) for position in positions)
         decision = self.risk_engine.evaluate(

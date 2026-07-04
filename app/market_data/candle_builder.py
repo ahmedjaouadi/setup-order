@@ -34,4 +34,3 @@ class CandleBuilder:
             close=close,
             volume=volume,
         )
-

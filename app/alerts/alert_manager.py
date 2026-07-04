@@ -23,4 +23,3 @@ class AlertManager:
             setup_id=setup_id,
             symbol=symbol,
         )
-

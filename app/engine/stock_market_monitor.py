@@ -3,21 +3,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from typing import Any
 
+from app.engine.opportunity_alert_service import OpportunityAlertService
 from app.engine.setup_diagnostics import (
     build_setup_analysis_trace,
     market_snapshot_payload,
 )
 from app.engine.signal_engine import SignalEngine
-from app.engine.opportunity_alert_service import OpportunityAlertService
 from app.market_data.market_data_service import MarketDataService
 from app.models import BotStatus, ConnectionStatus, EventLevel, MarketSnapshot, SetupStatus
 from app.settings import Settings
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
-
 
 logger = logging.getLogger(__name__)
 
@@ -67,9 +67,7 @@ class StockMarketMonitor:
         enabled = bool(market_config.get("tws_stock_poll_enabled", True))
         interval = int(market_config.get("tws_stock_poll_interval_seconds", 15) or 15)
         timeout = float(market_config.get("tws_stock_quote_timeout_seconds", 4) or 4)
-        configured_concurrency = int(
-            market_config.get("tws_stock_poll_max_concurrency", 5) or 5
-        )
+        configured_concurrency = int(market_config.get("tws_stock_poll_max_concurrency", 5) or 5)
         if not enabled:
             self.health["last_stock_poll_reason"] = "disabled"
             return
@@ -142,16 +140,12 @@ class StockMarketMonitor:
                 "last_stock_poll_reason": (
                     "ok"
                     if should_analyze and error_count == 0
-                    else "quote_only_bot_not_running"
-                    if error_count == 0
-                    else "partial"
+                    else "quote_only_bot_not_running" if error_count == 0 else "partial"
                 ),
                 "last_stock_analysis_count": analysis_count,
                 "last_stock_poll_latency_ms": cycle_latency_ms,
                 "last_stock_poll_max_concurrency": max_concurrency,
-                "last_stock_poll_symbol_timings": [
-                    result.get("timing", {}) for result in results
-                ],
+                "last_stock_poll_symbol_timings": [result.get("timing", {}) for result in results],
             }
         )
         self.record_stock_poll_timing(
@@ -255,10 +249,7 @@ class StockMarketMonitor:
                     timing=timing,
                 )
         else:
-            message = (
-                quote_data.get("message")
-                or f"TWS did not return a usable quote for {symbol}"
-            )
+            message = quote_data.get("message") or f"TWS did not return a usable quote for {symbol}"
             logger.warning(
                 "TWS stock quote missing %s: %s %s",
                 symbol,
@@ -380,9 +371,7 @@ class StockMarketMonitor:
         should_analyze: bool,
     ) -> None:
         timings = [
-            result.get("timing", {})
-            for result in results
-            if isinstance(result.get("timing"), dict)
+            result.get("timing", {}) for result in results if isinstance(result.get("timing"), dict)
         ]
         quote_latencies = numeric_values(timings, "quote_latency_ms")
         analysis_latencies = numeric_values(timings, "analysis_latency_ms")
@@ -475,9 +464,7 @@ def active_market_symbols(setups: list[dict[str, Any]]) -> list[str]:
         SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value,
     }
     symbols = {
-        str(setup["symbol"]).upper()
-        for setup in setups
-        if setup["status"] not in terminal_statuses
+        str(setup["symbol"]).upper() for setup in setups if setup["status"] not in terminal_statuses
     }
     return sorted(symbols)
 
@@ -504,9 +491,7 @@ def quote_to_market_snapshot(
         bar_volume_15m=float_value(quote.get("bar_volume_15m")),
         avg_volume_15m=float_value(quote.get("avg_volume_15m")),
         volume_ratio_15m=float_value(quote.get("volume_ratio_15m")),
-        current_bar_volume=float_value(
-            quote.get("current_bar_volume", quote.get("volume"))
-        ),
+        current_bar_volume=float_value(quote.get("current_bar_volume", quote.get("volume"))),
         previous_high=float_value(quote.get("previous_high")),
         daily_close=float_value(quote.get("close")) or price,
         volume_ratio=float_value(quote.get("volume_ratio")),
@@ -517,9 +502,7 @@ def quote_to_market_snapshot(
             )
         ),
         volume_ratio_live=float_value(quote.get("volume_ratio_live")),
-        average_volume_ratio_last_2_bars=float_value(
-            quote.get("average_volume_ratio_last_2_bars")
-        ),
+        average_volume_ratio_last_2_bars=float_value(quote.get("average_volume_ratio_last_2_bars")),
         volume_status=str(quote.get("volume_status") or ""),
         volume_timeframe=str(quote.get("volume_timeframe") or ""),
         volume_comparison_mode=str(quote.get("volume_comparison_mode") or ""),
@@ -538,9 +521,7 @@ def quote_to_market_snapshot(
         atr_1h_bar_size=str(quote.get("atr_1h_bar_size") or ""),
         atr_1h_duration=str(quote.get("atr_1h_duration") or ""),
         atr_1h_use_rth=(
-            bool(quote.get("atr_1h_use_rth"))
-            if quote.get("atr_1h_use_rth") is not None
-            else None
+            bool(quote.get("atr_1h_use_rth")) if quote.get("atr_1h_use_rth") is not None else None
         ),
         bars_required_for_atr=int_value(quote.get("bars_required_for_atr")),
         historical_1h_available=(
@@ -557,26 +538,18 @@ def quote_to_market_snapshot(
         ),
         atr_1h_age_seconds=float_value(quote.get("atr_1h_age_seconds")),
         session=str(quote["session"]).upper() if quote.get("session") else None,
-        market_open_time=str(quote["market_open_time"])
-        if quote.get("market_open_time")
-        else None,
+        market_open_time=str(quote["market_open_time"]) if quote.get("market_open_time") else None,
         current_time=str(quote["current_time"]) if quote.get("current_time") else None,
         last_confirmed_higher_low=float_value(quote.get("last_confirmed_higher_low")),
         support_level=float_value(quote.get("support_level")),
         successful_retest_low=float_value(quote.get("successful_retest_low")),
         structural_support=float_value(quote.get("structural_support")),
-        breakout_already_detected=bool(
-            quote.get("breakout_already_detected", False)
-        ),
-        new_higher_low_confirmed=bool(
-            quote.get("new_higher_low_confirmed", False)
-        ),
+        breakout_already_detected=bool(quote.get("breakout_already_detected", False)),
+        new_higher_low_confirmed=bool(quote.get("new_higher_low_confirmed", False)),
         close_1h=float_value(quote.get("close_1h")),
         market_data_source=str(quote.get("market_data_source") or ""),
         live_quote_source=str(quote.get("live_quote_source") or ""),
-        market_data_type_requested=float_value(
-            quote.get("market_data_type_requested")
-        ),
+        market_data_type_requested=float_value(quote.get("market_data_type_requested")),
         market_data_type_actual=float_value(quote.get("market_data_type_actual")),
         live_market_data_status=str(quote.get("live_market_data_status") or ""),
         last_ibkr_error_code=int_value(quote.get("last_ibkr_error_code")),
@@ -584,15 +557,17 @@ def quote_to_market_snapshot(
         bar_date=str(quote.get("bar_date") or ""),
         hybrid_signal_bar_size=str(quote.get("hybrid_signal_bar_size") or ""),
         hybrid_atr_1h_bar_size=str(quote.get("hybrid_atr_1h_bar_size") or ""),
-        hybrid_sources=quote.get("hybrid_sources")
-        if isinstance(quote.get("hybrid_sources"), dict)
-        else {},
-        market_data_readiness=quote.get("market_data_readiness")
-        if isinstance(quote.get("market_data_readiness"), dict)
-        else {},
-        historical_bars=quote.get("historical_bars")
-        if isinstance(quote.get("historical_bars"), list)
-        else [],
+        hybrid_sources=(
+            quote.get("hybrid_sources") if isinstance(quote.get("hybrid_sources"), dict) else {}
+        ),
+        market_data_readiness=(
+            quote.get("market_data_readiness")
+            if isinstance(quote.get("market_data_readiness"), dict)
+            else {}
+        ),
+        historical_bars=(
+            quote.get("historical_bars") if isinstance(quote.get("historical_bars"), list) else []
+        ),
     )
 
 
@@ -672,11 +647,7 @@ def stock_quote_fields_text(quote: dict[str, Any]) -> str:
         "bar_count",
         "bars_above_resistance",
     )
-    parts = [
-        f"{key}={quote[key]}"
-        for key in keys
-        if quote.get(key) not in (None, "")
-    ]
+    parts = [f"{key}={quote[key]}" for key in keys if quote.get(key) not in (None, "")]
     return " ".join(parts)
 
 
@@ -695,15 +666,9 @@ def stock_analysis_dedupe_key(
     parts: list[tuple[Any, ...]] = []
     for item in processed:
         metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
-        analysis = (
-            metadata.get("analysis")
-            if isinstance(metadata.get("analysis"), dict)
-            else {}
-        )
+        analysis = metadata.get("analysis") if isinstance(metadata.get("analysis"), dict) else {}
         opportunity_score = (
-            item.get("opportunity_score")
-            if isinstance(item.get("opportunity_score"), dict)
-            else {}
+            item.get("opportunity_score") if isinstance(item.get("opportunity_score"), dict) else {}
         )
         missing = analysis.get("missing_conditions")
         blocking = analysis.get("blocking_conditions")
@@ -784,7 +749,7 @@ def summary_stats(values: list[float]) -> dict[str, float | int | None]:
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def age_seconds(value: Any) -> int | None:
@@ -795,5 +760,5 @@ def age_seconds(value: Any) -> int | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return max(int((datetime.now(timezone.utc) - parsed).total_seconds()), 0)
+        parsed = parsed.replace(tzinfo=UTC)
+    return max(int((datetime.now(UTC) - parsed).total_seconds()), 0)

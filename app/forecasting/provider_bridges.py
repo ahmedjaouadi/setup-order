@@ -19,7 +19,7 @@ def lag_llama_forecast(
     del closes, target
     torch = importlib.import_module("torch")
     estimator_module = importlib.import_module("lag_llama.gluon.estimator")
-    estimator_cls = getattr(estimator_module, "LagLlamaEstimator")
+    estimator_cls = estimator_module.LagLlamaEstimator
     checkpoint_path = _checkpoint_path(options)
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     model_kwargs = (
@@ -30,7 +30,9 @@ def lag_llama_forecast(
     estimator_kwargs = {
         "ckpt_path": checkpoint_path,
         "prediction_length": horizon,
-        "context_length": min(len(series), int(options.get("context_length") or config.context_bars)),
+        "context_length": min(
+            len(series), int(options.get("context_length") or config.context_bars)
+        ),
         "input_size": model_kwargs.get("input_size"),
         "n_layer": model_kwargs.get("n_layer"),
         "n_embd_per_head": model_kwargs.get("n_embd_per_head"),
@@ -63,14 +65,16 @@ def moirai_uni2ts_forecast(
     """Run Moirai/Uni2TS as an offline zero-shot probabilistic forecast."""
     del closes, target
     moirai = importlib.import_module("uni2ts.model.moirai")
-    module_cls = getattr(moirai, "MoiraiModule")
-    forecast_cls = getattr(moirai, "MoiraiForecast")
+    module_cls = moirai.MoiraiModule
+    forecast_cls = moirai.MoiraiForecast
     model_repo = str(options.get("model_repo") or "Salesforce/moirai-1.1-R-small")
     module = module_cls.from_pretrained(model_repo)
     forecast_kwargs = {
         "module": module,
         "prediction_length": horizon,
-        "context_length": min(len(series), int(options.get("context_length") or config.context_bars)),
+        "context_length": min(
+            len(series), int(options.get("context_length") or config.context_bars)
+        ),
         "patch_size": options.get("patch_size") or "auto",
         "num_samples": int(options.get("num_samples") or 100),
         "target_dim": 1,
@@ -91,16 +95,20 @@ def _checkpoint_path(options: dict[str, Any]) -> str:
             raise RuntimeError(f"Lag-Llama checkpoint not found: {path}")
         return str(path)
     hub = importlib.import_module("huggingface_hub")
-    return str(hub.hf_hub_download(
-        repo_id=str(options.get("checkpoint_repo") or "time-series-foundation-models/Lag-Llama"),
-        filename=str(options.get("checkpoint_file") or "lag-llama.ckpt"),
-    ))
+    return str(
+        hub.hf_hub_download(
+            repo_id=str(
+                options.get("checkpoint_repo") or "time-series-foundation-models/Lag-Llama"
+            ),
+            filename=str(options.get("checkpoint_file") or "lag-llama.ckpt"),
+        )
+    )
 
 
 def _gluonts_dataset(series: list[float], timeframe: str) -> Any:
     pandas = importlib.import_module("pandas")
     dataset_module = importlib.import_module("gluonts.dataset.pandas")
-    pandas_dataset = getattr(dataset_module, "PandasDataset")
+    pandas_dataset = dataset_module.PandasDataset
     values = pandas.Series(
         series,
         index=pandas.period_range(
@@ -126,8 +134,13 @@ def _supported_kwargs(callable_object: Any, values: dict[str, Any]) -> dict[str,
 
 def _frequency(timeframe: str) -> str:
     return {
-        "3m": "3min", "10m": "10min", "15m": "15min", "30m": "30min",
-        "1h": "h", "4h": "4h", "1d": "D",
+        "3m": "3min",
+        "10m": "10min",
+        "15m": "15min",
+        "30m": "30min",
+        "1h": "h",
+        "4h": "4h",
+        "1d": "D",
     }.get(str(timeframe).lower(), "15min")
 
 

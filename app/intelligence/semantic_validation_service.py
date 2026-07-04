@@ -7,7 +7,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-
 SUPPORTED_SETUP_TYPES = {
     "aggressive_rebound",
     "breakout_retest",
@@ -128,9 +127,7 @@ class SemanticValidationService:
         type_names = (
             set(expected_type)
             if isinstance(expected_type, list)
-            else {expected_type}
-            if expected_type is not None
-            else set()
+            else {expected_type} if expected_type is not None else set()
         )
 
         if "enum" in schema and value not in schema["enum"]:
@@ -140,9 +137,7 @@ class SemanticValidationService:
                     level="error",
                     code="enum_mismatch",
                     path=path or "$",
-                    message=(
-                        f"{path or 'root'} must be one of {schema['enum']}, got {value!r}"
-                    ),
+                    message=(f"{path or 'root'} must be one of {schema['enum']}, got {value!r}"),
                 )
             )
             return
@@ -173,7 +168,11 @@ class SemanticValidationService:
                 )
             return
 
-        if type_names.intersection({"number", "integer"}) and isinstance(value, (int, float)) and not isinstance(value, bool):
+        if (
+            type_names.intersection({"number", "integer"})
+            and isinstance(value, (int, float))
+            and not isinstance(value, bool)
+        ):
             minimum = schema.get("minimum")
             if minimum is not None and value < minimum:
                 issues.append(
@@ -263,11 +262,7 @@ class SemanticValidationService:
             entry.get("maximum_limit_price"),
             entry.get("limit_price"),
         )
-        if (
-            trigger_price is not None
-            and limit_price is not None
-            and limit_price < trigger_price
-        ):
+        if trigger_price is not None and limit_price is not None and limit_price < trigger_price:
             issues.append(
                 SemanticValidationIssue(
                     source="semantic",
@@ -283,11 +278,7 @@ class SemanticValidationService:
 
         max_position = _first_number(risk.get("max_position_amount_usd"))
         max_risk = _first_number(risk.get("max_risk_usd"))
-        if (
-            max_position is not None
-            and max_risk is not None
-            and max_risk > max_position
-        ):
+        if max_position is not None and max_risk is not None and max_risk > max_position:
             issues.append(
                 SemanticValidationIssue(
                     source="semantic",
@@ -309,20 +300,14 @@ class SemanticValidationService:
                 target = _mapping(item)
                 zone_min = _first_number(target.get("zone_min"))
                 zone_max = _first_number(target.get("zone_max"))
-                if (
-                    zone_min is not None
-                    and zone_max is not None
-                    and zone_min > zone_max
-                ):
+                if zone_min is not None and zone_max is not None and zone_min > zone_max:
                     issues.append(
                         SemanticValidationIssue(
                             source="semantic",
                             level="error",
                             code="reversed_target_zone",
                             path=f"targets[{index}]",
-                            message=(
-                                f"targets[{index}] has zone_min above zone_max"
-                            ),
+                            message=(f"targets[{index}] has zone_min above zone_max"),
                         )
                     )
 
@@ -333,7 +318,6 @@ class SemanticValidationService:
     ) -> None:
         trailing = config.get("trailing_stop_loss")
         entry = _mapping(config.get("entry"))
-        role = str(config.get("setup_role") or "").strip().upper()
         entry_enabled = entry.get("enabled", True) is not False
 
         if not isinstance(trailing, dict):
@@ -420,11 +404,7 @@ class SemanticValidationService:
                         message="retest.zone_min must be less than or equal to retest.zone_max",
                     )
                 )
-            if (
-                daily_level is not None
-                and zone_max is not None
-                and daily_level < zone_max
-            ):
+            if daily_level is not None and zone_max is not None and daily_level < zone_max:
                 issues.append(
                     SemanticValidationIssue(
                         source="semantic",
@@ -479,11 +459,7 @@ class SemanticValidationService:
                         ),
                     )
                 )
-            if (
-                resistance is not None
-                and max_limit is not None
-                and max_limit < resistance
-            ):
+            if resistance is not None and max_limit is not None and max_limit < resistance:
                 issues.append(
                     SemanticValidationIssue(
                         source="semantic",

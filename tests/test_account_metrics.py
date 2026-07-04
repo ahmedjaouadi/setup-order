@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from copy import deepcopy
-from pathlib import Path
 import tempfile
 import unittest
+from copy import deepcopy
+from pathlib import Path
 
 from app.broker.ib_models import BrokerOrderRequest, BrokerPosition
 from app.engine.trading_engine import TradingEngine

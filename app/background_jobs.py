@@ -7,7 +7,6 @@ from typing import Any
 
 from app.models import utc_now_iso
 
-
 logger = logging.getLogger(__name__)
 
 TERMINAL_SETUP_STATUSES = {
@@ -52,7 +51,7 @@ async def auto_recalculate_forecasts(app: Any) -> dict[str, Any]:
     engine = getattr(app.state, "engine", None)
     if forecast_service is None or repository is None or engine is None:
         summary = {"ok": False, "reason": "forecasting_not_ready", "items": []}
-        setattr(app.state, "forecast_auto_refresh", summary)
+        app.state.forecast_auto_refresh = summary
         return summary
 
     runtime: dict[str, Any] = {}
@@ -61,7 +60,7 @@ async def auto_recalculate_forecasts(app: Any) -> dict[str, Any]:
             runtime = engine.runtime_state()
         except Exception as exc:
             summary = {"ok": False, "reason": f"runtime_state_error: {exc}", "items": []}
-            setattr(app.state, "forecast_auto_refresh", summary)
+            app.state.forecast_auto_refresh = summary
             return summary
 
     connection = str(runtime.get("connection") or "").upper()
@@ -72,14 +71,10 @@ async def auto_recalculate_forecasts(app: Any) -> dict[str, Any]:
             "items": [],
             "generated_at": utc_now_iso(),
         }
-        setattr(app.state, "forecast_auto_refresh", summary)
+        app.state.forecast_auto_refresh = summary
         return summary
 
-    setups = [
-        setup
-        for setup in repository.list_setups()
-        if _setup_needs_refresh(setup)
-    ]
+    setups = [setup for setup in repository.list_setups() if _setup_needs_refresh(setup)]
     items: list[dict[str, Any]] = []
     for setup in setups:
         symbol = str(setup.get("symbol") or "").upper()
@@ -87,7 +82,9 @@ async def auto_recalculate_forecasts(app: Any) -> dict[str, Any]:
         if not symbol or not setup_id:
             continue
         config = setup.get("config") if isinstance(setup.get("config"), dict) else {}
-        timeframe = _setup_signal_timeframe(config, getattr(forecast_service.config, "timeframe", "15m"))
+        timeframe = _setup_signal_timeframe(
+            config, getattr(forecast_service.config, "timeframe", "15m")
+        )
         try:
             result = await forecast_service.forecast_ensemble(
                 symbol,
@@ -130,7 +127,7 @@ async def auto_recalculate_forecasts(app: Any) -> dict[str, Any]:
         ),
         "items": items,
     }
-    setattr(app.state, "forecast_auto_refresh", summary)
+    app.state.forecast_auto_refresh = summary
     return summary
 
 
@@ -138,7 +135,7 @@ async def auto_rebuild_opportunity_shortlist(app: Any) -> dict[str, Any]:
     scanner = getattr(app.state, "opportunity_scanner", None)
     if scanner is None:
         summary = {"ok": False, "reason": "scanner_not_ready", "items": []}
-        setattr(app.state, "opportunity_auto_refresh", summary)
+        app.state.opportunity_auto_refresh = summary
         return summary
 
     result = await asyncio.to_thread(scanner.rebuild_shortlist)
@@ -149,7 +146,7 @@ async def auto_rebuild_opportunity_shortlist(app: Any) -> dict[str, Any]:
         "shortlist": result.get("shortlist") or {},
         "items": result.get("items") or [],
     }
-    setattr(app.state, "opportunity_auto_refresh", summary)
+    app.state.opportunity_auto_refresh = summary
     return summary
 
 
@@ -159,7 +156,7 @@ async def auto_evaluate_forecast_accuracy(app: Any) -> dict[str, Any]:
     repository = getattr(app.state, "repository", None)
     if accuracy is None or accuracy_repository is None:
         summary = {"ok": False, "reason": "forecast_accuracy_not_ready", "items": []}
-        setattr(app.state, "forecast_accuracy_auto_refresh", summary)
+        app.state.forecast_accuracy_auto_refresh = summary
         return summary
 
     try:
@@ -167,7 +164,7 @@ async def auto_evaluate_forecast_accuracy(app: Any) -> dict[str, Any]:
     except Exception as exc:
         logger.exception("Forecast accuracy due outcome lookup failed")
         summary = {"ok": False, "reason": f"due_lookup_error: {exc}", "items": []}
-        setattr(app.state, "forecast_accuracy_auto_refresh", summary)
+        app.state.forecast_accuracy_auto_refresh = summary
         return summary
 
     symbols = sorted({str(item.get("symbol") or "").upper() for item in due if item.get("symbol")})
@@ -192,7 +189,7 @@ async def auto_evaluate_forecast_accuracy(app: Any) -> dict[str, Any]:
         "scorecard_count": len(scorecards),
         "items": result.get("evaluated", []),
     }
-    setattr(app.state, "forecast_accuracy_auto_refresh", summary)
+    app.state.forecast_accuracy_auto_refresh = summary
     return summary
 
 
@@ -210,7 +207,11 @@ def _setup_signal_timeframe(config: dict[str, Any], default: str) -> str:
 def _latest_market_observation(app: Any, symbol: str, repository: Any | None) -> dict[str, Any]:
     engine = getattr(app.state, "engine", None)
     market_data = getattr(engine, "market_data", None)
-    latest = market_data.latest(symbol) if market_data is not None and hasattr(market_data, "latest") else None
+    latest = (
+        market_data.latest(symbol)
+        if market_data is not None and hasattr(market_data, "latest")
+        else None
+    )
     if latest is not None:
         price = _number(getattr(latest, "close", None), getattr(latest, "price", None))
         path = _bar_path(getattr(latest, "historical_bars", None))
@@ -226,7 +227,9 @@ def _latest_market_observation(app: Any, symbol: str, repository: Any | None) ->
         return {"price": None, "high": None, "low": None, "path": []}
     events = repository.list_events(symbol=symbol, event_type="stock_quote", limit=1)
     event = events[0] if events else {}
-    data = event.get("data") if isinstance(event, dict) and isinstance(event.get("data"), dict) else {}
+    data = (
+        event.get("data") if isinstance(event, dict) and isinstance(event.get("data"), dict) else {}
+    )
     return {
         "price": _number(
             data.get("price"),

@@ -13,4 +13,3 @@ def export_rows_to_csv(rows: list[dict[str, Any]], path: Path) -> Path:
         writer.writeheader()
         writer.writerows(rows)
     return path
-

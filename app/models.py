@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import Enum, StrEnum
 from typing import Any
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
-class SerializableEnum(str, Enum):
-    def __str__(self) -> str:
-        return self.value
+class SerializableEnum(StrEnum):
+    pass
 
 
 class BotMode(SerializableEnum):
@@ -139,7 +138,7 @@ class ValidationResult:
         cls,
         warnings: list[str] | None = None,
         details: dict[str, Any] | None = None,
-    ) -> "ValidationResult":
+    ) -> ValidationResult:
         return cls(valid=True, warnings=warnings or [], details=details or {})
 
     @classmethod
@@ -147,7 +146,7 @@ class ValidationResult:
         cls,
         errors: list[str],
         details: dict[str, Any] | None = None,
-    ) -> "ValidationResult":
+    ) -> ValidationResult:
         return cls(valid=False, errors=errors, details=details or {})
 
 
@@ -239,7 +238,7 @@ class SetupSignal:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def hold(cls, reason: str = "No actionable signal") -> "SetupSignal":
+    def hold(cls, reason: str = "No actionable signal") -> SetupSignal:
         return cls(action=SignalAction.HOLD, reason=reason)
 
 

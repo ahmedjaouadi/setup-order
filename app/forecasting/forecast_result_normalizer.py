@@ -20,21 +20,30 @@ def normalize_forecast_result(
     direction = str(raw.get("direction") or _direction(point)).upper()
     return NormalizedForecastResult(
         model_name=str(model_name).lower().replace("-", "_"),
-        symbol=str(symbol).upper(), timeframe=str(timeframe), horizon_bars=int(horizon_bars),
+        symbol=str(symbol).upper(),
+        timeframe=str(timeframe),
+        horizon_bars=int(horizon_bars),
         generated_at=str(raw.get("generated_at") or utc_now_iso()),
         status=str(raw.get("status") or ("OK" if point else "LOAD_ERROR")),
-        point_forecast=point or None, quantiles=quantiles,
-        prediction_intervals=raw.get("prediction_intervals"), direction=direction,
+        point_forecast=point or None,
+        quantiles=quantiles,
+        prediction_intervals=raw.get("prediction_intervals"),
+        direction=direction,
         direction_confidence=_number(raw.get("direction_confidence")),
         expected_return_pct=_number(raw.get("expected_return_pct")),
         prob_touch_entry=_number(raw.get("prob_touch_entry")),
         prob_touch_stop_before_entry=_number(raw.get("prob_touch_stop_before_entry")),
-        warnings=list(raw.get("warnings") or []), raw_output_ref=raw.get("raw_output_ref"),
+        warnings=list(raw.get("warnings") or []),
+        raw_output_ref=raw.get("raw_output_ref"),
     )
 
 
 def _numbers(value: Any) -> list[float]:
-    return [number for item in value for number in [_number(item)] if number is not None] if isinstance(value, list) else []
+    return (
+        [number for item in value for number in [_number(item)] if number is not None]
+        if isinstance(value, list)
+        else []
+    )
 
 
 def _number(value: Any) -> float | None:

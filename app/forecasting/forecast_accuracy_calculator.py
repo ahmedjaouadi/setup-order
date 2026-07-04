@@ -5,7 +5,6 @@ import statistics
 from collections.abc import Iterable
 from typing import Any
 
-
 DEFAULT_GRADES = {
     "A": {"min_direction_accuracy": 0.62, "max_mape": 0.04},
     "B": {"min_direction_accuracy": 0.57, "max_mape": 0.06},
@@ -32,10 +31,18 @@ def outcome_metrics(
 
 def aggregate_metrics(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
     items = list(rows)
-    percentage_errors = [float(row["percentage_error"]) for row in items if row.get("percentage_error") is not None]
-    absolute_errors = [float(row["absolute_error"]) for row in items if row.get("absolute_error") is not None]
-    squared_errors = [float(row["squared_error"]) for row in items if row.get("squared_error") is not None]
-    correct = [bool(row["direction_correct"]) for row in items if row.get("direction_correct") is not None]
+    percentage_errors = [
+        float(row["percentage_error"]) for row in items if row.get("percentage_error") is not None
+    ]
+    absolute_errors = [
+        float(row["absolute_error"]) for row in items if row.get("absolute_error") is not None
+    ]
+    squared_errors = [
+        float(row["squared_error"]) for row in items if row.get("squared_error") is not None
+    ]
+    correct = [
+        bool(row["direction_correct"]) for row in items if row.get("direction_correct") is not None
+    ]
     entry_predictions: list[bool] = []
     entry_outcomes: list[bool] = []
     stop_before_entry = []
@@ -52,7 +59,9 @@ def aggregate_metrics(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
             stop_before_entry.append(bool(row["stop_touched_before_entry"]))
         confidence = _number(row.get("direction_confidence"))
         if confidence is not None and row.get("direction_correct") is not None:
-            calibration_errors.append(abs(max(0.0, min(1.0, confidence)) - float(bool(row["direction_correct"]))))
+            calibration_errors.append(
+                abs(max(0.0, min(1.0, confidence)) - float(bool(row["direction_correct"])))
+            )
     return {
         "sample_size": len(items),
         "direction_accuracy": sum(correct) / len(correct) if correct else None,
@@ -63,20 +72,22 @@ def aggregate_metrics(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "entry_touch_accuracy": (
             sum(predicted == actual for predicted, actual in zip(entry_predictions, entry_outcomes))
             / len(entry_predictions)
-            if entry_predictions else None
+            if entry_predictions
+            else None
         ),
         "stop_before_entry_error_rate": (
             sum(stop_before_entry) / len(stop_before_entry) if stop_before_entry else None
         ),
         "calibration_score": (
-            1.0 - sum(calibration_errors) / len(calibration_errors)
-            if calibration_errors else None
+            1.0 - sum(calibration_errors) / len(calibration_errors) if calibration_errors else None
         ),
     }
 
 
 def reliability_grade(
-    metrics: dict[str, Any], *, min_samples: int = 30,
+    metrics: dict[str, Any],
+    *,
+    min_samples: int = 30,
     grades: dict[str, dict[str, float]] | None = None,
 ) -> str:
     if int(metrics.get("sample_size") or 0) < min_samples:

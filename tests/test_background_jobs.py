@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 import unittest
+from types import SimpleNamespace
 
 from app.background_jobs import (
     auto_evaluate_forecast_accuracy,
-    auto_recalculate_forecasts,
     auto_rebuild_opportunity_shortlist,
+    auto_recalculate_forecasts,
 )
 from app.models import MarketSnapshot
 

@@ -46,7 +46,9 @@ class CanonicalModelBuilderTests(unittest.TestCase):
             config["trailing_stop_loss"]["broker_order"]["required_before_entry_transmission"]
         )
         self.assertTrue(
-            config["trailing_stop_loss"]["broker_order"]["use_native_ibkr_trailing_order_if_available"]
+            config["trailing_stop_loss"]["broker_order"][
+                "use_native_ibkr_trailing_order_if_available"
+            ]
         )
         self.assertNotIn("initial_stop_loss", config["risk"])
         self.assertNotIn("protective_stop", config["risk"])
@@ -104,9 +106,7 @@ class CanonicalModelBuilderTests(unittest.TestCase):
         self.assertEqual(trailing["activation"]["mode"], "ON_ENTRY_FILL")
         self.assertEqual(trailing["calculation"]["method"], "HYBRID_ATR_STRUCTURE")
         self.assertTrue(trailing["ratchet_rules"]["do_not_update_if_spread_wide"])
-        self.assertTrue(
-            trailing["broker_order"]["fallback_to_managed_stop_updates"]
-        )
+        self.assertTrue(trailing["broker_order"]["fallback_to_managed_stop_updates"])
 
     def test_adds_root_trailing_stop_loss_when_missing(self) -> None:
         result = canonicalize_setup_config(

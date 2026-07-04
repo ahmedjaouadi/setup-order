@@ -1,16 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
-from app.models import MarketSnapshot, SetupSignal, SetupStatus, to_jsonable
 from app.engine.entry_decision import attach_entry_decision
 from app.engine.session_policy import apply_entry_session_policy
 from app.engine.setup_lifecycle_service import LIFECYCLE_MANAGED_STATUSES
+from app.models import MarketSnapshot, SetupSignal, SetupStatus, to_jsonable
 from app.settings import DEFAULT_CONFIG
 from app.setups.setup_factory import SetupFactory
 from app.storage.repositories import TradingRepository
-
 
 TERMINAL_SIGNAL_STATUSES = {
     SetupStatus.CLOSED,
@@ -137,7 +137,9 @@ class SignalEngine:
                 display_message="Une position ouverte existe sans stop-loss broker actif.",
                 blocking_reason="POSITION_OPEN_WITHOUT_PROTECTIVE_STOP",
                 next_action="SUBMIT_PROTECTIVE_STOP_OR_MANUAL_REVIEW",
-                protection_status=str(protection.get("protection_status") or "POSITION_OPEN_STOP_MISSING_CRITICAL"),
+                protection_status=str(
+                    protection.get("protection_status") or "POSITION_OPEN_STOP_MISSING_CRITICAL"
+                ),
                 protective_stop_order_id=protection.get("active_stop_order_id"),
                 protective_stop_order_ready=False,
             )
@@ -151,7 +153,9 @@ class SignalEngine:
                     display_message="Un ordre actif protege existe deja pour ce setup.",
                     blocking_reason="DUPLICATE_ORDER_BLOCKED",
                     next_action="WAIT_EXISTING_PROTECTED_ORDER",
-                    protection_status=str(protection.get("protection_status") or "BRACKET_ORDER_SUBMITTED"),
+                    protection_status=str(
+                        protection.get("protection_status") or "BRACKET_ORDER_SUBMITTED"
+                    ),
                     protective_stop_order_id=protection.get("active_stop_order_id"),
                     protective_stop_order_ready=True,
                 )
@@ -163,7 +167,10 @@ class SignalEngine:
                 display_message="Un ordre d'entree existe deja mais aucun stop-loss protecteur attache n'a ete trouve.",
                 blocking_reason="ACTIVE_ORDER_WITHOUT_PROTECTIVE_STOP",
                 next_action="CANCEL_OR_ATTACH_STOP_MANUAL_REVIEW",
-                protection_status=str(protection.get("protection_status") or "ENTRY_ORDER_PENDING_WITHOUT_STOP_BLOCKED"),
+                protection_status=str(
+                    protection.get("protection_status")
+                    or "ENTRY_ORDER_PENDING_WITHOUT_STOP_BLOCKED"
+                ),
                 protective_stop_order_id=None,
                 protective_stop_order_ready=False,
             )

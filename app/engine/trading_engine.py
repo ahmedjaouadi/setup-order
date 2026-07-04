@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 from contextlib import suppress
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
@@ -19,15 +19,15 @@ from app.engine.broker_reality import (
     normalize_broker_order_status,
 )
 from app.engine.entry_order_executor import EntryOrderExecutor
-from app.engine.order_manager import OrderManager
 from app.engine.opportunity_alert_service import OpportunityAlertService
+from app.engine.order_manager import OrderManager
 from app.engine.position_action_executor import PositionActionExecutor
 from app.engine.position_manager import PositionManager
 from app.engine.reconciliation import ReconciliationEngine
 from app.engine.risk_engine import RiskEngine, RiskLimits
+from app.engine.setup_diagnostics import market_snapshot_payload
 from app.engine.setup_engine import SetupEngine
 from app.engine.setup_lifecycle_service import SetupLifecycleService
-from app.engine.setup_diagnostics import market_snapshot_payload
 from app.engine.setup_status_reporter import SetupStatusReporter
 from app.engine.setup_template_service import SetupTemplateService
 from app.engine.signal_engine import SignalEngine
@@ -57,8 +57,7 @@ from app.storage.repositories import TradingRepository
 
 
 class Broadcaster(Protocol):
-    async def broadcast(self, event: dict[str, Any]) -> None:
-        ...
+    async def broadcast(self, event: dict[str, Any]) -> None: ...
 
 
 class NullBroadcaster:
@@ -135,9 +134,7 @@ class TradingEngine:
             default_entry_order_type=settings.raw["orders"]["default_entry_order_type"],
             default_stop_order_type=settings.raw["orders"]["default_stop_order_type"],
             default_entry_limit_offset=float(
-                settings.raw.get("setup_defaults", {})
-                .get("entry", {})
-                .get("limit_offset", 0.05)
+                settings.raw.get("setup_defaults", {}).get("entry", {}).get("limit_offset", 0.05)
             ),
         )
         self.position_manager = PositionManager(repository, self.event_store)
@@ -377,9 +374,7 @@ class TradingEngine:
         self._drain_broker_audit()
         broker_pnl = broker_reality.get("pnl", {}) if isinstance(broker_reality, dict) else {}
         broker_connected = runtime.get("connection") == ConnectionStatus.CONNECTED.value
-        broker_pnl_status = str(
-            broker_pnl.get("status") or broker_pnl.get("sync_status") or ""
-        )
+        broker_pnl_status = str(broker_pnl.get("status") or broker_pnl.get("sync_status") or "")
         broker_pnl_fresh = (
             broker_reality.get("broker_tracker_status") == "OK"
             and broker_pnl.get("source") == "TWS"
@@ -419,9 +414,7 @@ class TradingEngine:
         )
         if open_orders_count is None:
             open_orders_count = (
-                active_broker_order_count
-                if broker_connected
-                else local_active_order_count
+                active_broker_order_count if broker_connected else local_active_order_count
             )
         prepared_orders_count = self._broker_reality_int(
             broker_reality,
@@ -576,7 +569,10 @@ class TradingEngine:
         self._drain_broker_audit()
         runtime = self.runtime_state()
         current_status = str(runtime.get("status") or BotStatus.PAUSED.value)
-        if broker_status != ConnectionStatus.CONNECTED and current_status == BotStatus.RUNNING.value:
+        if (
+            broker_status != ConnectionStatus.CONNECTED
+            and current_status == BotStatus.RUNNING.value
+        ):
             current_status = BotStatus.PAUSED.value
         self.repository.set_bot_state(
             "runtime",
@@ -652,7 +648,9 @@ class TradingEngine:
             "heartbeat_stale_seconds": heartbeat_stale_seconds,
             "heartbeat_age_seconds": heartbeat_age,
             "market_tick_age_seconds": self._age_seconds(self._health.get("last_market_tick_at")),
-            "market_analysis_age_seconds": self._age_seconds(self._health.get("last_market_analysis_at")),
+            "market_analysis_age_seconds": self._age_seconds(
+                self._health.get("last_market_analysis_at")
+            ),
             "stock_poll_age_seconds": self._age_seconds(self._health.get("last_stock_poll_at")),
             "active_setup_count": active_setup_count,
         }
@@ -885,10 +883,7 @@ class TradingEngine:
 
     @staticmethod
     def chart_timeframes() -> list[dict[str, str]]:
-        return [
-            {"id": key, "label": value["label"]}
-            for key, value in CHART_TIMEFRAMES.items()
-        ]
+        return [{"id": key, "label": value["label"]} for key, value in CHART_TIMEFRAMES.items()]
 
     @staticmethod
     def _normalize_chart_timeframe(timeframe: str) -> str:
@@ -936,9 +931,7 @@ class TradingEngine:
         return {}
 
     def _tws_audit_state(self) -> dict[str, bool]:
-        default_enabled = bool(
-            self.settings.raw.get("broker", {}).get("tws_audit_enabled", True)
-        )
+        default_enabled = bool(self.settings.raw.get("broker", {}).get("tws_audit_enabled", True))
         saved = self.repository.get_bot_state("tws_audit", {})
         return {"enabled": bool(saved.get("enabled", default_enabled))}
 
@@ -965,9 +958,7 @@ class TradingEngine:
             latency_text = f" in {latency} ms" if latency is not None else ""
             level = EventLevel.INFO if status == "OK" else EventLevel.ERROR
             prefix = (
-                "TWS cache"
-                if str(entry.get("detail") or "").lower() == "session cache"
-                else "TWS"
+                "TWS cache" if str(entry.get("detail") or "").lower() == "session cache" else "TWS"
             )
             message = f"{prefix} {request_name} {status}{latency_text}".strip()
             extra = entry.get("extra")
@@ -981,10 +972,7 @@ class TradingEngine:
             ):
                 quote_text = self._stock_quote_fields_text(extra)
                 detail = f": {quote_text}" if quote_text else ""
-                message = (
-                    f"TWS stock data {str(symbol).upper()} {status}"
-                    f"{latency_text}{detail}"
-                )
+                message = f"TWS stock data {str(symbol).upper()} {status}" f"{latency_text}{detail}"
             self.event_store.record(
                 level,
                 "tws_request",
@@ -1001,7 +989,7 @@ class TradingEngine:
 
     @staticmethod
     def _utc_now_iso() -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()
 
     @staticmethod
     def _age_seconds(value: Any) -> int | None:
@@ -1012,8 +1000,8 @@ class TradingEngine:
         except ValueError:
             return None
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return max(int((datetime.now(timezone.utc) - parsed).total_seconds()), 0)
+            parsed = parsed.replace(tzinfo=UTC)
+        return max(int((datetime.now(UTC) - parsed).total_seconds()), 0)
 
     async def _broker_open_orders_snapshot(self) -> list[BrokerOrderRequest]:
         cached = self._broker_open_orders_cache
@@ -1085,8 +1073,7 @@ class TradingEngine:
     ) -> list[dict[str, Any]]:
         setup_by_symbol = self._preferred_setup_by_symbol(setups)
         local_by_symbol = {
-            str(position.get("symbol") or "").upper(): position
-            for position in local_positions
+            str(position.get("symbol") or "").upper(): position for position in local_positions
         }
         active_stop_by_symbol = self._active_stop_by_symbol(
             local_orders,
@@ -1100,31 +1087,19 @@ class TradingEngine:
             quantity = self._int_value(getattr(broker_position, "quantity", 0)) or 0
             if quantity == 0:
                 continue
-            average_price = self._float_value(
-                getattr(broker_position, "average_price", None)
-            )
-            current_price = self._float_value(
-                getattr(broker_position, "current_price", None)
-            )
+            average_price = self._float_value(getattr(broker_position, "average_price", None))
+            current_price = self._float_value(getattr(broker_position, "current_price", None))
             if average_price is None or current_price is None:
                 continue
-            broker_unrealized_pnl = self._money(
-                getattr(broker_position, "unrealized_pnl", None)
-            )
+            broker_unrealized_pnl = self._money(getattr(broker_position, "unrealized_pnl", None))
             if broker_unrealized_pnl is None:
-                broker_unrealized_pnl = self._money(
-                    (current_price - average_price) * quantity
-                )
+                broker_unrealized_pnl = self._money((current_price - average_price) * quantity)
             local_position = local_by_symbol.get(symbol, {})
             setup = setup_by_symbol.get(symbol, {})
             current_stop = active_stop_by_symbol.get(symbol)
             if current_stop is None:
                 current_stop = self._money(local_position.get("current_stop"))
-            setup_id = (
-                local_position.get("setup_id")
-                or setup.get("setup_id")
-                or f"broker:{symbol}"
-            )
+            setup_id = local_position.get("setup_id") or setup.get("setup_id") or f"broker:{symbol}"
             rows.append(
                 {
                     "symbol": symbol,
@@ -1311,7 +1286,9 @@ class TradingEngine:
             if not symbol:
                 continue
             current = preferred.get(symbol)
-            if current is None or TradingEngine._setup_preference(setup) < TradingEngine._setup_preference(current):
+            if current is None or TradingEngine._setup_preference(
+                setup
+            ) < TradingEngine._setup_preference(current):
                 preferred[symbol] = setup
         return preferred
 
@@ -1360,12 +1337,7 @@ class TradingEngine:
 
     @staticmethod
     def _clean_keys(values: set[Any]) -> set[str]:
-        return {
-            text
-            for value in values
-            for text in [str(value or "").strip()]
-            if text
-        }
+        return {text for value in values for text in [str(value or "").strip()] if text}
 
     def _stock_pnl(self, positions: list[dict[str, Any]]) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
@@ -1394,7 +1366,9 @@ class TradingEngine:
                     "pnl_percent": pnl_percent,
                     "current_stop": self._money(position.get("current_stop")),
                     "risk_remaining": self._money(position.get("risk_remaining")),
-                    "status": "GAIN" if unrealized_pnl > 0 else "LOSS" if unrealized_pnl < 0 else "FLAT",
+                    "status": (
+                        "GAIN" if unrealized_pnl > 0 else "LOSS" if unrealized_pnl < 0 else "FLAT"
+                    ),
                     "price_source": "market" if latest else "position",
                 }
             )
@@ -1571,10 +1545,9 @@ class TradingEngine:
             else:
                 row["is_active"] = status in {"CREATED", "SUBMITTED"}
             row["lifecycle_bucket"] = "ACTIVE" if row["is_active"] else "HISTORY"
-            row["diagnostic_message"] = (
-                latest_event_by_order_id.get(str(row.get("id") or ""))
-                or self._default_order_diagnostic_message(row)
-            )
+            row["diagnostic_message"] = latest_event_by_order_id.get(
+                str(row.get("id") or "")
+            ) or self._default_order_diagnostic_message(row)
             enriched.append(row)
         return enriched
 
@@ -1646,9 +1619,7 @@ class TradingEngine:
             daily_start[today] = account.get("previous_day_equity") or net_liquidation
             changed = True
         if changed:
-            state["daily_start"] = {
-                key: daily_start[key] for key in sorted(daily_start)[-45:]
-            }
+            state["daily_start"] = {key: daily_start[key] for key in sorted(daily_start)[-45:]}
             self.repository.set_bot_state("account_history", state)
         start_today = self._money(daily_start.get(today))
         account["daily_start_equity"] = start_today
@@ -1832,9 +1803,11 @@ class TradingEngine:
         self.event_store.record(
             EventLevel.INFO,
             "setup_enabled_changed",
-            "Setup automatic TWS execution enabled"
-            if enabled
-            else "Setup automatic TWS execution disabled; monitoring continues",
+            (
+                "Setup automatic TWS execution enabled"
+                if enabled
+                else "Setup automatic TWS execution disabled; monitoring continues"
+            ),
             setup_id=setup_id,
             symbol=setup["symbol"],
             data={"enabled": enabled},
@@ -1849,9 +1822,11 @@ class TradingEngine:
         self.event_store.record(
             EventLevel.INFO,
             "all_setups_enabled_changed",
-            "Automatic TWS execution enabled for all setups"
-            if enabled
-            else "Automatic TWS execution disabled for all setups; monitoring continues",
+            (
+                "Automatic TWS execution enabled for all setups"
+                if enabled
+                else "Automatic TWS execution disabled for all setups; monitoring continues"
+            ),
             data={
                 "enabled": enabled,
                 "updated_count": len(setups),
@@ -2040,15 +2015,12 @@ class TradingEngine:
         active_orders = self.repository.active_orders_for_setup(setup_id)
         if active_orders:
             order_ids = ", ".join(str(order.get("id") or "") for order in active_orders)
-            errors.append(
-                f"Cannot disarm setup with active orders: {order_ids}".rstrip(": ")
-            )
+            errors.append(f"Cannot disarm setup with active orders: {order_ids}".rstrip(": "))
         open_position = next(
             (
                 position
                 for position in self.repository.list_positions()
-                if position.get("setup_id") == setup_id
-                and int(position.get("quantity") or 0) != 0
+                if position.get("setup_id") == setup_id and int(position.get("quantity") or 0) != 0
             ),
             None,
         )
@@ -2119,7 +2091,9 @@ class TradingEngine:
     def _record_market_tick(self, snapshot: MarketSnapshot) -> None:
         self.stock_market_monitor.record_market_tick(snapshot)
 
-    async def _handle_signal(self, setup: dict[str, Any], current_status: SetupStatus, signal: Any) -> None:
+    async def _handle_signal(
+        self, setup: dict[str, Any], current_status: SetupStatus, signal: Any
+    ) -> None:
         if self.action_executor.execute_simple_action(setup, current_status, signal):
             return
         if self.position_action_executor.execute_raise_stop_signal(setup, current_status, signal):
@@ -2143,6 +2117,4 @@ class TradingEngine:
         return {"ok": moved}
 
     async def _broadcast_snapshot(self) -> None:
-        await self.broadcaster.broadcast(
-            {"type": "snapshot", "payload": await self.snapshot()}
-        )
+        await self.broadcaster.broadcast({"type": "snapshot", "payload": await self.snapshot()})

@@ -279,9 +279,7 @@ def _bool_to_int(value: Any) -> int | None:
 
 def _ensemble_row_to_dict(row: Any) -> dict[str, Any]:
     result = dict(row)
-    result["member_forecast_ids"] = json.loads(
-        result.pop("member_forecast_ids_json") or "[]"
-    )
+    result["member_forecast_ids"] = json.loads(result.pop("member_forecast_ids_json") or "[]")
     result["ensemble"] = json.loads(result.pop("ensemble_json") or "{}")
     return result
 

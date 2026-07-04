@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import json
-from pathlib import Path
 import unittest
+from copy import deepcopy
+from pathlib import Path
 
 from app.engine.setup_template_service import SetupTemplateService
 from app.settings import DEFAULT_CONFIG, Settings
@@ -56,10 +56,14 @@ class SetupTemplateServiceTests(unittest.TestCase):
             "1h",
         )
         self.assertTrue(
-            template["skeleton"]["trailing_stop_loss"]["activation"]["activate_before_entry_transmission"]
+            template["skeleton"]["trailing_stop_loss"]["activation"][
+                "activate_before_entry_transmission"
+            ]
         )
         self.assertTrue(
-            template["skeleton"]["trailing_stop_loss"]["broker_order"]["required_before_entry_transmission"]
+            template["skeleton"]["trailing_stop_loss"]["broker_order"][
+                "required_before_entry_transmission"
+            ]
         )
         self.assertEqual(
             template["skeleton"]["risk"]["risk_model"],
@@ -78,15 +82,22 @@ class SetupTemplateServiceTests(unittest.TestCase):
             "trailing_stop_loss",
         )
         self.assertTrue(
-            template["skeleton"]["volume_confirmation_policy_by_setup_type"]["momentum_breakout"]["required_for_entry"]
+            template["skeleton"]["volume_confirmation_policy_by_setup_type"]["momentum_breakout"][
+                "required_for_entry"
+            ]
         )
         self.assertEqual(
-            template["skeleton"]["volume_confirmation_policy_by_setup_type"]["position_management"]["weak_volume_action"],
+            template["skeleton"]["volume_confirmation_policy_by_setup_type"]["position_management"][
+                "weak_volume_action"
+            ],
             "IGNORE_FOR_MANAGEMENT",
         )
         self.assertIn("retest", template["skeleton"])
         self.assertIn("support_zone", template["skeleton"])
-        self.assertIn("do not default to momentum_breakout", template["skeleton"]["_template"]["selection_rules"])
+        self.assertIn(
+            "do not default to momentum_breakout",
+            template["skeleton"]["_template"]["selection_rules"],
+        )
         self.assertEqual(
             template["skeleton"]["_template"]["template_kind"],
             "UNIVERSAL_SETUP_REQUEST",
@@ -189,10 +200,7 @@ class SetupTemplateServiceTests(unittest.TestCase):
 
     def test_base_schema_exposes_trailing_stop_loss_as_primary_protection_model(self) -> None:
         schema_path = (
-            Path(__file__).resolve().parents[1]
-            / "config"
-            / "schemas"
-            / "setup.base.schema.json"
+            Path(__file__).resolve().parents[1] / "config" / "schemas" / "setup.base.schema.json"
         )
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
 

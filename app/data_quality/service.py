@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.models import utc_now_iso
@@ -80,11 +80,7 @@ class DataQualityService:
             "symbol": symbol.upper(),
             "timeframe": timeframe,
             "candle_closed": bool(closed),
-            "timestamp": (
-                candle.get("timestamp")
-                if isinstance(candle, dict)
-                else None
-            )
+            "timestamp": (candle.get("timestamp") if isinstance(candle, dict) else None)
             or utc_now_iso(),
         }
         issues = []
@@ -263,7 +259,9 @@ class DataQualityService:
         previous = self.repository.get_bot_state(state_key, {})
         if previous.get("signature") == signature:
             return
-        self.repository.set_bot_state(state_key, {"signature": signature, "updated_at": utc_now_iso()})
+        self.repository.set_bot_state(
+            state_key, {"signature": signature, "updated_at": utc_now_iso()}
+        )
         self.repository.add_data_quality_event(
             {
                 "event_id": new_id("dq"),
@@ -302,8 +300,8 @@ def _age_seconds(timestamp: Any) -> float | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return (datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).total_seconds()
+        parsed = parsed.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - parsed.astimezone(UTC)).total_seconds()
 
 
 def _snapshot_payload(snapshot: Any) -> dict[str, Any]:

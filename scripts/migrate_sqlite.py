@@ -4,7 +4,7 @@ import argparse
 import shutil
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,7 +47,7 @@ def main() -> int:
 
 def backup_database(database: Path, backup_dir: Path) -> Path:
     backup_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     backup = backup_dir / f"{database.stem}.pre_migration.{stamp}.sqlite"
     shutil.copy2(database, backup)
     return backup

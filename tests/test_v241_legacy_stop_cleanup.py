@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 
 from app.forecasting.forecast_repository import ForecastRepository
 from app.forecasting.forecast_service import ForecastService

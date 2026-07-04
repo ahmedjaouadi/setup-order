@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from copy import deepcopy
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import tempfile
 import unittest
+from copy import deepcopy
+from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
 
 from app.engine.setup_lifecycle_service import (
     SetupLifecycleService,
@@ -14,7 +14,6 @@ from app.models import MarketSnapshot, SetupStatus, utc_now_iso
 from app.storage.database import Database
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
-
 
 BROKER_OK = {
     "broker_connected": True,
@@ -222,7 +221,7 @@ class RevalidateSetupTests(unittest.TestCase):
         self.assertFalse(result["can_send_order"])
 
     def test_setup_too_old_marks_stale(self) -> None:
-        created = (datetime.now(timezone.utc) - timedelta(days=45)).isoformat()
+        created = (datetime.now(UTC) - timedelta(days=45)).isoformat()
         setup = lifecycle_setup(created_at=created)
         result = revalidate_setup(setup, market(99.0), BROKER_OK, None)
 
@@ -232,11 +231,7 @@ class RevalidateSetupTests(unittest.TestCase):
 
     def test_explicit_expiration_marks_expired(self) -> None:
         config = lifecycle_config(
-            expiration={
-                "expires_at": (
-                    datetime.now(timezone.utc) - timedelta(hours=1)
-                ).isoformat()
-            },
+            expiration={"expires_at": (datetime.now(UTC) - timedelta(hours=1)).isoformat()},
         )
         setup = lifecycle_setup(config=config)
         result = revalidate_setup(setup, market(99.0), BROKER_OK, None)

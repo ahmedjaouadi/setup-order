@@ -8,7 +8,6 @@ from app.models import EventLevel, SetupStatus, SignalAction
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
 
-
 logger = logging.getLogger(__name__)
 
 

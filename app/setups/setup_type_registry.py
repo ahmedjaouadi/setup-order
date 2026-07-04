@@ -3,7 +3,6 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-
 SUPPORTED_SETUP_TYPES: tuple[str, ...] = (
     "aggressive_rebound",
     "breakout_retest",
@@ -45,16 +44,12 @@ SETUP_TYPE_SELECTION_GUIDE: dict[str, str] = {
         "Utiliser si le plan cherche un rebond agressif depuis une zone de support."
     ),
     "range_breakout": (
-        "Utiliser si le titre evolue dans un range clair et qu'on attend une "
-        "cassure du range."
+        "Utiliser si le titre evolue dans un range clair et qu'on attend une " "cassure du range."
     ),
     "pullback_continuation": (
-        "Utiliser si le titre est deja en tendance et qu'on cherche une entree "
-        "sur repli."
+        "Utiliser si le titre est deja en tendance et qu'on cherche une entree " "sur repli."
     ),
-    "runner": (
-        "Utiliser si une position existe deja et que le but est de laisser courir le gain."
-    ),
+    "runner": ("Utiliser si une position existe deja et que le but est de laisser courir le gain."),
     "trailing_runner": (
         "Utiliser si une position existe deja et que le but principal est de "
         "gerer un trailing stop intelligent."

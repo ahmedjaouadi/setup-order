@@ -7,7 +7,6 @@ from typing import Any
 from app.models import RiskDecision
 from app.setups.setup_roles import setup_is_management_only, setup_role_from_config
 
-
 TRAILING_STOP_STATUSES = {
     "TRAILING_STOP_LOSS_READY",
     "TRAILING_STOP_LOSS_NOT_READY",
@@ -34,7 +33,7 @@ class RiskLimits:
     allow_short: bool = False
 
     @classmethod
-    def from_config(cls, config: dict[str, Any]) -> "RiskLimits":
+    def from_config(cls, config: dict[str, Any]) -> RiskLimits:
         risk = config.get("risk", {})
         return cls(
             max_open_positions=int(risk.get("max_open_positions", 5)),
@@ -128,9 +127,7 @@ class RiskEngine:
                 self.limits.max_position_amount_usd,
             )
         )
-        max_risk = float(
-            setup_risk.get("max_risk_usd", self.limits.max_risk_per_trade_usd)
-        )
+        max_risk = float(setup_risk.get("max_risk_usd", self.limits.max_risk_per_trade_usd))
         if max_position <= 0 or max_risk <= 0:
             return RiskDecision(False, "Risk budget must be positive")
         remaining_exposure = self.limits.max_total_exposure_usd - current_exposure_usd
@@ -231,7 +228,10 @@ def validate_trailing_stop_required(setup: dict[str, Any]) -> list[str]:
     entry = config.get("entry", {})
     if isinstance(entry, dict) and entry.get("enabled") is True:
         broker_order = trailing.get("broker_order", {})
-        if not isinstance(broker_order, dict) or broker_order.get("required_before_entry_transmission") is not True:
+        if (
+            not isinstance(broker_order, dict)
+            or broker_order.get("required_before_entry_transmission") is not True
+        ):
             errors.append("TRAILING_STOP_BROKER_ORDER_REQUIRED")
 
     return errors

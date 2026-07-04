@@ -15,4 +15,3 @@ class MarketDataService:
 
     def all_latest(self) -> list[MarketSnapshot]:
         return list(self._latest.values())
-

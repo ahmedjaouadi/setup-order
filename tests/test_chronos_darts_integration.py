@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 import os
 import sys
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-import unittest
 from unittest.mock import patch
 
 from app.forecasting.adapters import ChronosAdapter, adapter_available
@@ -30,13 +30,15 @@ class ChronosDartsIntegrationTests(unittest.TestCase):
         )
         completed = SimpleNamespace(
             returncode=0,
-            stdout=json.dumps({
-                "ok": True,
-                "q10_path": [10.0, 11.0],
-                "q50_path": [11.0, 12.0],
-                "q90_path": [12.0, 13.0],
-                "warnings": ["HF_TOKEN is not set"],
-            }),
+            stdout=json.dumps(
+                {
+                    "ok": True,
+                    "q10_path": [10.0, 11.0],
+                    "q50_path": [11.0, 12.0],
+                    "q90_path": [12.0, 13.0],
+                    "warnings": ["HF_TOKEN is not set"],
+                }
+            ),
             stderr="",
         )
         with patch("app.forecasting.adapters.subprocess.run", return_value=completed):
@@ -49,16 +51,20 @@ class ChronosDartsIntegrationTests(unittest.TestCase):
             )
         self.assertEqual(output.q50_path, [11.0, 12.0])
         self.assertTrue(output.warnings)
-        self.assertEqual(adapter_available(ChronosAdapter(), config), (True, "external worker configured"))
+        self.assertEqual(
+            adapter_available(ChronosAdapter(), config), (True, "external worker configured")
+        )
 
     def test_darts_external_worker_remains_model_lab_only(self) -> None:
         completed = SimpleNamespace(
             returncode=0,
-            stdout=json.dumps({
-                "ok": True,
-                "predictions": {"darts_naive_drift": [4.0, 5.0]},
-                "offline_only": True,
-            }),
+            stdout=json.dumps(
+                {
+                    "ok": True,
+                    "predictions": {"darts_naive_drift": [4.0, 5.0]},
+                    "offline_only": True,
+                }
+            ),
             stderr="",
         )
         runner = DartsExperimentRunner(python_executable=sys.executable)

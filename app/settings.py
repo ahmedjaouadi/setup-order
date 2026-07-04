@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-
 DEFAULT_CONFIG: dict[str, Any] = {
     "app": {
         "environment": "development",
@@ -318,17 +317,97 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "experimental_models": ["moirai", "moirai_uni2ts", "uni2ts"],
         "horizons": {"15m": [4, 8, 16], "1h": [4, 8, 24], "1d": [3, 5, 10]},
         "providers": {
-            "timesfm": {"enabled": True, "priority": 0, "role": "primary", "use_for_setup_score": True},
-            "naive_baseline": {"enabled": True, "priority": 0, "role": "baseline", "use_for_model_lab": True},
-            "atr_baseline": {"enabled": True, "priority": 0, "role": "baseline", "use_for_model_lab": True},
-            "chronos": {"enabled": True, "auto_enable_when_ready": True, "priority": 1, "role": "direct_competitor", "use_for_setup_score": True, "use_for_execution": False, "use_for_model_lab": True},
-            "lag_llama": {"enabled": True, "auto_enable_when_ready": True, "priority": 1, "role": "probabilistic", "use_for_setup_score": True, "use_for_execution": False, "use_for_model_lab": True},
-            "darts": {"enabled": True, "auto_enable_when_ready": True, "priority": 1, "role": "benchmark_framework", "use_for_runtime_forecast": False, "use_for_model_lab": True, "runtime_mode": "in_process", "worker_timeout_seconds": 180},
-            "neuralforecast": {"enabled": True, "auto_enable_when_ready": True, "priority": 2, "role": "deep_learning_models", "use_for_setup_score": True, "use_for_execution": False, "use_for_model_lab": True},
-            "autogluon": {"enabled": True, "auto_enable_when_ready": True, "priority": 2, "role": "automl_baseline", "use_for_setup_score": True, "use_for_execution": False, "use_for_model_lab": True},
-            "moirai": {"enabled": True, "auto_enable_when_ready": True, "priority": 3, "role": "experimental_foundation_benchmark", "use_for_setup_score": True, "use_for_execution": False, "use_for_model_lab": True},
-            "moirai_uni2ts": {"enabled": True, "auto_enable_when_ready": True, "priority": 3, "role": "experimental_foundation_benchmark", "use_for_setup_score": True, "use_for_execution": False, "use_for_model_lab": True},
-            "uni2ts": {"enabled": True, "auto_enable_when_ready": True, "priority": 3, "role": "experimental_foundation_benchmark", "use_for_setup_score": True, "use_for_execution": False, "use_for_model_lab": True},
+            "timesfm": {
+                "enabled": True,
+                "priority": 0,
+                "role": "primary",
+                "use_for_setup_score": True,
+            },
+            "naive_baseline": {
+                "enabled": True,
+                "priority": 0,
+                "role": "baseline",
+                "use_for_model_lab": True,
+            },
+            "atr_baseline": {
+                "enabled": True,
+                "priority": 0,
+                "role": "baseline",
+                "use_for_model_lab": True,
+            },
+            "chronos": {
+                "enabled": True,
+                "auto_enable_when_ready": True,
+                "priority": 1,
+                "role": "direct_competitor",
+                "use_for_setup_score": True,
+                "use_for_execution": False,
+                "use_for_model_lab": True,
+            },
+            "lag_llama": {
+                "enabled": True,
+                "auto_enable_when_ready": True,
+                "priority": 1,
+                "role": "probabilistic",
+                "use_for_setup_score": True,
+                "use_for_execution": False,
+                "use_for_model_lab": True,
+            },
+            "darts": {
+                "enabled": True,
+                "auto_enable_when_ready": True,
+                "priority": 1,
+                "role": "benchmark_framework",
+                "use_for_runtime_forecast": False,
+                "use_for_model_lab": True,
+                "runtime_mode": "in_process",
+                "worker_timeout_seconds": 180,
+            },
+            "neuralforecast": {
+                "enabled": True,
+                "auto_enable_when_ready": True,
+                "priority": 2,
+                "role": "deep_learning_models",
+                "use_for_setup_score": True,
+                "use_for_execution": False,
+                "use_for_model_lab": True,
+            },
+            "autogluon": {
+                "enabled": True,
+                "auto_enable_when_ready": True,
+                "priority": 2,
+                "role": "automl_baseline",
+                "use_for_setup_score": True,
+                "use_for_execution": False,
+                "use_for_model_lab": True,
+            },
+            "moirai": {
+                "enabled": True,
+                "auto_enable_when_ready": True,
+                "priority": 3,
+                "role": "experimental_foundation_benchmark",
+                "use_for_setup_score": True,
+                "use_for_execution": False,
+                "use_for_model_lab": True,
+            },
+            "moirai_uni2ts": {
+                "enabled": True,
+                "auto_enable_when_ready": True,
+                "priority": 3,
+                "role": "experimental_foundation_benchmark",
+                "use_for_setup_score": True,
+                "use_for_execution": False,
+                "use_for_model_lab": True,
+            },
+            "uni2ts": {
+                "enabled": True,
+                "auto_enable_when_ready": True,
+                "priority": 3,
+                "role": "experimental_foundation_benchmark",
+                "use_for_setup_score": True,
+                "use_for_execution": False,
+                "use_for_model_lab": True,
+            },
         },
         "safety": {
             "block_order_from_forecast": True,
@@ -540,7 +619,7 @@ class Settings:
     gui_port: int
 
     @classmethod
-    def from_dict(cls, config: dict[str, Any]) -> "Settings":
+    def from_dict(cls, config: dict[str, Any]) -> Settings:
         storage = config["storage"]
         app = config["app"]
         broker = config["broker"]

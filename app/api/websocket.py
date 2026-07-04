@@ -36,11 +36,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     await websocket_manager.connect(websocket)
     try:
         engine = websocket.app.state.engine
-        await websocket.send_json(
-            {"type": "snapshot", "payload": await engine.snapshot()}
-        )
+        await websocket.send_json({"type": "snapshot", "payload": await engine.snapshot()})
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
         websocket_manager.disconnect(websocket)
-

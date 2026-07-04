@@ -38,7 +38,8 @@ class ForecastStackBenchmarkService:
         )
         darts_models = [name for name in models if name.startswith("darts_")]
         provider_models = [
-            name for name in models
+            name
+            for name in models
             if name not in {"naive_baseline", "atr_baseline"} and not name.startswith("darts_")
         ]
         predictions = (
@@ -53,24 +54,28 @@ class ForecastStackBenchmarkService:
         )
         train = series[:-horizon]
         actual = series[-horizon:]
-        predictions.update(self._provider_predictions(
-            provider_models,
-            train,
-            horizon=horizon,
-            symbol=str(payload.get("symbol") or "LAB").upper(),
-            timeframe=str(payload.get("timeframe") or "15m"),
-        ))
+        predictions.update(
+            self._provider_predictions(
+                provider_models,
+                train,
+                horizon=horizon,
+                symbol=str(payload.get("symbol") or "LAB").upper(),
+                timeframe=str(payload.get("timeframe") or "15m"),
+            )
+        )
         last = train[-1]
         drift = train[-1] - train[-2] if len(train) > 1 else 0.0
         predictions["naive_baseline"] = [last] * horizon
         predictions["atr_baseline"] = [last + drift * (index + 1) for index in range(horizon)]
-        return self.compare({
-            **payload,
-            "actual": actual,
-            "predictions": predictions,
-            "framework": "darts_offline_native",
-            "validation": payload.get("validation") or "holdout",
-        })
+        return self.compare(
+            {
+                **payload,
+                "actual": actual,
+                "predictions": predictions,
+                "framework": "darts_offline_native",
+                "validation": payload.get("validation") or "holdout",
+            }
+        )
 
     def _provider_predictions(
         self,
@@ -118,7 +123,9 @@ class ForecastStackBenchmarkService:
         if not symbol:
             raise ValueError("symbol is required")
         actual = _numbers(payload.get("actual"))
-        predictions = payload.get("predictions") if isinstance(payload.get("predictions"), dict) else {}
+        predictions = (
+            payload.get("predictions") if isinstance(payload.get("predictions"), dict) else {}
+        )
         if not predictions:
             raise ValueError("predictions by model are required")
         timeframe = str(payload.get("timeframe") or "15m")
@@ -132,48 +139,73 @@ class ForecastStackBenchmarkService:
         experiment_id = new_id("fsx")
         started = utc_now_iso()
         experiment = {
-            "experiment_id": experiment_id, "name": payload.get("name") or f"{symbol} forecast stack",
-            "symbols": [symbol], "timeframes": [timeframe], "horizons": [horizon],
-            "models": list(predictions), "config": {**payload, "execution_mode": "offline_only"},
-            "status": "RUNNING", "started_at": started,
+            "experiment_id": experiment_id,
+            "name": payload.get("name") or f"{symbol} forecast stack",
+            "symbols": [symbol],
+            "timeframes": [timeframe],
+            "horizons": [horizon],
+            "models": list(predictions),
+            "config": {**payload, "execution_mode": "offline_only"},
+            "status": "RUNNING",
+            "started_at": started,
         }
         self.repository.add_forecast_stack_experiment(experiment)
         results: list[dict[str, Any]] = []
         for model_name, values in predictions.items():
             model_payload = values if isinstance(values, dict) else {"point_forecast": values}
             point_forecast = _numbers(
-                model_payload.get("point_forecast", model_payload.get("predictions", model_payload.get("q50", values)))
+                model_payload.get(
+                    "point_forecast",
+                    model_payload.get("predictions", model_payload.get("q50", values)),
+                )
             )
             metrics = self.runner.evaluate(
                 actual,
                 point_forecast,
                 quantiles=model_payload.get("quantiles"),
                 probabilities=model_payload,
-                actual_events=payload.get("actual_events") if isinstance(payload.get("actual_events"), dict) else None,
+                actual_events=(
+                    payload.get("actual_events")
+                    if isinstance(payload.get("actual_events"), dict)
+                    else None
+                ),
             )
             trading_metrics = _trading_metrics(
                 payload.get("trading_metrics", {}).get(model_name, {})
-                if isinstance(payload.get("trading_metrics"), dict) else {}
+                if isinstance(payload.get("trading_metrics"), dict)
+                else {}
             )
-            results.append({
-                "model_name": str(model_name),
-                "metrics": metrics,
-                "trading_metrics": trading_metrics,
-            })
-        ranked = sorted(results, key=lambda item: (item["metrics"].get("status") != "OK", item["metrics"].get("mae", float("inf"))))
+            results.append(
+                {
+                    "model_name": str(model_name),
+                    "metrics": metrics,
+                    "trading_metrics": trading_metrics,
+                }
+            )
+        ranked = sorted(
+            results,
+            key=lambda item: (
+                item["metrics"].get("status") != "OK",
+                item["metrics"].get("mae", float("inf")),
+            ),
+        )
         policy = self.selection_policy.select(
             ranked,
             min_samples=int(payload.get("min_required_samples") or 30),
             experimental_scorecards=(
                 payload.get("experimental_scorecards")
-                if isinstance(payload.get("experimental_scorecards"), dict) else {}
+                if isinstance(payload.get("experimental_scorecards"), dict)
+                else {}
             ),
         )
         persisted = []
         for rank, item in enumerate(ranked, start=1):
             result = {
-                "result_id": new_id("fsr"), "experiment_id": experiment_id,
-                "model_name": item["model_name"], "symbol": symbol, "timeframe": timeframe,
+                "result_id": new_id("fsr"),
+                "experiment_id": experiment_id,
+                "model_name": item["model_name"],
+                "symbol": symbol,
+                "timeframe": timeframe,
                 "horizon_bars": horizon,
                 "metrics": {
                     **item["metrics"],
@@ -198,8 +230,16 @@ class ForecastStackBenchmarkService:
             "safety": "offline_scoring_only",
         }
         finished = utc_now_iso()
-        self.repository.update_forecast_stack_experiment(experiment_id, status="COMPLETED", finished_at=finished, summary=summary)
-        return {**experiment, "status": "COMPLETED", "finished_at": finished, "summary": summary, "results": persisted}
+        self.repository.update_forecast_stack_experiment(
+            experiment_id, status="COMPLETED", finished_at=finished, summary=summary
+        )
+        return {
+            **experiment,
+            "status": "COMPLETED",
+            "finished_at": finished,
+            "summary": summary,
+            "results": persisted,
+        }
 
     def experiments(self) -> list[dict[str, Any]]:
         experiments = self.repository.list_forecast_stack_experiments()
@@ -218,7 +258,11 @@ class ForecastStackBenchmarkService:
         ]
         latest: dict[tuple[str, str, int], dict[str, Any]] = {}
         for row in rows:
-            key = (str(row.get("model_name")), str(row.get("timeframe")), int(row.get("horizon_bars") or 0))
+            key = (
+                str(row.get("model_name")),
+                str(row.get("timeframe")),
+                int(row.get("horizon_bars") or 0),
+            )
             latest.setdefault(key, row)
         return {
             "symbol": normalized,
@@ -229,7 +273,9 @@ class ForecastStackBenchmarkService:
     def experiment(self, experiment_id: str) -> dict[str, Any] | None:
         item = self.repository.get_forecast_stack_experiment(experiment_id)
         if item:
-            item["results"] = self.repository.list_forecast_stack_results(experiment_id=experiment_id)
+            item["results"] = self.repository.list_forecast_stack_results(
+                experiment_id=experiment_id
+            )
         return item
 
 
@@ -265,6 +311,4 @@ def _default_walk_forward_folds(size: int) -> list[dict[str, int]]:
     if size < 3:
         raise ValueError("At least 3 observations are required for walk-forward validation")
     split = max(1, size // 2)
-    return [
-        {"train_start": 0, "train_end": split - 1, "test_start": split, "test_end": size - 1}
-    ]
+    return [{"train_start": 0, "train_end": split - 1, "test_start": split, "test_end": size - 1}]

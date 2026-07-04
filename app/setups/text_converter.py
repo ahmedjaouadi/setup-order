@@ -4,7 +4,7 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.conversion import canonicalize_setup_config
@@ -408,9 +408,7 @@ def _normalize(text: str) -> str:
     text = text.replace("€", " eur ")
     text = text.replace("–", "-").replace("—", "-")
     text = "".join(
-        char
-        for char in unicodedata.normalize("NFKD", text)
-        if not unicodedata.combining(char)
+        char for char in unicodedata.normalize("NFKD", text) if not unicodedata.combining(char)
     )
     return re.sub(r"\s+", " ", text.lower()).strip()
 
@@ -458,7 +456,10 @@ def _extract_volume_ratio(text: str) -> float | None:
 def _extract_targets(text: str) -> list[dict[str, Any]]:
     targets: list[dict[str, Any]] = []
     for index, (zone_min, zone_max) in enumerate(
-        re.findall(r"(?:target|objectif|tp)\s*\d*\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(?:-|a|to)\s*(\d+(?:\.\d+)?)", text),
+        re.findall(
+            r"(?:target|objectif|tp)\s*\d*\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(?:-|a|to)\s*(\d+(?:\.\d+)?)",
+            text,
+        ),
         start=1,
     ):
         low = float(zone_min)
@@ -503,6 +504,6 @@ def _first_price_above_stop(numbers: list[float], stop_loss: float) -> float | N
 
 
 def _make_setup_id(symbol: str, setup_type: str) -> str:
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    today = datetime.now(UTC).strftime("%Y%m%d")
     suffix = new_id("txt").split("_", 1)[1]
     return f"{symbol}_{setup_type.upper()}_{today}_{suffix}"

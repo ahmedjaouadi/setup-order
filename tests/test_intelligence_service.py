@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import tempfile
+import unittest
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
-import tempfile
-import unittest
 
 from fastapi import HTTPException
 
@@ -106,7 +106,7 @@ class IntelligenceServiceTests(unittest.IsolatedAsyncioTestCase):
                     "limit_offset": 0.05,
                     "SL": "13.85",
                     "budget": "200",
-                    "risque": "15"
+                    "risque": "15",
                 }
             },
             persist=True,
@@ -233,9 +233,7 @@ class IntelligenceServiceTests(unittest.IsolatedAsyncioTestCase):
             persist=True,
         )
         ambiguity = next(
-            item
-            for item in result["ambiguities"]
-            if item["field_path"] == "scenario_selection"
+            item for item in result["ambiguities"] if item["field_path"] == "scenario_selection"
         )
         target = result["scenarios"][1]
 
@@ -255,9 +253,7 @@ class IntelligenceServiceTests(unittest.IsolatedAsyncioTestCase):
             target["scenario_id"],
         )
         selected = [
-            scenario
-            for scenario in resolved["analysis"]["scenarios"]
-            if scenario["selected"]
+            scenario for scenario in resolved["analysis"]["scenarios"] if scenario["selected"]
         ]
         self.assertEqual(len(selected), 1)
         self.assertEqual(selected[0]["scenario_id"], target["scenario_id"])
@@ -331,7 +327,7 @@ class IntelligenceServiceTests(unittest.IsolatedAsyncioTestCase):
                     "retest_zone_max": 14.50,
                     "entry_enabled": True,
                     "budget": 200,
-                    "risque": 15
+                    "risque": 15,
                 }
             },
             persist=True,
@@ -463,15 +459,21 @@ class IntelligenceTransactionTests(unittest.IsolatedAsyncioTestCase):
                 )
 
             self.assertEqual(
-                database.execute("SELECT COUNT(*) AS count FROM semantic_analyses").fetchone()["count"],
+                database.execute("SELECT COUNT(*) AS count FROM semantic_analyses").fetchone()[
+                    "count"
+                ],
                 0,
             )
             self.assertEqual(
-                database.execute("SELECT COUNT(*) AS count FROM extracted_scenarios").fetchone()["count"],
+                database.execute("SELECT COUNT(*) AS count FROM extracted_scenarios").fetchone()[
+                    "count"
+                ],
                 0,
             )
             self.assertEqual(
-                database.execute("SELECT COUNT(*) AS count FROM extracted_fields").fetchone()["count"],
+                database.execute("SELECT COUNT(*) AS count FROM extracted_fields").fetchone()[
+                    "count"
+                ],
                 0,
             )
         finally:
@@ -486,7 +488,9 @@ class IntelligenceApiTests(unittest.IsolatedAsyncioTestCase):
         self.database.initialize()
         repository = IntelligenceRepository(self.database)
         service = IntelligenceService(repository=repository, defaults=deepcopy(DEFAULT_CONFIG))
-        self.request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(intelligence=service)))
+        self.request = SimpleNamespace(
+            app=SimpleNamespace(state=SimpleNamespace(intelligence=service))
+        )
 
     async def asyncTearDown(self) -> None:
         self.database.close()
@@ -557,7 +561,7 @@ class IntelligenceApiTests(unittest.IsolatedAsyncioTestCase):
         config = valid_breakout_config()
         config["setup_id"] = "UEC_SUMMARY_API_PAGE_001"
 
-        first = await self.request.app.state.intelligence.analyze(
+        await self.request.app.state.intelligence.analyze(
             {"payload": config},
             persist=True,
         )

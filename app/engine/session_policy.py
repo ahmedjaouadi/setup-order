@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time
 from typing import Any
 
 from app.models import MarketSnapshot, SetupSignal, SignalAction
 from app.utils.market_hours import current_us_equity_session_context
-
 
 SESSION_BLOCKING_REASON = "BLOCKED_OUTSIDE_REGULAR_MARKET_HOURS"
 WAIT_AFTER_OPEN_REASON = "WAIT_AFTER_OPEN_WINDOW_ACTIVE"
@@ -357,9 +356,7 @@ def _after_open_wait_state(
     )
     blocked = blocked_by_minutes or blocked_by_bars
 
-    message = (
-        "Le marche vient d'ouvrir. Le bot attend avant de revalider le setup."
-    )
+    message = "Le marche vient d'ouvrir. Le bot attend avant de revalider le setup."
     if wait_bars > 0 and timeframe:
         message = (
             "Le marche vient d'ouvrir. Le bot attend "
@@ -378,9 +375,9 @@ def _after_open_wait_state(
             "wait_after_open_minutes": wait_minutes,
             "wait_closed_bars_after_open": wait_bars,
             "wait_bars_timeframe": timeframe,
-            "minutes_since_open": round(minutes_since_open, 2)
-            if minutes_since_open is not None
-            else None,
+            "minutes_since_open": (
+                round(minutes_since_open, 2) if minutes_since_open is not None else None
+            ),
             "closed_bars_after_open": closed_bars_after_open,
         },
     }

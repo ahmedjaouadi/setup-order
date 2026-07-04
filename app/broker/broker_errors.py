@@ -8,4 +8,3 @@ class BrokerDisconnectedError(BrokerError):
 
 class BrokerRejectedOrderError(BrokerError):
     """Raised when a broker rejects an order request."""
-

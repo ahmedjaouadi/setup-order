@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 DEFAULT_THRESHOLDS = {
     "detected": 70.0,
     "watchlist": 40.0,

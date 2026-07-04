@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from app.engine.setup_diagnostics import (
     TERMINAL_SETUP_STATUSES,
@@ -31,10 +32,7 @@ class SetupStatusReporter:
     def configuration_status(self) -> dict[str, Any]:
         setups = self.repository.list_setups()
         events = self.repository.list_events(limit=500)
-        scenarios = [
-            self._configuration_scenario_status(setup, events)
-            for setup in setups
-        ]
+        scenarios = [self._configuration_scenario_status(setup, events) for setup in setups]
         watched = [scenario for scenario in scenarios if scenario["watched"]]
         broker = self.broker_provider()
         return {
@@ -45,9 +43,7 @@ class SetupStatusReporter:
                 "setups_folder": str(self.settings.setups_folder),
                 "database_file": str(self.settings.database_file),
                 "loaded_setup_count": len(setups),
-                "enabled_setup_count": len(
-                    [setup for setup in setups if setup.get("enabled")]
-                ),
+                "enabled_setup_count": len([setup for setup in setups if setup.get("enabled")]),
                 "auto_execution_enabled_count": len(
                     [setup for setup in setups if setup.get("enabled")]
                 ),
@@ -111,15 +107,15 @@ class SetupStatusReporter:
             "validation_warnings": validation.warnings,
             "awaited_condition": awaited_condition,
             "expected_action": next_action,
-            "latest_analysis_at": analysis_event.get("timestamp")
-            if isinstance(analysis_event, dict)
-            else None,
-            "latest_analysis_action": analysis_item.get("action")
-            if isinstance(analysis_item, dict)
-            else None,
-            "latest_analysis_reason": analysis_item.get("reason")
-            if isinstance(analysis_item, dict)
-            else None,
+            "latest_analysis_at": (
+                analysis_event.get("timestamp") if isinstance(analysis_event, dict) else None
+            ),
+            "latest_analysis_action": (
+                analysis_item.get("action") if isinstance(analysis_item, dict) else None
+            ),
+            "latest_analysis_reason": (
+                analysis_item.get("reason") if isinstance(analysis_item, dict) else None
+            ),
         }
 
     @staticmethod
@@ -192,15 +188,9 @@ class SetupStatusReporter:
         if not isinstance(analysis_item, dict):
             return ""
         metadata = (
-            analysis_item.get("metadata")
-            if isinstance(analysis_item.get("metadata"), dict)
-            else {}
+            analysis_item.get("metadata") if isinstance(analysis_item.get("metadata"), dict) else {}
         )
-        analysis = (
-            metadata.get("analysis")
-            if isinstance(metadata.get("analysis"), dict)
-            else {}
-        )
+        analysis = metadata.get("analysis") if isinstance(metadata.get("analysis"), dict) else {}
         for key, label in (
             ("missing_conditions", "Conditions manquantes"),
             ("blocking_conditions", "Conditions bloquantes"),
@@ -208,11 +198,7 @@ class SetupStatusReporter:
             values = analysis.get(key)
             if isinstance(values, list) and values:
                 return f"{label}: {', '.join(str(value) for value in values)}"
-        trace = (
-            analysis_item.get("trace")
-            if isinstance(analysis_item.get("trace"), dict)
-            else {}
-        )
+        trace = analysis_item.get("trace") if isinstance(analysis_item.get("trace"), dict) else {}
         checks = trace.get("checks")
         if not isinstance(checks, list):
             return ""
@@ -265,23 +251,13 @@ class SetupStatusReporter:
         if action == SignalAction.RAISE_STOP.value:
             return "Relever le stop de protection selon la regle de gestion."
         metadata = (
-            analysis_item.get("metadata")
-            if isinstance(analysis_item.get("metadata"), dict)
-            else {}
+            analysis_item.get("metadata") if isinstance(analysis_item.get("metadata"), dict) else {}
         )
-        analysis = (
-            metadata.get("analysis")
-            if isinstance(metadata.get("analysis"), dict)
-            else {}
-        )
+        analysis = metadata.get("analysis") if isinstance(metadata.get("analysis"), dict) else {}
         next_action = analysis.get("next_action")
         if next_action and str(next_action) != "WAIT":
             return str(next_action)
-        trace = (
-            analysis_item.get("trace")
-            if isinstance(analysis_item.get("trace"), dict)
-            else {}
-        )
+        trace = analysis_item.get("trace") if isinstance(analysis_item.get("trace"), dict) else {}
         return str(trace.get("next_step") or "")
 
     @staticmethod
@@ -305,7 +281,9 @@ class SetupStatusReporter:
             return "Attendre un retest dans la zone configuree avec confirmation haussiere."
         if setup_type == "momentum_breakout":
             if status == SetupStatus.WAITING_RETEST.value:
-                return "Attendre le retest de la zone missed_breakout puis une nouvelle confirmation."
+                return (
+                    "Attendre le retest de la zone missed_breakout puis une nouvelle confirmation."
+                )
             return "Attendre breakout au-dessus de breakout.resistance avec volume, spread et risque valides."
         if setup_type == "aggressive_rebound":
             if status == SetupStatus.WAITING_ACTIVATION.value:
@@ -329,7 +307,9 @@ class SetupStatusReporter:
         setup_type = str(setup.get("setup_type") or config.get("setup_type") or "")
         status = str(setup.get("status") or "")
         setup_role = setup_role_from_config(config)
-        auto_execution_enabled = bool(setup.get("enabled")) and config.get("enabled", True) is not False
+        auto_execution_enabled = (
+            bool(setup.get("enabled")) and config.get("enabled", True) is not False
+        )
         if not auto_execution_enabled:
             return "Surveillance uniquement: aucune execution automatique TWS."
         if status in TERMINAL_SETUP_STATUSES:

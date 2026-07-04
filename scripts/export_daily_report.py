@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +27,7 @@ def main() -> int:
     finally:
         connection.close()
 
-    report_date = datetime.now(timezone.utc).date().isoformat()
+    report_date = datetime.now(UTC).date().isoformat()
     output_path = output_dir / f"daily_report.{report_date}.json"
     output_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     print(output_path)
@@ -36,7 +36,7 @@ def main() -> int:
 
 def build_report(connection: sqlite3.Connection) -> dict[str, Any]:
     return {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "setups": count_by(connection, "setups", "status"),
         "orders": count_by(connection, "orders", "status"),
         "positions": rows(connection, "SELECT * FROM positions ORDER BY symbol"),

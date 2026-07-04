@@ -6,7 +6,6 @@ from app.setups.breakout_retest import BreakoutRetestSetup
 from app.setups.momentum_breakout import MomentumBreakoutSetup
 from app.setups.text_converter import convert_text_to_setup
 
-
 DEFAULTS = {
     "app": {"mode": "paper"},
     "risk": {
@@ -227,9 +226,7 @@ class TextConverterTests(unittest.TestCase):
         self.assertEqual(result.config["trailing_stop_loss"]["initial_stop"], 145.8)
         self.assertNotIn("initial_stop_loss", result.config["risk"])
         self.assertNotIn("skeleton", result.config)
-        self.assertTrue(
-            any("template wrapper" in warning for warning in result.warnings)
-        )
+        self.assertTrue(any("template wrapper" in warning for warning in result.warnings))
         self.assertTrue(MomentumBreakoutSetup(result.config).validate().valid)
 
         inferred_symbol = convert_text_to_setup(

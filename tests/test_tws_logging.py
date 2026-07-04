@@ -1,24 +1,24 @@
 from __future__ import annotations
 
 import asyncio
-from copy import deepcopy
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import tempfile
 import time
 import unittest
+from copy import deepcopy
+from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from app.broker.ib_models import BrokerOrderRequest
 from app.broker.tws_connector import (
     IbAsyncTwsConnector,
-    calculate_spread,
     _historical_quote_from_bars,
     _merge_hybrid_market_snapshot,
     _trade_status_detail,
     _tws_order_status_to_order_status,
     _utc_now_iso,
+    calculate_spread,
 )
 from app.engine.trading_engine import TradingEngine
 from app.models import ConnectionStatus, EventLevel, EventRecord, MarketSnapshot, OrderStatus
@@ -250,8 +250,12 @@ class TwsLoggingTests(unittest.TestCase):
             advancedError="",
             log=[
                 SimpleNamespace(message=""),
-                SimpleNamespace(message="Error 10349, reqId 5618: Order TIF was set to DAY based on order preset"),
-                SimpleNamespace(message="Error 10349, reqId 5618: Order TIF was set to DAY based on order preset"),
+                SimpleNamespace(
+                    message="Error 10349, reqId 5618: Order TIF was set to DAY based on order preset"
+                ),
+                SimpleNamespace(
+                    message="Error 10349, reqId 5618: Order TIF was set to DAY based on order preset"
+                ),
             ],
         )
 
@@ -686,7 +690,7 @@ class TwsLoggingTests(unittest.TestCase):
                 )
 
             def endTicker(self, ticker: object, tick_type: str) -> int:
-                return int(getattr(ticker, "req_id"))
+                return int(ticker.req_id)
 
         class FakeIb:
             def __init__(self) -> None:
@@ -727,9 +731,7 @@ class TwsLoggingTests(unittest.TestCase):
 
     def test_routine_audit_events_are_skipped_from_event_log(self) -> None:
         self.assertTrue(
-            TradingEngine._should_skip_tws_audit_event(
-                {"request": "accountValues", "status": "OK"}
-            )
+            TradingEngine._should_skip_tws_audit_event({"request": "accountValues", "status": "OK"})
         )
         self.assertFalse(
             TradingEngine._should_skip_tws_audit_event(
@@ -737,9 +739,7 @@ class TwsLoggingTests(unittest.TestCase):
             )
         )
         self.assertFalse(
-            TradingEngine._should_skip_tws_audit_event(
-                {"request": "reqMktData", "status": "OK"}
-            )
+            TradingEngine._should_skip_tws_audit_event({"request": "reqMktData", "status": "OK"})
         )
         self.assertFalse(
             TradingEngine._should_skip_tws_audit_event(
@@ -958,7 +958,9 @@ class TwsLoggingTests(unittest.TestCase):
         self.assertTrue(snapshot["market_data_readiness"]["order_submission_ready"])
         self.assertEqual(snapshot["hybrid_signal_bar_size"], "15 mins")
 
-    def test_hybrid_market_snapshot_allows_delayed_quotes_for_paper_when_essentials_ready(self) -> None:
+    def test_hybrid_market_snapshot_allows_delayed_quotes_for_paper_when_essentials_ready(
+        self,
+    ) -> None:
         snapshot = _merge_hybrid_market_snapshot(
             symbol="NOK",
             source="paper",
@@ -1203,7 +1205,7 @@ class TwsLoggingTests(unittest.TestCase):
         connector = IbAsyncTwsConnector("paper", {})
         connector._ib = FakeIb()
         cache_key = connector._historical_cache_key("NOK", "30 D", "1 hour")
-        old_timestamp = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+        old_timestamp = (datetime.now(UTC) - timedelta(hours=3)).isoformat()
         connector._historical_cache[cache_key] = {
             "updated_at": old_timestamp,
             "snapshot": {
@@ -1456,9 +1458,7 @@ class StockProcessLoggingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(processed), 1)
         events = self.repository.list_events(symbol="UEC", limit=5)
-        analysis_event = next(
-            event for event in events if event["event_type"] == "stock_analysis"
-        )
+        analysis_event = next(event for event in events if event["event_type"] == "stock_analysis")
         self.assertIn("Stock analysis UEC: 1 setup(s) evaluated", analysis_event["message"])
         self.assertEqual(analysis_event["data"]["snapshot"]["symbol"], "UEC")
         self.assertEqual(analysis_event["data"]["snapshot"]["price"], 14.30)
@@ -1473,9 +1473,7 @@ class StockProcessLoggingTests(unittest.IsolatedAsyncioTestCase):
         )
         trace = analysis_event["data"]["processed"][0]["trace"]
         self.assertEqual(trace["phase"], "Surveillance activation")
-        self.assertTrue(
-            any(check["label"] == "Breakout journalier" for check in trace["checks"])
-        )
+        self.assertTrue(any(check["label"] == "Breakout journalier" for check in trace["checks"]))
 
     async def test_repeated_missing_market_data_hold_is_deduplicated(self) -> None:
         setup = MomentumBreakoutSetup(valid_momentum_config())
@@ -1527,9 +1525,7 @@ class StockProcessLoggingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(processed[0]["target_status"], "MISSED_BREAKOUT")
         events = self.repository.list_events(symbol="NOK", limit=5)
-        analysis_event = next(
-            event for event in events if event["event_type"] == "stock_analysis"
-        )
+        analysis_event = next(event for event in events if event["event_type"] == "stock_analysis")
         trace = analysis_event["data"]["processed"][0]["trace"]
         labels = [check["label"] for check in trace["checks"]]
         self.assertIn("Transmission ask <= limite", labels)

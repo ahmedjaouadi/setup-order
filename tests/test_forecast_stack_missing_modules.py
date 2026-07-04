@@ -70,12 +70,20 @@ class _FakeDartsModel:
 
 class ForecastStackMissingModulesTests(unittest.TestCase):
     def test_request_builder_validates_and_normalizes(self):
-        request = ForecastRequestBuilder().build(symbol="abc", timeframe="15m", horizon_bars=2, bars=[{"close": "10"}])
+        request = ForecastRequestBuilder().build(
+            symbol="abc", timeframe="15m", horizon_bars=2, bars=[{"close": "10"}]
+        )
         self.assertEqual(request["symbol"], "ABC")
         self.assertEqual(request["series"], [10.0])
 
     def test_result_normalizer_has_common_contract(self):
-        result = normalize_forecast_result({"point_forecast": [1, 2]}, model_name="test", symbol="abc", timeframe="15m", horizon_bars=2)
+        result = normalize_forecast_result(
+            {"point_forecast": [1, 2]},
+            model_name="test",
+            symbol="abc",
+            timeframe="15m",
+            horizon_bars=2,
+        )
         self.assertEqual(result.direction, "UP")
         self.assertEqual(result.status, "OK")
 
@@ -87,7 +95,9 @@ class ForecastStackMissingModulesTests(unittest.TestCase):
         self.assertIsNone(cache.get("key"))
 
     def test_confidence_requires_reliability_for_strong_boost(self):
-        value = forecast_confidence({"direction_confidence": 0.9}, {"reliability_grade": "A", "sample_size": 30})
+        value = forecast_confidence(
+            {"direction_confidence": 0.9}, {"reliability_grade": "A", "sample_size": 30}
+        )
         self.assertTrue(value["eligible_for_strong_boost"])
 
     def test_evaluator_metrics(self):
@@ -96,7 +106,9 @@ class ForecastStackMissingModulesTests(unittest.TestCase):
         self.assertGreater(metrics["rmse"], 0)
 
     def test_drift_detector(self):
-        drift = ModelDriftDetector().detect({"direction_accuracy": .5, "mae": 2}, {"direction_accuracy": .65, "mae": 1})
+        drift = ModelDriftDetector().detect(
+            {"direction_accuracy": 0.5, "mae": 2}, {"direction_accuracy": 0.65, "mae": 1}
+        )
         self.assertTrue(drift["drift_detected"])
 
     def test_chronos_current_quantile_tensor_is_normalized(self):
@@ -118,9 +130,12 @@ class ForecastStackMissingModulesTests(unittest.TestCase):
         self.assertEqual(output.q10_path, [9.0, 10.0])
 
     def test_neuralforecast_is_ready_without_saved_model_path(self):
-        with patch("app.forecasting.adapters._module_available", return_value=True), patch(
-            "app.forecasting.adapters.importlib.import_module",
-            return_value=object(),
+        with (
+            patch("app.forecasting.adapters._module_available", return_value=True),
+            patch(
+                "app.forecasting.adapters.importlib.import_module",
+                return_value=object(),
+            ),
         ):
             self.assertEqual(
                 adapter_available(NeuralForecastAdapter(), ForecastConfig()),
@@ -128,9 +143,12 @@ class ForecastStackMissingModulesTests(unittest.TestCase):
             )
 
     def test_autogluon_is_ready_without_saved_model_path(self):
-        with patch("app.forecasting.adapters._module_available", return_value=True), patch(
-            "app.forecasting.adapters.importlib.import_module",
-            return_value=object(),
+        with (
+            patch("app.forecasting.adapters._module_available", return_value=True),
+            patch(
+                "app.forecasting.adapters.importlib.import_module",
+                return_value=object(),
+            ),
         ):
             self.assertEqual(
                 adapter_available(AutoGluonAdapter(), ForecastConfig()),
@@ -139,11 +157,17 @@ class ForecastStackMissingModulesTests(unittest.TestCase):
 
     def test_provider_auto_activates_only_when_ready(self):
         service = ForecastProviderStatusService(
-            {"forecast_stack": {"providers": {"chronos": {
-                "enabled": False,
-                "auto_enable_when_ready": True,
-                "role": "direct_competitor",
-            }}}},
+            {
+                "forecast_stack": {
+                    "providers": {
+                        "chronos": {
+                            "enabled": False,
+                            "auto_enable_when_ready": True,
+                            "role": "direct_competitor",
+                        }
+                    }
+                }
+            },
             _Catalog(),
         )
         provider = service.list()["providers"][0]
@@ -156,11 +180,17 @@ class ForecastStackMissingModulesTests(unittest.TestCase):
 
     def test_provider_disabled_by_config_is_reported_explicitly(self):
         service = ForecastProviderStatusService(
-            {"forecast_stack": {"providers": {"chronos": {
-                "enabled": False,
-                "auto_enable_when_ready": False,
-                "role": "direct_competitor",
-            }}}},
+            {
+                "forecast_stack": {
+                    "providers": {
+                        "chronos": {
+                            "enabled": False,
+                            "auto_enable_when_ready": False,
+                            "role": "direct_competitor",
+                        }
+                    }
+                }
+            },
             _Catalog(),
         )
         provider = service.list()["providers"][0]
@@ -171,24 +201,39 @@ class ForecastStackMissingModulesTests(unittest.TestCase):
 
     def test_registry_uses_bundled_probabilistic_bridges(self):
         registry = ForecastAdapterRegistry()
-        self.assertIn("provider_bridges:lag_llama_forecast", registry.get("lag_llama").default_callable)
-        self.assertIn("provider_bridges:moirai_uni2ts_forecast", registry.get("moirai_uni2ts").default_callable)
+        self.assertIn(
+            "provider_bridges:lag_llama_forecast", registry.get("lag_llama").default_callable
+        )
+        self.assertIn(
+            "provider_bridges:moirai_uni2ts_forecast",
+            registry.get("moirai_uni2ts").default_callable,
+        )
 
     def test_darts_native_models_generate_holdout_predictions(self):
         fake_darts = type("Darts", (), {"TimeSeries": _FakeTimeSeries})
-        fake_models = type("Models", (), {
-            "NaiveDrift": _FakeDartsModel,
-            "NaiveSeasonal": _FakeDartsModel,
-            "Theta": _FakeDartsModel,
-            "ExponentialSmoothing": _FakeDartsModel,
-        })
+        fake_models = type(
+            "Models",
+            (),
+            {
+                "NaiveDrift": _FakeDartsModel,
+                "NaiveSeasonal": _FakeDartsModel,
+                "Theta": _FakeDartsModel,
+                "ExponentialSmoothing": _FakeDartsModel,
+            },
+        )
 
         def import_module(name):
             return fake_darts if name == "darts" else fake_models
 
-        with patch("app.model_lab.darts_experiment_runner.importlib.util.find_spec", return_value=object()), patch(
-            "app.model_lab.darts_experiment_runner.importlib.import_module",
-            side_effect=import_module,
+        with (
+            patch(
+                "app.model_lab.darts_experiment_runner.importlib.util.find_spec",
+                return_value=object(),
+            ),
+            patch(
+                "app.model_lab.darts_experiment_runner.importlib.import_module",
+                side_effect=import_module,
+            ),
         ):
             predictions = DartsExperimentRunner().forecast_models(
                 [1, 2, 3, 4, 5],

@@ -6,8 +6,7 @@ from app.models import utc_now_iso
 
 
 class OpportunitySignalStore(Protocol):
-    def upsert_opportunity(self, opportunity: dict[str, Any]) -> str:
-        ...
+    def upsert_opportunity(self, opportunity: dict[str, Any]) -> str: ...
 
 
 class OpportunitySignalRepository:

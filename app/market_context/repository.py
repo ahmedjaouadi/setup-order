@@ -26,9 +26,7 @@ class MarketContextRepository:
         self.database = database
 
     def list_symbol_metadata(self) -> dict[str, dict[str, Any]]:
-        rows = self.database.execute(
-            "SELECT * FROM symbol_metadata ORDER BY symbol"
-        ).fetchall()
+        rows = self.database.execute("SELECT * FROM symbol_metadata ORDER BY symbol").fetchall()
         return {row["symbol"].upper(): _row_to_dict(row) for row in rows}
 
     def upsert_symbol_metadata(self, payload: dict[str, Any]) -> None:
@@ -81,7 +79,9 @@ class MarketContextRepository:
         rows = self.database.execute(query, params).fetchall()
         return [_row_to_dict(row) for row in rows]
 
-    def upcoming_dividends(self, symbol: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    def upcoming_dividends(
+        self, symbol: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
         query = "SELECT * FROM corporate_dividends"
         params: list[Any] = []
         if symbol:

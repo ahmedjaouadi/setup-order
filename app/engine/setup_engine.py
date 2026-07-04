@@ -45,9 +45,7 @@ class SetupEngine:
             try:
                 import yaml
             except ImportError as exc:
-                raise RuntimeError(
-                    "PyYAML is required to load setup YAML files."
-                ) from exc
+                raise RuntimeError("PyYAML is required to load setup YAML files.") from exc
             with path.open("r", encoding="utf-8") as handle:
                 data = yaml.safe_load(handle)
         if not isinstance(data, dict):
@@ -314,9 +312,7 @@ class SetupEngine:
             try:
                 import yaml
             except ImportError as exc:
-                raise RuntimeError(
-                    "PyYAML is required to save setup YAML files."
-                ) from exc
+                raise RuntimeError("PyYAML is required to save setup YAML files.") from exc
             with path.open("w", encoding="utf-8") as handle:
                 yaml.safe_dump(
                     config,
@@ -351,8 +347,7 @@ class SetupEngine:
 
 def _safe_filename(value: str) -> str:
     safe = "".join(
-        char if char.isalnum() or char in {"-", "_", "."} else "_"
-        for char in value
+        char if char.isalnum() or char in {"-", "_", "."} else "_" for char in value
     ).strip("._")
     return safe or "setup"
 

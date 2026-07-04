@@ -70,9 +70,7 @@ class CoreModuleContractTests(unittest.TestCase):
         )
 
         events = self.repository.list_events(event_type="unit_event")
-        runtime_events = self.repository.list_runtime_events(
-            event_type="unit_runtime_event"
-        )
+        runtime_events = self.repository.list_runtime_events(event_type="unit_runtime_event")
         traces = self.repository.list_decision_traces(setup_id="SETUP_1")
 
         self.assertEqual(events[0]["data"]["status"], SetupStatus.WAITING_ACTIVATION.value)

@@ -18,11 +18,7 @@ class RunnerBaseSetup(BaseSetup):
     ) -> SetupSignal:
         if current_status not in {SetupStatus.IN_POSITION, SetupStatus.MANAGING_POSITION}:
             return SetupSignal.hold("Runner waits for an existing position")
-        steps = (
-            self.config.get("management", {})
-            .get("stop_management", {})
-            .get("steps", [])
-        )
+        steps = self.config.get("management", {}).get("stop_management", {}).get("steps", [])
         candidates = [
             float(step["new_stop"])
             for step in steps

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 EXPERIMENTAL_MODELS = {"moirai", "uni2ts", "moirai_uni2ts"}
 
 
@@ -25,14 +24,15 @@ class ForecastModelSelectionPolicy:
         for item in results:
             model = str(item["model_name"])
             metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
-            trading = item.get("trading_metrics") if isinstance(item.get("trading_metrics"), dict) else {}
+            trading = (
+                item.get("trading_metrics") if isinstance(item.get("trading_metrics"), dict) else {}
+            )
             enough_samples = int(metrics.get("sample_size") or 0) >= min_samples
             beats_naive = model == "naive_baseline" or _beats(metrics, naive)
             beats_atr = model in {"naive_baseline", "atr_baseline"} or _beats_any(metrics, atr)
             pnl_safe = float(trading.get("forecast_filter_pnl_delta") or 0.0) >= 0.0
-            experimental_valid = (
-                model not in EXPERIMENTAL_MODELS
-                or bool(experimental_scorecards.get(model))
+            experimental_valid = model not in EXPERIMENTAL_MODELS or bool(
+                experimental_scorecards.get(model)
             )
             selected_eligible = (
                 model not in {"naive_baseline", "atr_baseline"}

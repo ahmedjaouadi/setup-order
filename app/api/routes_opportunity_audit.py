@@ -10,7 +10,6 @@ from app.opportunity_audit import (
 )
 from app.opportunity_audit.api_models import OpportunityReplayRequestModel
 
-
 router = APIRouter()
 
 
@@ -22,8 +21,7 @@ async def replay_opportunity_audit(
     try:
         setups = _replay_setups_from_payload(request, payload)
         snapshots = [
-            market_snapshot_from_payload(snapshot_payload)
-            for snapshot_payload in payload.snapshots
+            market_snapshot_from_payload(snapshot_payload) for snapshot_payload in payload.snapshots
         ]
         if not snapshots:
             raise ValueError("At least one market snapshot is required")

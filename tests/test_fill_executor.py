@@ -88,7 +88,9 @@ class FillExecutorTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNotNone(position)
         self.assertEqual(position.current_stop, 13.85)
-        self.assertEqual(self.repository.get_setup(self.config["setup_id"])["status"], "IN_POSITION")
+        self.assertEqual(
+            self.repository.get_setup(self.config["setup_id"])["status"], "IN_POSITION"
+        )
         orders = self.repository.list_orders()
         self.assertEqual(len(orders), 2)
         self.assertEqual(self.repository.get_order(order.id)["status"], OrderStatus.FILLED.value)

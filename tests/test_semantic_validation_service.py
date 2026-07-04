@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from copy import deepcopy
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 from app.engine.setup_engine import SetupEngine
 from app.intelligence import SemanticValidationService
-from app.settings import DEFAULT_CONFIG
 from app.storage.database import Database
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
@@ -34,9 +32,7 @@ class SemanticValidationServiceTests(unittest.TestCase):
         report = self.service.validate(config)
 
         self.assertFalse(report.valid)
-        self.assertTrue(
-            any("entry.enabled must be boolean" in error for error in report.errors)
-        )
+        self.assertTrue(any("entry.enabled must be boolean" in error for error in report.errors))
 
     def test_semantic_flags_momentum_limit_below_resistance(self) -> None:
         config = valid_momentum_config()
@@ -94,7 +90,6 @@ class SetupEngineSemanticValidationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
-        config = deepcopy(DEFAULT_CONFIG)
         self.database = Database(root / "state.sqlite")
         self.database.initialize()
         self.repository = TradingRepository(self.database)
@@ -128,7 +123,7 @@ class SetupEngineSemanticValidationTests(unittest.TestCase):
                 "limit_offset": 0.05,
                 "SL": 13.85,
                 "budget": 200,
-                "risque": 15
+                "risque": 15,
             }
         )
 

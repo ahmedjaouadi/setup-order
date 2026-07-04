@@ -55,8 +55,8 @@ class ReconciliationEngine:
                 self.event_store.record(
                     EventLevel.WARNING,
                     "broker_order_reconciliation_failed",
-                        "Broker open order reconciliation failed",
-                        data={"error": order_query_error},
+                    "Broker open order reconciliation failed",
+                    data={"error": order_query_error},
                 )
             broker_account_summary, account_query_error = await _broker_account_summary(self.broker)
             if account_query_error:
@@ -67,7 +67,9 @@ class ReconciliationEngine:
                     data={"error": account_query_error},
                 )
             broker_executions = await _broker_recent_executions(self.broker)
-        broker_order_statuses = await _broker_order_statuses(self.broker) if broker_connected else {}
+        broker_order_statuses = (
+            await _broker_order_statuses(self.broker) if broker_connected else {}
+        )
         result = {
             "broker_positions": len(broker_positions),
             "broker_open_orders": len(broker_orders),
@@ -366,8 +368,7 @@ class ReconciliationEngine:
         elif status == OrderStatus.REJECTED.value:
             result["local_orders_rejected"] += 1
         elif (
-            status == OrderStatus.SUBMITTED.value
-            and previous_status not in _ACTIVE_ORDER_STATUSES
+            status == OrderStatus.SUBMITTED.value and previous_status not in _ACTIVE_ORDER_STATUSES
         ):
             result["local_orders_reactivated"] += 1
         self.event_store.record(
@@ -548,12 +549,7 @@ def _broker_order_keys(order: BrokerOrderRequest) -> set[str]:
 
 
 def _clean_keys(values: set[Any]) -> set[str]:
-    return {
-        text
-        for value in values
-        for text in [str(value or "").strip()]
-        if text
-    }
+    return {text for value in values for text in [str(value or "").strip()] if text}
 
 
 def _first_matching_status(keys: set[str], statuses: dict[str, str]) -> str:

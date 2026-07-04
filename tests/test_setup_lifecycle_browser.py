@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-from contextlib import closing
-from copy import deepcopy
-from pathlib import Path
 import socket
 import tempfile
 import threading
 import time
 import unittest
+from contextlib import closing
+from copy import deepcopy
+from pathlib import Path
 
+import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-import uvicorn
 
 from app.api import routes_dashboard, routes_setups
 from app.broker.tws_connector import SimulatedBrokerConnector
@@ -79,7 +79,9 @@ class SetupLifecycleBrowserTests(unittest.TestCase):
                 browser = playwright.chromium.launch()
                 page = browser.new_page()
                 page.goto(f"http://127.0.0.1:{self.port}/setups")
-                page.locator(f'button[data-action="arm-setup"][data-setup="{self.setup_id}"]').click()
+                page.locator(
+                    f'button[data-action="arm-setup"][data-setup="{self.setup_id}"]'
+                ).click()
                 page.wait_for_selector(
                     f'button[data-action="disarm-setup"][data-setup="{self.setup_id}"]'
                 )

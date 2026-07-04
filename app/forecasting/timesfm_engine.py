@@ -80,7 +80,9 @@ class TimesFMEngine:
             ) from exc
         if completed.returncode != 0:
             detail = (completed.stderr or completed.stdout or "").strip()
-            raise TimesFMForecastError(detail or f"TimesFM worker exited with {completed.returncode}")
+            raise TimesFMForecastError(
+                detail or f"TimesFM worker exited with {completed.returncode}"
+            )
         payload = _json_from_last_stdout_line(completed.stdout)
         if not payload.get("ok"):
             raise TimesFMForecastError(str(payload.get("error") or "TimesFM worker failed"))

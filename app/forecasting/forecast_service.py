@@ -23,22 +23,20 @@ from app.forecasting.provider_statuses import (
     AVAILABLE,
     DISABLED_BY_CONFIG,
     EXTERNAL_WORKER_CONFIGURED,
-    EXTERNAL_WORKER_OK,
     LOAD_ERROR,
     MISSING_DEPENDENCY,
     WORKER_UNREACHABLE,
     is_available_status,
     status_from_reason,
 )
-from app.model_lab.darts_experiment_runner import DartsExperimentRunner
 from app.forecasting.timesfm_engine import (
     TimesFMEngine,
     TimesFMForecastError,
     TimesFMUnavailableError,
 )
+from app.model_lab.darts_experiment_runner import DartsExperimentRunner
 from app.models import utc_now_iso
 from app.utils.id_generator import new_id
-
 
 MarketHistoryProvider = Callable[[str, str], Awaitable[dict[str, Any]]]
 
@@ -269,9 +267,7 @@ class ForecastService:
         if not normalized_symbol:
             return self._status_payload("", "INVALID_INPUT", "symbol is required")
         selected_models = (
-            _normalize_models(models)
-            if models is not None
-            else self._runtime_forecast_models()
+            _normalize_models(models) if models is not None else self._runtime_forecast_models()
         )
         timeframe = str(timeframe or self.config.timeframe)
         horizon = int(horizon or self.config.horizon_bars)
@@ -290,9 +286,7 @@ class ForecastService:
                 )
             )
         ok_members = [
-            item
-            for item in members
-            if item.get("status") == "OK" and item.get("q50_path")
+            item for item in members if item.get("status") == "OK" and item.get("q50_path")
         ]
         if not ok_members:
             payload = self._status_payload(
@@ -320,9 +314,7 @@ class ForecastService:
             self.repository.insert_ensemble(payload)
             return payload
 
-        current_price = _first_number(
-            *[member.get("current_price") for member in ok_members]
-        )
+        current_price = _first_number(*[member.get("current_price") for member in ok_members])
         if current_price is None:
             current_price = 0.0
         q10_path = _average_paths([member.get("q10_path", []) for member in ok_members])
@@ -419,7 +411,11 @@ class ForecastService:
             provider = _stack_provider_for_model(self.stack_config.providers, model_name)
             if provider is not None and not provider.use_for_runtime_forecast:
                 continue
-            if provider is not None and not provider.enabled and not provider.auto_enable_when_ready:
+            if (
+                provider is not None
+                and not provider.enabled
+                and not provider.auto_enable_when_ready
+            ):
                 continue
             if model_name == "timesfm":
                 if is_available_status(str(self._timesfm_availability().get("status") or "")):
@@ -431,11 +427,7 @@ class ForecastService:
             status, _reason = self.adapters.status(model_name, self.config)
             if is_available_status(status):
                 selected.append(model_name)
-        baselines = [
-            name
-            for name in ("naive_baseline", "atr_baseline")
-            if name not in selected
-        ]
+        baselines = [name for name in ("naive_baseline", "atr_baseline") if name not in selected]
         return tuple([*selected, *baselines])
 
     def stack_summary(
@@ -494,7 +486,9 @@ class ForecastService:
             reason = f"Forecast provider '{model_name}' is restricted to offline Model Lab jobs."
         elif provider is not None and not provider.enabled and not provider.auto_enable_when_ready:
             status = DISABLED_BY_CONFIG
-            reason = f"Forecast provider '{model_name}' is disabled by forecast_stack configuration."
+            reason = (
+                f"Forecast provider '{model_name}' is disabled by forecast_stack configuration."
+            )
         payload = self._status_payload(
             symbol,
             status,
@@ -576,7 +570,11 @@ class ForecastService:
                 catalog_item["status"] = AVAILABLE
             provider_name = _normalize_model_name(str(catalog_item.get("model") or ""))
             provider = _stack_provider_for_model(self.stack_config.providers, provider_name)
-            if provider is not None and not provider.enabled and not provider.auto_enable_when_ready:
+            if (
+                provider is not None
+                and not provider.enabled
+                and not provider.auto_enable_when_ready
+            ):
                 catalog_item["status"] = DISABLED_BY_CONFIG
                 catalog_item["available"] = False
                 catalog_item["reason"] = "Disabled by forecast_stack configuration."
@@ -595,19 +593,26 @@ class ForecastService:
         if darts_status == "AVAILABLE":
             darts_status = AVAILABLE
         darts_available = is_available_status(darts_status)
-        darts_reason = str(darts_status_payload.get("reason") or (
-            "available" if darts_available else "Missing optional package(s): darts"
-        ))
-        external_models.append({
-            "model": "darts",
-            "status": darts_status,
-            "available": darts_available,
-            "reason": darts_reason,
-            "runtime_mode": str(darts_status_payload.get("execution_mode") or "in_process"),
-            "baseline": False,
-            "model_lab_only": True,
-        })
-        if darts_provider is not None and not darts_provider.enabled and not darts_provider.auto_enable_when_ready:
+        darts_reason = str(
+            darts_status_payload.get("reason")
+            or ("available" if darts_available else "Missing optional package(s): darts")
+        )
+        external_models.append(
+            {
+                "model": "darts",
+                "status": darts_status,
+                "available": darts_available,
+                "reason": darts_reason,
+                "runtime_mode": str(darts_status_payload.get("execution_mode") or "in_process"),
+                "baseline": False,
+                "model_lab_only": True,
+            }
+        )
+        if (
+            darts_provider is not None
+            and not darts_provider.enabled
+            and not darts_provider.auto_enable_when_ready
+        ):
             external_models[-1]["status"] = DISABLED_BY_CONFIG
             external_models[-1]["available"] = False
             external_models[-1]["reason"] = "Disabled by forecast_stack configuration."
@@ -1012,9 +1017,7 @@ class ForecastService:
             if not isinstance(bars, list) or not bars:
                 continue
             bar_size = str(
-                data.get("historical_bar_size")
-                or data.get("hybrid_signal_bar_size")
-                or ""
+                data.get("historical_bar_size") or data.get("hybrid_signal_bar_size") or ""
             )
             payload = {
                 "symbol": symbol,
@@ -1338,10 +1341,7 @@ def _average_paths(paths: list[list[Any]]) -> list[float]:
     if not usable:
         return []
     length = min(len(path) for path in usable)
-    return [
-        sum(path[index] for path in usable) / len(usable)
-        for index in range(length)
-    ]
+    return [sum(path[index] for path in usable) / len(usable) for index in range(length)]
 
 
 def _member_summaries(members: list[dict[str, Any]]) -> list[dict[str, Any]]:

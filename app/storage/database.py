@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from threading import RLock
-from typing import Any, Iterator, Iterable
+from typing import Any
 
 
 class Database:
@@ -30,8 +31,7 @@ class Database:
     def initialize(self) -> None:
         with self._lock:
             conn = self.connection
-            conn.executescript(
-                """
+            conn.executescript("""
                 CREATE TABLE IF NOT EXISTS schema_migrations (
                     version TEXT PRIMARY KEY,
                     applied_at TEXT NOT NULL
@@ -645,14 +645,11 @@ class Database:
                     ON setup_creation_snapshots(symbol, captured_at);
                 CREATE INDEX IF NOT EXISTS idx_forecast_stack_results_experiment
                     ON forecast_stack_results(experiment_id, rank_overall);
-                """
-            )
-            conn.execute(
-                """
+                """)
+            conn.execute("""
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
                 VALUES ('intelligence_v1', CURRENT_TIMESTAMP)
-                """
-            )
+                """)
             self._ensure_column(
                 conn,
                 "semantic_analyses",
@@ -730,48 +727,34 @@ class Database:
                 "TEXT",
             )
             self._migrate_setup_creation_snapshot_stop_column(conn)
-            conn.execute(
-                """
+            conn.execute("""
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
                 VALUES ('intelligence_v2_confidence', CURRENT_TIMESTAMP)
-                """
-            )
-            conn.execute(
-                """
+                """)
+            conn.execute("""
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
                 VALUES ('intelligence_v3_ambiguity_metadata', CURRENT_TIMESTAMP)
-                """
-            )
-            conn.execute(
-                """
+                """)
+            conn.execute("""
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
                 VALUES ('runtime_v2_events_and_traces', CURRENT_TIMESTAMP)
-                """
-            )
-            conn.execute(
-                """
+                """)
+            conn.execute("""
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
                 VALUES ('v2_1_shortlist_backtest_model_scorecards_reports', CURRENT_TIMESTAMP)
-                """
-            )
-            conn.execute(
-                """
+                """)
+            conn.execute("""
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
                 VALUES ('v2_3_forecast_accuracy_snapshots_stack', CURRENT_TIMESTAMP)
-                """
-            )
-            conn.execute(
-                """
+                """)
+            conn.execute("""
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
                 VALUES ('v2_3_forecast_accuracy_complete_contract', CURRENT_TIMESTAMP)
-                """
-            )
-            conn.execute(
-                """
+                """)
+            conn.execute("""
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
                 VALUES ('v2_4_1_snapshot_trailing_stop_initial_stop', CURRENT_TIMESTAMP)
-                """
-            )
+                """)
 
     def execute(
         self,
@@ -816,14 +799,11 @@ class Database:
         column_definition: str,
     ) -> None:
         columns = {
-            row["name"]
-            for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+            row["name"] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
         }
         if column_name in columns:
             return
-        conn.execute(
-            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"
-        )
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
 
     @staticmethod
     def _column_exists(
@@ -843,11 +823,9 @@ class Database:
     ) -> None:
         if not cls._column_exists(conn, "setup_creation_snapshots", "initial_stop_loss"):
             return
-        conn.execute(
-            """
+        conn.execute("""
             UPDATE setup_creation_snapshots
             SET trailing_stop_initial_stop = initial_stop_loss
             WHERE trailing_stop_initial_stop IS NULL
               AND initial_stop_loss IS NOT NULL
-            """
-        )
+            """)

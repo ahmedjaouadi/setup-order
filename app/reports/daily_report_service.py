@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 from app.models import utc_now_iso
@@ -19,7 +19,7 @@ class DailyReportService:
         self.html = HtmlReportRenderer()
 
     def generate(self, *, report_date: str | None = None) -> dict[str, Any]:
-        report_date = report_date or datetime.now(timezone.utc).date().isoformat()
+        report_date = report_date or datetime.now(UTC).date().isoformat()
         top_opportunities = self.repository.list_opportunities(limit=10)
         setups = self.repository.list_setups()
         armed_setups = [
@@ -87,14 +87,12 @@ class DailyReportService:
         return self.repository.get_daily_report(report_date)
 
     def _recent_forecasts(self) -> list[dict[str, Any]]:
-        rows = self.repository.database.execute(
-            """
+        rows = self.repository.database.execute("""
             SELECT forecast_payload_json
             FROM forecast_metrics
             ORDER BY generated_at DESC, id DESC
             LIMIT 50
-            """
-        ).fetchall()
+            """).fetchall()
         forecasts = []
         for row in rows:
             try:

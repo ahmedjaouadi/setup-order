@@ -53,10 +53,14 @@ class BreakoutRetestSetup(BaseSetup):
         close = snapshot.close if snapshot.close is not None else snapshot.price
         no_close_below = float(retest.get("no_close_below", retest["zone_min"]))
 
-        if current_status in {
-            SetupStatus.WAITING_ACTIVATION,
-            SetupStatus.WAITING_ENTRY_SIGNAL,
-        } and close < no_close_below:
+        if (
+            current_status
+            in {
+                SetupStatus.WAITING_ACTIVATION,
+                SetupStatus.WAITING_ENTRY_SIGNAL,
+            }
+            and close < no_close_below
+        ):
             return SetupSignal(
                 action=SignalAction.INVALIDATE,
                 reason="Close below retest invalidation",
@@ -88,4 +92,3 @@ class BreakoutRetestSetup(BaseSetup):
             return SetupSignal.hold("Waiting for retest confirmation")
 
         return SetupSignal.hold("No breakout action")
-

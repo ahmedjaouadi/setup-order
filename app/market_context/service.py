@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +14,6 @@ from app.market_context.repository import MarketContextRepository
 from app.opportunity_scanner import MarketContextOpportunityScanner
 from app.settings import load_yaml_file
 from app.storage.repositories import TradingRepository
-
 
 TERMINAL_SETUP_STATUSES = {
     "CLOSED",
@@ -49,7 +48,13 @@ class MarketContextService:
             "as_of": heatmap["as_of"],
             "symbols": len(nodes),
             "strong_context": len([node for node in nodes if node["status"] == "STRONG_CONTEXT"]),
-            "weak_context": len([node for node in nodes if node["status"] in {"WEAK_CONTEXT", "BLOCKED_OR_RISKY_CONTEXT"}]),
+            "weak_context": len(
+                [
+                    node
+                    for node in nodes
+                    if node["status"] in {"WEAK_CONTEXT", "BLOCKED_OR_RISKY_CONTEXT"}
+                ]
+            ),
             "auto_allowed": len([node for node in nodes if "AUTO_ALLOWED" in node["badges"]]),
             "watch_only": len([node for node in nodes if "WATCH_ONLY" in node["badges"]]),
             "top_symbols": nodes[:5],
@@ -59,7 +64,9 @@ class MarketContextService:
     def heatmap(self, view: str = "WATCHLIST") -> dict[str, Any]:
         contexts = self._symbol_contexts()
         nodes = [self._heatmap_node(item) for item in contexts]
-        nodes.sort(key=lambda item: (item["context_score"], item["performance"] or -999), reverse=True)
+        nodes.sort(
+            key=lambda item: (item["context_score"], item["performance"] or -999), reverse=True
+        )
         return {
             "as_of": self._as_of(contexts),
             "view": view.upper(),
@@ -73,9 +80,13 @@ class MarketContextService:
             grouped.setdefault(item["sector"] or "Unknown", []).append(item)
         sectors = []
         for sector, items in grouped.items():
-            performances = [item["stock_perf_1d"] for item in items if item["stock_perf_1d"] is not None]
+            performances = [
+                item["stock_perf_1d"] for item in items if item["stock_perf_1d"] is not None
+            ]
             scores = [item["context_score"] for item in items]
-            average_performance = round(sum(performances) / len(performances), 4) if performances else None
+            average_performance = (
+                round(sum(performances) / len(performances), 4) if performances else None
+            )
             average_score = round(sum(scores) / len(scores), 2) if scores else 0
             sectors.append(
                 {
@@ -133,13 +144,16 @@ class MarketContextService:
 
     def _symbol_contexts(self) -> list[dict[str, Any]]:
         setups = [
-            setup for setup in self.trading_repository.list_setups()
+            setup
+            for setup in self.trading_repository.list_setups()
             if setup["status"] not in TERMINAL_SETUP_STATUSES
         ]
         metadata = self._metadata()
         sector_etfs = self._sector_etfs()
         quote_events = self.trading_repository.list_events(limit=1000, event_type="stock_quote")
-        analysis_events = self.trading_repository.list_events(limit=1000, event_type="stock_analysis")
+        analysis_events = self.trading_repository.list_events(
+            limit=1000, event_type="stock_analysis"
+        )
         quotes = self._latest_quotes_by_symbol(quote_events)
         analyses = self._latest_analysis_by_setup(analysis_events)
         setup_by_symbol: dict[str, list[dict[str, Any]]] = {}
@@ -210,13 +224,14 @@ class MarketContextService:
             sector_etf=sector_etf,
             metadata_sector=metadata_sector,
             setup_sector=setup_sector,
-            inferred_sector=(
-                inferred_sector_from_metadata_etf
-                or inferred_sector_from_setup_etf
-            ),
+            inferred_sector=(inferred_sector_from_metadata_etf or inferred_sector_from_setup_etf),
         )
         stock_perf = self._performance_from_quote(quote)
-        sector_perf = self._performance_from_quote(quotes.get(str(sector_etf).upper(), {})) if sector_etf else None
+        sector_perf = (
+            self._performance_from_quote(quotes.get(str(sector_etf).upper(), {}))
+            if sector_etf
+            else None
+        )
         spy_perf = self._performance_from_quote(quotes.get("SPY", {}))
         event_penalty = 0
         score = market_context_score(stock_perf, sector_perf, spy_perf, event_penalty=event_penalty)
@@ -272,9 +287,7 @@ class MarketContextService:
                 "market_context_score": score,
             }
         )
-        result["badges"] = self._unique_badges(
-            [*result["badges"], *opportunity.get("badges", [])]
-        )
+        result["badges"] = self._unique_badges([*result["badges"], *opportunity.get("badges", [])])
         result["opportunity"] = opportunity
         result["opportunity_status"] = opportunity.get("opportunity_status")
         result["opportunity_type"] = opportunity.get("opportunity_type")
@@ -331,7 +344,11 @@ class MarketContextService:
             return []
         payload = load_yaml_file(self.symbol_metadata_path)
         items: list[dict[str, Any]] = []
-        listed = payload.get("symbols", []) if isinstance(payload, dict) else payload if isinstance(payload, list) else []
+        listed = (
+            payload.get("symbols", [])
+            if isinstance(payload, dict)
+            else payload if isinstance(payload, list) else []
+        )
         if isinstance(listed, list):
             items.extend(item for item in listed if isinstance(item, dict))
         overrides = payload.get("symbol_overrides") if isinstance(payload, dict) else None
@@ -468,7 +485,11 @@ class MarketContextService:
     def _first_config_value(self, setups: list[dict[str, Any]], key: str) -> str:
         for setup in setups:
             config = setup.get("config") if isinstance(setup.get("config"), dict) else {}
-            market_context = config.get("market_context") if isinstance(config.get("market_context"), dict) else {}
+            market_context = (
+                config.get("market_context")
+                if isinstance(config.get("market_context"), dict)
+                else {}
+            )
             value = market_context.get(key) or config.get(key)
             if value and str(value).upper() != "AUTO":
                 return str(value)
@@ -569,14 +590,10 @@ class MarketContextService:
 
     @staticmethod
     def _as_of(contexts: list[dict[str, Any]]) -> str:
-        timestamps = [
-            item.get("last_update")
-            for item in contexts
-            if item.get("last_update")
-        ]
+        timestamps = [item.get("last_update") for item in contexts if item.get("last_update")]
         if timestamps:
             return max(timestamps)
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()
 
     @staticmethod
     def _empty_symbol_context(symbol: str) -> dict[str, Any]:

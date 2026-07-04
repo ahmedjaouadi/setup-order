@@ -13,6 +13,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Protocol
 
+from app.forecasting.base_forecaster import (
+    ForecastModelCapabilities,
+    NormalizedForecastResult,
+)
+from app.forecasting.forecast_models import ForecastConfig, TimesFMForecastOutput
 from app.forecasting.provider_statuses import (
     AVAILABLE,
     EXTERNAL_WORKER_CONFIGURED,
@@ -24,11 +29,6 @@ from app.forecasting.provider_statuses import (
     is_available_status,
     status_from_reason,
 )
-from app.forecasting.base_forecaster import (
-    ForecastModelCapabilities,
-    NormalizedForecastResult,
-)
-from app.forecasting.forecast_models import ForecastConfig, TimesFMForecastOutput
 from app.forecasting.timesfm_engine import TimesFMForecastError, TimesFMUnavailableError
 from app.models import utc_now_iso
 
@@ -44,8 +44,7 @@ class ForecastAdapter(Protocol):
         horizon: int,
         target: str,
         config: ForecastConfig,
-    ) -> TimesFMForecastOutput:
-        ...
+    ) -> TimesFMForecastOutput: ...
 
 
 class ForecastAdapterRegistry:
@@ -144,7 +143,9 @@ class ForecastAdapterRegistry:
                     unavailable_reason = f"TimesFM package failed to load: {exc}"
                 else:
                     available = bool(installed)
-                    unavailable_reason = None if available else "Missing optional package(s): timesfm"
+                    unavailable_reason = (
+                        None if available else "Missing optional package(s): timesfm"
+                    )
             return ForecastModelCapabilities(
                 model_name=name,
                 supports_quantiles=True,
@@ -159,9 +160,11 @@ class ForecastAdapterRegistry:
         probabilistic = name == "lag_llama"
         return ForecastModelCapabilities(
             model_name=name,
-            supports_quantiles=name in {"chronos", "lag_llama", "moirai_uni2ts", "moirai", "uni2ts"},
+            supports_quantiles=name
+            in {"chronos", "lag_llama", "moirai_uni2ts", "moirai", "uni2ts"},
             supports_probabilistic_paths=probabilistic,
-            supports_zero_shot=name in {"chronos", "lag_llama", "moirai_uni2ts", "moirai", "uni2ts"},
+            supports_zero_shot=name
+            in {"chronos", "lag_llama", "moirai_uni2ts", "moirai", "uni2ts"},
             requires_training=name in {"neuralforecast", "autogluon"},
             requires_local_model_path=False,
             installed=status != MISSING_DEPENDENCY,
@@ -192,7 +195,9 @@ class ForecastAdapterRegistry:
                 output = TimesFMForecastOutput(point, point, point)
             elif name == "atr_baseline":
                 drift = (series[-1] - series[-2]) if len(series) > 1 else 0.0
-                point = [series[-1] + drift * (index + 1) for index in range(horizon)] if series else []
+                point = (
+                    [series[-1] + drift * (index + 1) for index in range(horizon)] if series else []
+                )
                 output = TimesFMForecastOutput(point, point, point)
             else:
                 adapter = self.get(name)
@@ -231,8 +236,16 @@ class ForecastAdapterRegistry:
         point = list(output.q50_path)
         start = closes[-1] if closes else (series[-1] if series else None)
         end = point[-1] if point else None
-        expected_return = ((end - start) / start * 100) if start and end is not None and target != "log_return" else None
-        direction_value = sum(point) if target == "log_return" else ((end - start) if start is not None and end is not None else 0.0)
+        expected_return = (
+            ((end - start) / start * 100)
+            if start and end is not None and target != "log_return"
+            else None
+        )
+        direction_value = (
+            sum(point)
+            if target == "log_return"
+            else ((end - start) if start is not None and end is not None else 0.0)
+        )
         return NormalizedForecastResult(
             model_name=name,
             symbol=symbol,
@@ -468,7 +481,7 @@ class NeuralForecastAdapter:
         nf_module = _import_optional("neuralforecast", "neuralforecast")
         pandas = _import_optional("pandas", "pandas")
         try:
-            neural_forecast_cls = getattr(nf_module, "NeuralForecast")
+            neural_forecast_cls = nf_module.NeuralForecast
             frame = pandas.DataFrame(
                 {
                     "unique_id": ["series"] * len(series),
@@ -542,8 +555,8 @@ class AutoGluonAdapter:
         ts_module = _import_optional("autogluon.timeseries", "autogluon.timeseries")
         pandas = _import_optional("pandas", "pandas")
         try:
-            predictor_cls = getattr(ts_module, "TimeSeriesPredictor")
-            data_cls = getattr(ts_module, "TimeSeriesDataFrame")
+            predictor_cls = ts_module.TimeSeriesPredictor
+            data_cls = ts_module.TimeSeriesDataFrame
             timestamps = pandas.date_range(
                 start="2000-01-01",
                 periods=len(series),
@@ -628,7 +641,9 @@ def adapter_health(adapter: ForecastAdapter, config: ForecastConfig) -> tuple[st
                 options,
                 provider=adapter.name,
             )
-        status, reason = _module_sequence_health(("neuralforecast", "neuralforecast.models", "pandas"))
+        status, reason = _module_sequence_health(
+            ("neuralforecast", "neuralforecast.models", "pandas")
+        )
         if not is_available_status(status):
             return status, reason
         return AVAILABLE, "available"
@@ -748,9 +763,14 @@ def _external_module_sequence_health(
         return WORKER_UNREACHABLE, f"{provider} dependency probe timed out after {timeout}s"
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout or "").strip()
-        return WORKER_UNREACHABLE, detail or f"{provider} dependency probe exited with {completed.returncode}"
+        return (
+            WORKER_UNREACHABLE,
+            detail or f"{provider} dependency probe exited with {completed.returncode}",
+        )
     try:
-        payload = _json_from_last_stdout_line(completed.stdout, provider=f"{provider} dependency probe")
+        payload = _json_from_last_stdout_line(
+            completed.stdout, provider=f"{provider} dependency probe"
+        )
     except TimesFMForecastError as exc:
         return WORKER_UNREACHABLE, str(exc)
     if payload.get("ok"):
@@ -814,7 +834,9 @@ def _forecast_with_external_provider_worker(
         raise TimesFMForecastError(f"{model_name} worker timed out after {timeout}s") from exc
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout or "").strip()
-        raise TimesFMForecastError(detail or f"{model_name} worker exited with {completed.returncode}")
+        raise TimesFMForecastError(
+            detail or f"{model_name} worker exited with {completed.returncode}"
+        )
     payload = _json_from_last_stdout_line(completed.stdout, provider=model_name)
     if not payload.get("ok"):
         raise TimesFMForecastError(str(payload.get("error") or f"{model_name} worker failed"))
@@ -858,9 +880,15 @@ def normalize_provider_output(output: Any, horizon: int) -> TimesFMForecastOutpu
         return output
     if isinstance(output, dict):
         quantiles = output.get("quantiles") if isinstance(output.get("quantiles"), dict) else {}
-        q10 = _sequence_from_mapping(output, "q10_path", "q10", "p10", "0.1", "0.10") or _sequence_from_mapping(quantiles, "0.1", "0.10", "q10")
-        q50 = _sequence_from_mapping(output, "q50_path", "q50", "median", "p50", "0.5", "0.50") or _sequence_from_mapping(quantiles, "0.5", "0.50", "q50")
-        q90 = _sequence_from_mapping(output, "q90_path", "q90", "p90", "0.9", "0.90") or _sequence_from_mapping(quantiles, "0.9", "0.90", "q90")
+        q10 = _sequence_from_mapping(
+            output, "q10_path", "q10", "p10", "0.1", "0.10"
+        ) or _sequence_from_mapping(quantiles, "0.1", "0.10", "q10")
+        q50 = _sequence_from_mapping(
+            output, "q50_path", "q50", "median", "p50", "0.5", "0.50"
+        ) or _sequence_from_mapping(quantiles, "0.5", "0.50", "q50")
+        q90 = _sequence_from_mapping(
+            output, "q90_path", "q90", "p90", "0.9", "0.90"
+        ) or _sequence_from_mapping(quantiles, "0.9", "0.90", "q90")
         if q50:
             completed = _complete_quantiles(q10, q50, q90, horizon)
             return TimesFMForecastOutput(
@@ -868,13 +896,19 @@ def normalize_provider_output(output: Any, horizon: int) -> TimesFMForecastOutpu
                 q50_path=completed.q50_path,
                 q90_path=completed.q90_path,
                 prob_touch_entry=_probability(output.get("prob_touch_entry")),
-                prob_touch_stop_before_entry=_probability(output.get("prob_touch_stop_before_entry")),
+                prob_touch_stop_before_entry=_probability(
+                    output.get("prob_touch_stop_before_entry")
+                ),
                 prediction_intervals=(
                     output.get("prediction_intervals")
                     if isinstance(output.get("prediction_intervals"), dict)
                     else None
                 ),
-                warnings=[str(item) for item in output.get("warnings", [])] if isinstance(output.get("warnings"), list) else [],
+                warnings=(
+                    [str(item) for item in output.get("warnings", [])]
+                    if isinstance(output.get("warnings"), list)
+                    else []
+                ),
             )
     return output_from_samples(output, horizon)
 
@@ -889,7 +923,11 @@ def output_from_quantile_tensor(
     while isinstance(values, list) and len(values) == 1 and isinstance(values[0], list):
         values = values[0]
     rows = values if isinstance(values, list) else []
-    if rows and len(rows) == 3 and all(isinstance(row, list) and len(row) >= horizon for row in rows):
+    if (
+        rows
+        and len(rows) == 3
+        and all(isinstance(row, list) and len(row) >= horizon for row in rows)
+    ):
         q10, q50, q90 = (_to_float_sequence(row)[:horizon] for row in rows)
     elif rows and all(isinstance(row, list) and len(row) >= 3 for row in rows[:horizon]):
         matrix = [_to_float_sequence(row) for row in rows[:horizon]]
@@ -966,7 +1004,9 @@ def _build_neuralforecast_model(
         parameters = {}
     if "n_series" in parameters:
         kwargs["n_series"] = 1
-    if parameters and not any(item.kind is inspect.Parameter.VAR_KEYWORD for item in parameters.values()):
+    if parameters and not any(
+        item.kind is inspect.Parameter.VAR_KEYWORD for item in parameters.values()
+    ):
         kwargs = {key: value for key, value in kwargs.items() if key in parameters}
     return model_cls(**kwargs)
 
@@ -1081,7 +1121,11 @@ def _to_nested_float_rows(value: Any) -> list[list[float]]:
     if hasattr(value, "tolist"):
         value = value.tolist()
     if isinstance(value, dict):
-        return [_to_float_sequence(value.get("prediction") or value.get("mean") or value.get("q50") or [])]
+        return [
+            _to_float_sequence(
+                value.get("prediction") or value.get("mean") or value.get("q50") or []
+            )
+        ]
     if isinstance(value, list | tuple):
         if not value:
             return []
@@ -1149,7 +1193,9 @@ def _load_callable(path: str) -> Callable[..., Any]:
     try:
         module = importlib.import_module(module_name)
     except (ImportError, ModuleNotFoundError) as exc:
-        raise TimesFMUnavailableError(f"Provider callable module is not available: {module_name}") from exc
+        raise TimesFMUnavailableError(
+            f"Provider callable module is not available: {module_name}"
+        ) from exc
     provider = getattr(module, function_name, None)
     if not callable(provider):
         raise TimesFMUnavailableError(f"Provider callable is not available: {path}")

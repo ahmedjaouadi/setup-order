@@ -22,7 +22,6 @@ from app.setups.text_converter import (
 )
 from app.utils.id_generator import new_id
 
-
 SCHEMA_VERSION = "intelligence_v1"
 PARSER_VERSION = "intelligence_parser_v1"
 CANONICAL_MAPPER_VERSION = "canonical_mapper_v1"
@@ -48,9 +47,7 @@ class IntelligenceService:
         self.canonical_fields = load_canonical_fields()
         self.alias_resolver = AliasResolver(self.canonical_fields)
         self.accepted_aliases = {
-            field.canonical_path: list(
-                dict.fromkeys([field.canonical_path, *field.aliases])
-            )
+            field.canonical_path: list(dict.fromkeys([field.canonical_path, *field.aliases]))
             for field in self.canonical_fields
         }
 
@@ -127,14 +124,10 @@ class IntelligenceService:
 
         for scenario in scenarios:
             scenario_issues = [
-                issue
-                for issue in issues
-                if issue.get("scenario_id") == scenario["scenario_id"]
+                issue for issue in issues if issue.get("scenario_id") == scenario["scenario_id"]
             ]
             scenario_fields = [
-                field
-                for field in fields
-                if field.get("scenario_id") == scenario["scenario_id"]
+                field for field in fields if field.get("scenario_id") == scenario["scenario_id"]
             ]
             scenario_ambiguities = [
                 ambiguity
@@ -168,11 +161,7 @@ class IntelligenceService:
             previous = self.repository.get_latest_analysis_for_setup(primary_setup_id)
             if previous is not None:
                 previous_analysis_id = previous["analysis_id"]
-        if (
-            persist
-            and previous_analysis_id is None
-            and prepared["force_new_revision"]
-        ):
+        if persist and previous_analysis_id is None and prepared["force_new_revision"]:
             previous = self.repository.get_latest_analysis_by_hash(analysis_hash)
             if previous is not None:
                 previous_analysis_id = previous["analysis_id"]
@@ -213,8 +202,7 @@ class IntelligenceService:
             "reused": False,
         }
         persistable = any(
-            bool(item.get("save_validation", {}).get("allowed"))
-            for item in scenarios
+            bool(item.get("save_validation", {}).get("allowed")) for item in scenarios
         )
         if persist and scenarios and persistable:
             self.repository.save_analysis_bundle(
@@ -240,8 +228,7 @@ class IntelligenceService:
     def list_for_setup(self, setup_id: str) -> list[dict[str, Any]]:
         analyses = self.repository.list_analyses_for_setup(setup_id)
         return [
-            self._load_persisted_analysis(item["analysis_id"], reused=False)
-            for item in analyses
+            self._load_persisted_analysis(item["analysis_id"], reused=False) for item in analyses
         ]
 
     def list_summaries_for_setup(
@@ -251,7 +238,9 @@ class IntelligenceService:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
-        return self.repository.list_analysis_summaries_for_setup(setup_id, limit=limit, offset=offset)
+        return self.repository.list_analysis_summaries_for_setup(
+            setup_id, limit=limit, offset=offset
+        )
 
     def count_analyses_for_setup(self, setup_id: str) -> int:
         return self.repository.count_analyses_for_setup(setup_id)
@@ -395,9 +384,7 @@ class IntelligenceService:
     ) -> dict[str, Any]:
         rollback = self.prepare_rollback(setup_id, analysis_id, scenario_id=scenario_id)
         latest = rollback["latest_analysis"]
-        request_id = (
-            f"rollback:{analysis_id}:{rollback['target_scenario']['scenario_id']}"
-        )
+        request_id = f"rollback:{analysis_id}:{rollback['target_scenario']['scenario_id']}"
         return await self.analyze(
             {
                 "payload": rollback["config"],
@@ -405,9 +392,7 @@ class IntelligenceService:
                 "force_new_revision": True,
                 "_source_type": "ROLLBACK",
                 "_provider_name": "rollback",
-                "_previous_analysis_id": (
-                    latest["analysis_id"] if latest is not None else None
-                ),
+                "_previous_analysis_id": (latest["analysis_id"] if latest is not None else None),
             },
             persist=True,
         )
@@ -540,7 +525,9 @@ class IntelligenceService:
             "raw_input_text": raw_input_text,
             "scenario_inputs": scenario_inputs,
             "issues": issues,
-            "explicit_ambiguities": explicit_ambiguities if isinstance(explicit_ambiguities, list) else [],
+            "explicit_ambiguities": (
+                explicit_ambiguities if isinstance(explicit_ambiguities, list) else []
+            ),
             "provider_name_override": provider_name_override or None,
             "previous_analysis_id_override": previous_analysis_id_override,
         }
@@ -605,8 +592,7 @@ class IntelligenceService:
                     "raw_config": raw_config,
                     "scenario_name": str(item.get("scenario_name") or f"Scenario {index}"),
                     "scenario_role": str(
-                        item.get("scenario_role")
-                        or ("PRIMARY" if index == 1 else "ALTERNATIVE")
+                        item.get("scenario_role") or ("PRIMARY" if index == 1 else "ALTERNATIVE")
                     ).upper(),
                     "status": str(item.get("status") or ""),
                     "selected": False,
@@ -746,9 +732,10 @@ class IntelligenceService:
         config = canonical.config
         if not str(config.get("setup_id") or "").strip():
             config["setup_id"] = raw_setup_id or new_id("setup")
-        raw_scenario_id = (
-            str(scenario_input.get("scenario_id") or "").strip()
-            or (str(config["setup_id"]) if scenario_index == 1 else f"{config['setup_id']}_S{scenario_index:02d}")
+        raw_scenario_id = str(scenario_input.get("scenario_id") or "").strip() or (
+            str(config["setup_id"])
+            if scenario_index == 1
+            else f"{config['setup_id']}_S{scenario_index:02d}"
         )
         scenario_id = raw_scenario_id
         if not scenario_id.startswith(f"{analysis_id}:"):
@@ -770,7 +757,8 @@ class IntelligenceService:
                 or self._scenario_name(config, scenario_input.get("scenario_role"))
             ),
             "scenario_role": str(
-                scenario_input.get("scenario_role") or ("PRIMARY" if scenario_index == 1 else "ALTERNATIVE")
+                scenario_input.get("scenario_role")
+                or ("PRIMARY" if scenario_index == 1 else "ALTERNATIVE")
             ).upper(),
             "setup_type": str(config.get("setup_type") or ""),
             "status": scenario_status,
@@ -869,7 +857,9 @@ class IntelligenceService:
                     message=issue.message,
                     severity="ERROR" if issue.level == "error" else "WARNING",
                     source_line=None,
-                    accepted_aliases=self._accepted_aliases_for_path(issue.path if issue.path != "$" else None),
+                    accepted_aliases=self._accepted_aliases_for_path(
+                        issue.path if issue.path != "$" else None
+                    ),
                     scenario_id=scenario_id,
                 )
             )
@@ -1331,7 +1321,10 @@ class IntelligenceService:
     def _suggested_action_for_issue(issue: dict[str, Any]) -> str:
         severity = str(issue.get("severity") or "").upper()
         code = str(issue.get("code") or "").upper()
-        if severity == "ERROR" and _ambiguity_kind_from_issue_code(code) == "MISSING_REQUIRED_FIELD":
+        if (
+            severity == "ERROR"
+            and _ambiguity_kind_from_issue_code(code) == "MISSING_REQUIRED_FIELD"
+        ):
             return "Renseigner ce champ avant armement."
         if severity == "ERROR":
             return "Corriger ou confirmer cette valeur avant armement."
@@ -1376,9 +1369,7 @@ class IntelligenceService:
         if not isinstance(selected_option, dict):
             selected_option = {}
         field_path = str(
-            selected_option.get("field_path")
-            or ambiguity.get("field_path")
-            or ""
+            selected_option.get("field_path") or ambiguity.get("field_path") or ""
         ).strip()
         if not field_path:
             raise ValueError("A field path is required to apply this ambiguity resolution")
@@ -1438,11 +1429,7 @@ class IntelligenceService:
                 for issue in analysis.get("issues", [])
                 if issue.get("scenario_id") == scenario_id
             ]
-            scenario_fields = [
-                field
-                for field in fields
-                if field.get("scenario_id") == scenario_id
-            ]
+            scenario_fields = [field for field in fields if field.get("scenario_id") == scenario_id]
             scenario_ambiguities = [
                 ambiguity
                 for ambiguity in ambiguities
@@ -1527,7 +1514,12 @@ class IntelligenceService:
                 "score": 0.0,
                 "label": "INVALID",
                 "summary": "Input could not produce a reusable draft.",
-                "components": {"field_mean": 0.0, "error_penalty": 1.0, "warning_penalty": 0.0, "ambiguity_penalty": 0.0},
+                "components": {
+                    "field_mean": 0.0,
+                    "error_penalty": 1.0,
+                    "warning_penalty": 0.0,
+                    "ambiguity_penalty": 0.0,
+                },
             },
             "schema_version": SCHEMA_VERSION,
             "parser_version": PARSER_VERSION,
@@ -1621,11 +1613,7 @@ class IntelligenceService:
         warning_penalty = min(warning_count * 0.04, 0.18)
         ambiguity_penalty = min(ambiguity_stats["open_confidence_impact"], 0.34)
 
-        score = (
-            field_mean * 0.62
-            + coverage["coverage_score"] * 0.25
-            + source_quality * 0.13
-        )
+        score = field_mean * 0.62 + coverage["coverage_score"] * 0.25 + source_quality * 0.13
         score -= error_penalty
         score -= warning_penalty
         score -= ambiguity_penalty
@@ -1694,8 +1682,7 @@ class IntelligenceService:
                 "drivers": ["No reusable scenario was extracted."],
             }
         scenario_scores = [
-            float((scenario.get("confidence") or {}).get("score") or 0.0)
-            for scenario in scenarios
+            float((scenario.get("confidence") or {}).get("score") or 0.0) for scenario in scenarios
         ]
         best_scenario_score = max(scenario_scores)
         warning_count = sum(1 for issue in issues if issue.get("severity") == "WARNING")
@@ -1747,11 +1734,7 @@ class IntelligenceService:
                 "critical_field_count": 0,
                 "missing_critical_paths": [],
             }
-        missing = [
-            path
-            for path in critical_paths
-            if not self._path_has_value(config, path)
-        ]
+        missing = [path for path in critical_paths if not self._path_has_value(config, path)]
         coverage_score = (len(critical_paths) - len(missing)) / len(critical_paths)
         return {
             "coverage_score": coverage_score,
@@ -1827,11 +1810,11 @@ class IntelligenceService:
         for ambiguity in ambiguities:
             if str(ambiguity.get("status") or "").upper() != "OPEN":
                 continue
-            metadata = ambiguity.get("metadata") if isinstance(ambiguity.get("metadata"), dict) else {}
+            metadata = (
+                ambiguity.get("metadata") if isinstance(ambiguity.get("metadata"), dict) else {}
+            )
             severity = str(
-                ambiguity.get("severity")
-                or metadata.get("severity")
-                or "REVIEW"
+                ambiguity.get("severity") or metadata.get("severity") or "REVIEW"
             ).upper()
             if severity not in _AMBIGUITY_PENALTIES:
                 severity = "REVIEW"

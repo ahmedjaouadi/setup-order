@@ -1,18 +1,13 @@
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from app.conversion.canonical_field_registry import CanonicalField
 
 
 def normalize_key(raw_key: str) -> str:
     normalized = (
-        str(raw_key or "")
-        .strip()
-        .lower()
-        .replace("’", "'")
-        .replace("-", "_")
-        .replace(" ", "_")
+        str(raw_key or "").strip().lower().replace("’", "'").replace("-", "_").replace(" ", "_")
     )
     while "__" in normalized:
         normalized = normalized.replace("__", "_")

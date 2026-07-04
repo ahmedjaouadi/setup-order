@@ -1,0 +1,105 @@
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  \.venv
+  | data
+  | logs
+  | lightning_logs
+)/
+'''
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "data", "logs", "lightning_logs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+  "E501",  # line length is enforced by black
+  "B008",  # FastAPI's Depends(...) in defaults is idiomatic
+  # Pre-existing debt from the first lint pass (2026-07-04), tracked in TODO.md:
+  # fixing these needs per-callsite judgment, not a mechanical rewrite.
+  "B904",  # raise-without-from-inside-except (~40 call sites)
+  "B905",  # zip-without-explicit-strict (~20 call sites)
+  "B019",  # lru_cache on an instance method (single call site, bounded maxsize)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["F401", "F811"]
+# Standalone scripts that mutate sys.path before importing app.* modules.
+"scripts/*" = ["E402"]
+"app/forecasting/provider_worker.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["app", "scripts"]
+exclude = ["\\.venv", "data", "logs", "lightning_logs"]
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+
+# Modules with pre-existing type errors as of the first mypy pass (2026-07-04),
+# tracked in TODO.md. New/modified modules are expected to be clean; pay this
+# debt down incrementally rather than silencing it repo-wide.
+[[tool.mypy.overrides]]
+module = [
+  "app.api.routes_forecasting",
+  "app.background_jobs",
+  "app.broker.tws_connector",
+  "app.data_quality.service",
+  "app.engine.broker_reality",
+  "app.engine.entry_decision",
+  "app.engine.opportunity_alert_service",
+  "app.engine.order_manager",
+  "app.engine.reconciliation",
+  "app.engine.session_policy",
+  "app.engine.setup_diagnostics",
+  "app.engine.setup_lifecycle_service",
+  "app.engine.setup_status_reporter",
+  "app.engine.stock_market_monitor",
+  "app.engine.trading_engine",
+  "app.features.store",
+  "app.forecasting.adapters",
+  "app.forecasting.forecast_accuracy_calculator",
+  "app.forecasting.forecast_models",
+  "app.forecasting.forecast_operational_service",
+  "app.forecasting.forecast_repository",
+  "app.forecasting.forecast_result_normalizer",
+  "app.forecasting.forecast_service",
+  "app.forecasting.forecast_signal_compiler",
+  "app.forecasting.forecast_stack_config",
+  "app.forecasting.provider_worker",
+  "app.forecasting.timesfm_engine",
+  "app.intelligence.repository",
+  "app.intelligence.service",
+  "app.market_context.relative_strength",
+  "app.market_context.service",
+  "app.model_lab.forecast_stack_benchmark",
+  "app.model_lab.model_drift_detector",
+  "app.model_lab.model_selection_policy",
+  "app.model_lab.service",
+  "app.observability.decision_explainer",
+  "app.observability.decision_trace_repository",
+  "app.observability.decision_trace_service",
+  "app.opportunities.opportunity_explainer",
+  "app.opportunities.opportunity_lifecycle_service",
+  "app.opportunities.opportunity_to_scenario_mapper",
+  "app.opportunities.scanner",
+  "app.opportunities.shortlist_service",
+  "app.opportunity_scanner.service",
+  "app.portfolio_risk.service",
+  "app.scoring.service",
+  "app.setups.creation_snapshot_service",
+  "app.setups.momentum_breakout",
+  "app.setups.position_management",
+  "app.setups.text_converter",
+  "app.storage.database",
+  "check_forecasting_stack",
+]
+ignore_errors = true

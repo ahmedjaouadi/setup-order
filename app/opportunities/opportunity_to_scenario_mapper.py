@@ -14,12 +14,14 @@ class OpportunityToScenarioMapper:
         payload = opportunity.get("payload") if isinstance(opportunity.get("payload"), dict) else {}
         config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
         selection = payload.get("selection") if isinstance(payload.get("selection"), dict) else {}
-        market_snapshot = payload.get("market_snapshot") if isinstance(payload.get("market_snapshot"), dict) else {}
+        market_snapshot = (
+            payload.get("market_snapshot")
+            if isinstance(payload.get("market_snapshot"), dict)
+            else {}
+        )
         symbol = str(opportunity.get("symbol") or config.get("symbol") or "").upper()
         setup_type = str(
-            config.get("setup_type")
-            or opportunity.get("opportunity_type")
-            or "momentum_breakout"
+            config.get("setup_type") or opportunity.get("opportunity_type") or "momentum_breakout"
         )
         scenario_id = _scenario_id(symbol, setup_type)
         trigger, limit_price, resistance = self._entry_levels(
@@ -123,8 +125,13 @@ class OpportunityToScenarioMapper:
         setup_defaults = self.settings.get("setup_defaults", {})
         entry_defaults = setup_defaults.get("entry", {}) if isinstance(setup_defaults, dict) else {}
         entry = config.get("entry") if isinstance(config.get("entry"), dict) else {}
-        trigger_offset = _first_number(entry.get("trigger_offset"), entry_defaults.get("trigger_offset"), 0.02) or 0
-        limit_offset = _first_number(entry.get("limit_offset"), entry_defaults.get("limit_offset"), 0.05) or 0
+        trigger_offset = (
+            _first_number(entry.get("trigger_offset"), entry_defaults.get("trigger_offset"), 0.02)
+            or 0
+        )
+        limit_offset = (
+            _first_number(entry.get("limit_offset"), entry_defaults.get("limit_offset"), 0.05) or 0
+        )
         resistance = _first_number(
             _nested(config, "breakout", "resistance"),
             _nested(config, "breakout", "daily_close_above"),

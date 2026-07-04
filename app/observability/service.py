@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from app.observability.decision_trace_repository import DecisionTraceRepository
 from app.observability.decision_trace_service import DecisionTraceService
 from app.storage.repositories import TradingRepository
-
 
 SnapshotProvider = Callable[[], Any]
 
@@ -18,9 +18,7 @@ class ObservabilityService:
     ) -> None:
         self.repository = repository
         self.snapshot_provider = snapshot_provider
-        self.decision_trace_service = DecisionTraceService(
-            DecisionTraceRepository(repository)
-        )
+        self.decision_trace_service = DecisionTraceService(DecisionTraceRepository(repository))
 
     async def health(self) -> dict[str, Any]:
         snapshot = await self._snapshot()

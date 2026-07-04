@@ -5,7 +5,6 @@ from typing import Any
 from app.models import SetupSignal, SetupStatus, SignalAction
 from app.setups.setup_roles import setup_allows_entry, setup_role_from_config
 
-
 DISPLAY_BY_STATUS: dict[str, tuple[str, str, str]] = {
     "ENTRY_READY": (
         "Entree possible",
@@ -238,10 +237,7 @@ def build_entry_decision(
         protection_status = "NO_ENTRY_ORDER"
     else:
         protection_status = "ENTRY_ORDER_PENDING_WITHOUT_STOP_BLOCKED"
-    decision = str(
-        analysis.get("decision")
-        or ("ENTRY_ALLOWED" if can_send_order else "NO_ENTRY")
-    )
+    decision = str(analysis.get("decision") or ("ENTRY_ALLOWED" if can_send_order else "NO_ENTRY"))
     if not can_send_order and decision == "ENTRY_ALLOWED":
         decision = "NO_ENTRY"
 

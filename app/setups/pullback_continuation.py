@@ -45,4 +45,3 @@ class PullbackContinuationSetup(BaseSetup):
                     stop_loss=self.stop_loss,
                 )
         return SetupSignal.hold("Waiting for pullback")
-

@@ -22,7 +22,11 @@ class OpportunityExplainer:
         payload = opportunity.get("payload") if isinstance(opportunity.get("payload"), dict) else {}
         score = payload.get("score") if isinstance(payload.get("score"), dict) else {}
         selection = payload.get("selection") if isinstance(payload.get("selection"), dict) else {}
-        liquidity = payload.get("liquidity_filter") if isinstance(payload.get("liquidity_filter"), dict) else {}
+        liquidity = (
+            payload.get("liquidity_filter")
+            if isinstance(payload.get("liquidity_filter"), dict)
+            else {}
+        )
         symbol = str(opportunity.get("symbol") or "").upper()
         forecast = None
         if self.forecast_repository is not None and symbol:
@@ -64,4 +68,6 @@ class OpportunityExplainer:
             return f"{symbol} is blocked by data or liquidity filters."
         if forecast:
             return f"{symbol} is shortlisted with forecast status {forecast.get('forecast_status', 'UNKNOWN')}."
-        return f"{symbol} is shortlisted from scanner/setup evidence; no cached forecast is attached."
+        return (
+            f"{symbol} is shortlisted from scanner/setup evidence; no cached forecast is attached."
+        )

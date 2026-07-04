@@ -5,8 +5,8 @@ import os
 import sys
 from typing import Any
 
-import torch
 import chronos
+import torch
 
 
 def main() -> int:
@@ -64,9 +64,13 @@ def main() -> int:
         return 0
 
     token_env = str(request.get("hf_token_env") or "HF_TOKEN")
-    warnings = [] if os.getenv(token_env) else [
-        f"{token_env} is not set; cached models still work and online downloads may be rate-limited."
-    ]
+    warnings = (
+        []
+        if os.getenv(token_env)
+        else [
+            f"{token_env} is not set; cached models still work and online downloads may be rate-limited."
+        ]
+    )
     _write(
         {
             "ok": True,
@@ -88,13 +92,13 @@ def _quantile_paths(
     while isinstance(values, list) and len(values) == 1 and isinstance(values[0], list):
         values = values[0]
     rows = values if isinstance(values, list) else []
-    if rows and len(rows) == 3 and all(
-        isinstance(row, list) and len(row) >= horizon for row in rows
+    if (
+        rows
+        and len(rows) == 3
+        and all(isinstance(row, list) and len(row) >= horizon for row in rows)
     ):
         q10, q50, q90 = (_float_list(row)[:horizon] for row in rows)
-    elif rows and all(
-        isinstance(row, list) and len(row) >= 3 for row in rows[:horizon]
-    ):
+    elif rows and all(isinstance(row, list) and len(row) >= 3 for row in rows[:horizon]):
         matrix = [_float_list(row) for row in rows[:horizon]]
         q10 = [row[0] for row in matrix]
         q50 = [row[1] for row in matrix]

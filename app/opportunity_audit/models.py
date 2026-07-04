@@ -68,11 +68,7 @@ class OpportunityAuditReport:
 
     @property
     def evaluations(self) -> list[ReplayEvaluation]:
-        return [
-            evaluation
-            for step in self.steps
-            for evaluation in step.evaluations
-        ]
+        return [evaluation for step in self.steps for evaluation in step.evaluations]
 
     @property
     def entry_evaluations(self) -> list[ReplayEvaluation]:

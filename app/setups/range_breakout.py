@@ -41,4 +41,3 @@ class RangeBreakoutSetup(BaseSetup):
                 stop_loss=self.stop_loss,
             )
         return SetupSignal.hold("Waiting for range breakout")
-

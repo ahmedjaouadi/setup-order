@@ -64,9 +64,7 @@ class OpportunityShortlistService:
         return {
             "max_items": int(raw.get("max_items", 25) or 25),
             "min_score": float(raw.get("min_score", 55) or 55),
-            "include_blocked_with_reason": bool(
-                raw.get("include_blocked_with_reason", True)
-            ),
+            "include_blocked_with_reason": bool(raw.get("include_blocked_with_reason", True)),
             "priority_order": raw.get(
                 "priority_order",
                 [
@@ -83,7 +81,11 @@ class OpportunityShortlistService:
         payload = opportunity.get("payload") if isinstance(opportunity.get("payload"), dict) else {}
         score = payload.get("score") if isinstance(payload.get("score"), dict) else {}
         components = score.get("components") if isinstance(score.get("components"), dict) else {}
-        liquidity = payload.get("liquidity_filter") if isinstance(payload.get("liquidity_filter"), dict) else {}
+        liquidity = (
+            payload.get("liquidity_filter")
+            if isinstance(payload.get("liquidity_filter"), dict)
+            else {}
+        )
         selection = payload.get("selection") if isinstance(payload.get("selection"), dict) else {}
         return {
             **opportunity,

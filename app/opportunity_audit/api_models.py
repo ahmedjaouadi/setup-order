@@ -23,7 +23,5 @@ class OpportunityReplayRequestModel(BaseModel):
     setups: list[ReplaySetupRequestModel] = Field(default_factory=list)
     setup_ids: list[str] = Field(default_factory=list)
     snapshots: list[dict[str, Any]] = Field(default_factory=list)
-    expected_opportunities: list[ExpectedOpportunityRequestModel] = Field(
-        default_factory=list
-    )
+    expected_opportunities: list[ExpectedOpportunityRequestModel] = Field(default_factory=list)
     evolve_status: bool = True

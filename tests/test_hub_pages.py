@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 import unittest
+from types import SimpleNamespace
 
 from app.api import routes_logs, routes_v2_pages
 
@@ -17,11 +17,7 @@ class HubPageTests(unittest.IsolatedAsyncioTestCase):
                 captured["context"] = context
                 return {"template": template_name, "context": context}
 
-        request = SimpleNamespace(
-            app=SimpleNamespace(
-                state=SimpleNamespace(templates=Templates())
-            )
-        )
+        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(templates=Templates())))
 
         result = await routes_v2_pages.observability_page(request)
 
@@ -38,11 +34,7 @@ class HubPageTests(unittest.IsolatedAsyncioTestCase):
                 captured["context"] = context
                 return {"template": template_name, "context": context}
 
-        request = SimpleNamespace(
-            app=SimpleNamespace(
-                state=SimpleNamespace(templates=Templates())
-            )
-        )
+        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(templates=Templates())))
 
         result = await routes_v2_pages.research_page(request)
 

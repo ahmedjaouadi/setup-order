@@ -55,10 +55,12 @@ class DartsExperimentRunner:
                 status = AVAILABLE if installed else MISSING_DEPENDENCY
                 reason = "available" if installed else "Missing optional package(s): darts"
         return {
-            "model_name": "darts", "installed": installed,
+            "model_name": "darts",
+            "installed": installed,
             "status": status,
             "reason": reason,
-            "runtime_allowed": False, "model_lab_only": True,
+            "runtime_allowed": False,
+            "model_lab_only": True,
             "execution_mode": "external_worker" if external_configured else "in_process",
             "supported_models": [
                 "darts_naive_drift",
@@ -90,7 +92,7 @@ class DartsExperimentRunner:
             raise RuntimeError("Optional package 'u8darts' is not installed.")
         darts_module = importlib.import_module("darts")
         models_module = importlib.import_module("darts.models")
-        time_series_cls = getattr(darts_module, "TimeSeries")
+        time_series_cls = darts_module.TimeSeries
         train = time_series_cls.from_values(values[:-horizon])
         requested = list(model_names or ("darts_naive_drift", "darts_theta"))
         constructors = {
@@ -173,24 +175,30 @@ class DartsExperimentRunner:
             return {"sample_size": size, "status": "INSUFFICIENT_DATA"}
         actual, predicted = actual[:size], predicted[:size]
         errors = [forecast - observed for forecast, observed in zip(predicted, actual)]
-        percentage = [abs(error) / abs(observed) for error, observed in zip(errors, actual) if observed]
+        percentage = [
+            abs(error) / abs(observed) for error, observed in zip(errors, actual) if observed
+        ]
         actual_dirs = [_direction(actual[i] - actual[i - 1]) for i in range(1, size)]
         forecast_dirs = [_direction(predicted[i] - actual[i - 1]) for i in range(1, size)]
         metrics = {
-            "status": "OK", "sample_size": size,
+            "status": "OK",
+            "sample_size": size,
             "mae": sum(abs(value) for value in errors) / size,
             "rmse": math.sqrt(sum(value * value for value in errors) / size),
             "mape": sum(percentage) / len(percentage) if percentage else None,
-            "direction_accuracy": sum(a == b for a, b in zip(actual_dirs, forecast_dirs)) / len(actual_dirs),
+            "direction_accuracy": sum(a == b for a, b in zip(actual_dirs, forecast_dirs))
+            / len(actual_dirs),
         }
         lower = _quantile_path(quantiles, "0.10", "0.1", "q10")
         upper = _quantile_path(quantiles, "0.90", "0.9", "q90")
         coverage_count = min(size, len(lower), len(upper))
         if coverage_count:
-            coverage = sum(
-                lower[index] <= actual[index] <= upper[index]
-                for index in range(coverage_count)
-            ) / coverage_count
+            coverage = (
+                sum(
+                    lower[index] <= actual[index] <= upper[index] for index in range(coverage_count)
+                )
+                / coverage_count
+            )
             metrics["quantile_coverage"] = coverage
             metrics["calibration_error"] = abs(0.8 - coverage)
         else:

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
-
 
 DEFAULT_EXPIRATION_MINUTES = {
     "15m": 60,
@@ -21,7 +20,7 @@ class OpportunityExpirationPolicy:
         detected_at = _parse_datetime(opportunity.get("detected_at"))
         if detected_at is None:
             return False
-        now = now or datetime.now(timezone.utc)
+        now = now or datetime.now(UTC)
         age_minutes = (now - detected_at).total_seconds() / 60
         return age_minutes > self.expire_after_minutes(str(opportunity.get("timeframe") or "15m"))
 
@@ -51,5 +50,5 @@ def _parse_datetime(value: Any) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
     return parsed

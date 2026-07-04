@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import inspect
-import random
 import asyncio
-import time
+import inspect
 import logging
 import math
+import random
 import re
-from contextlib import suppress
+import time
 from abc import ABC, abstractmethod
-from datetime import date, datetime, timezone
+from contextlib import suppress
+from datetime import UTC, date, datetime
 from typing import Any
 
 from app.broker.broker_errors import BrokerDisconnectedError
@@ -22,7 +22,6 @@ from app.broker.ib_models import (
 from app.market_data.indicators import average_true_range, simple_average_true_range
 from app.models import ConnectionStatus, OrderStatus
 from app.utils.market_hours import current_us_equity_session_context
-
 
 logger = logging.getLogger(__name__)
 ATR_PERIOD = 14
@@ -135,7 +134,9 @@ class LiveQuoteRegistry:
             spread,
         )
         quote_values = tuple(value for index, value in enumerate(signature) if index != 4)
-        if any(value is not None for value in quote_values) and signature != entry.get("last_signature"):
+        if any(value is not None for value in quote_values) and signature != entry.get(
+            "last_signature"
+        ):
             entry["last_quote_at"] = _utc_now_iso()
             entry["last_quote_monotonic"] = time.monotonic()
             entry["last_signature"] = signature
@@ -512,20 +513,14 @@ class IbAsyncTwsConnector(BrokerConnector):
         self.display_name = f"IBKR {connector_name} account"
         self.host = str(config.get("host", "127.0.0.1"))
         default_port = 7497 if connector_name == "paper" else 7496
-        self.port = int(
-            config.get("port")
-            or config.get(f"{connector_name}_port")
-            or default_port
-        )
+        self.port = int(config.get("port") or config.get(f"{connector_name}_port") or default_port)
         self.client_id = int(config.get("client_id", 1001))
         self.reconnect = bool(config.get("reconnect", True))
         self.reconnect_interval_seconds = float(config.get("reconnect_interval_seconds", 5))
         self.audit_enabled = bool(config.get("tws_audit_enabled", True))
         self.market_data_source = str(config.get("market_data_source", "historical")).lower()
         self.market_data_type = int(config.get("market_data_type", 1))
-        self.market_data_type_fallbacks = _int_list(
-            config.get("market_data_type_fallbacks", [])
-        )
+        self.market_data_type_fallbacks = _int_list(config.get("market_data_type_fallbacks", []))
         self.live_quote_wait_seconds = float(config.get("live_quote_wait_seconds", 2.0))
         self.historical_request_timeout_seconds = float(
             config.get("historical_request_timeout_seconds")
@@ -688,9 +683,7 @@ class IbAsyncTwsConnector(BrokerConnector):
             await asyncio.wait_for(self._ib.reqCurrentTimeAsync(), timeout=timeout)
         except Exception as exc:
             self._record_tws_request_result(started, "ERROR", _error_text(exc))
-            self._mark_disconnected(
-                f"TWS/Gateway heartbeat failed: {_error_text(exc)}"
-            )
+            self._mark_disconnected(f"TWS/Gateway heartbeat failed: {_error_text(exc)}")
             with suppress(Exception):
                 self._ib.disconnect()
             return self._status
@@ -761,9 +754,7 @@ class IbAsyncTwsConnector(BrokerConnector):
             "last_ibkr_error_code": _ibkr_error_code(
                 self._diagnostics.get("last_tws_request_error")
             ),
-            "last_ibkr_error_message": (
-                self._diagnostics.get("last_tws_request_error") or None
-            ),
+            "last_ibkr_error_message": (self._diagnostics.get("last_tws_request_error") or None),
         }
 
     def set_audit_enabled(self, enabled: bool) -> None:
@@ -905,9 +896,7 @@ class IbAsyncTwsConnector(BrokerConnector):
             raw_status = str(getattr(trade.orderStatus, "status", "") or "")
             broker_order_id = str(getattr(order, "orderId", "") or "")
             broker_perm_id = str(getattr(order, "permId", "") or "") or None
-            status = _tws_order_status_to_order_status(
-                raw_status
-            )
+            status = _tws_order_status_to_order_status(raw_status)
             filled_quantity = _float_or_none(getattr(trade.orderStatus, "filled", None))
             remaining_quantity = _float_or_none(getattr(trade.orderStatus, "remaining", None))
             requests.append(
@@ -1033,19 +1022,13 @@ class IbAsyncTwsConnector(BrokerConnector):
             portfolio_item = portfolio_by_symbol.get(symbol)
             if portfolio_item is not None:
                 average_price = float(
-                    getattr(portfolio_item, "averageCost", average_price)
-                    or average_price
+                    getattr(portfolio_item, "averageCost", average_price) or average_price
                 )
                 current_price = float(
-                    getattr(portfolio_item, "marketPrice", current_price)
-                    or current_price
+                    getattr(portfolio_item, "marketPrice", current_price) or current_price
                 )
-                unrealized_pnl = _number_or_none(
-                    getattr(portfolio_item, "unrealizedPNL", None)
-                )
-                realized_pnl = _number_or_none(
-                    getattr(portfolio_item, "realizedPNL", None)
-                )
+                unrealized_pnl = _number_or_none(getattr(portfolio_item, "unrealizedPNL", None))
+                realized_pnl = _number_or_none(getattr(portfolio_item, "realizedPNL", None))
             else:
                 unrealized_pnl = None
                 realized_pnl = None
@@ -1308,9 +1291,7 @@ class IbAsyncTwsConnector(BrokerConnector):
                                 f"reset stale reqId={entry.get('req_id')}"
                             ),
                         )
-                        reset_error = (
-                            f"{existing_state}: resetting stale live quote subscription"
-                        )
+                        reset_error = f"{existing_state}: resetting stale live quote subscription"
                         reset_extra = _live_quote_extra(
                             symbol,
                             contract,
@@ -1373,11 +1354,7 @@ class IbAsyncTwsConnector(BrokerConnector):
                     "message": error,
                     "quote_state": quote_state,
                     "missing_fields": _missing_live_quote_fields(latest),
-                    **{
-                        key: value
-                        for key, value in latest.items()
-                        if key != "subscription"
-                    },
+                    **{key: value for key, value in latest.items() if key != "subscription"},
                 }
                 break
             else:
@@ -1539,14 +1516,16 @@ class IbAsyncTwsConnector(BrokerConnector):
                 "message": error_text,
             }
             if _is_one_hour_bar_size(bar_size):
-                payload.update(_atr_1h_diagnostics_payload(
-                    atr_1h=None,
-                    bar_count=0,
-                    bar_size=bar_size,
-                    duration=duration,
-                    use_rth=self.historical_use_rth,
-                    error=error_text,
-                ))
+                payload.update(
+                    _atr_1h_diagnostics_payload(
+                        atr_1h=None,
+                        bar_count=0,
+                        bar_size=bar_size,
+                        duration=duration,
+                        use_rth=self.historical_use_rth,
+                        error=error_text,
+                    )
+                )
             return payload
         snapshot = _historical_quote_from_bars(
             symbol,
@@ -1917,7 +1896,10 @@ class IbAsyncTwsConnector(BrokerConnector):
             ticker = entry.get("ticker")
             fields = _ticker_fields(ticker)
             price = _ticker_price(ticker)
-            if price is not None and calculate_spread(fields.get("bid"), fields.get("ask")) is not None:
+            if (
+                price is not None
+                and calculate_spread(fields.get("bid"), fields.get("ask")) is not None
+            ):
                 return
             await asyncio.sleep(0.05)
         ticker = entry.get("ticker")
@@ -2061,8 +2043,8 @@ def _age_seconds(timestamp: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return round((datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).total_seconds(), 3)
+        parsed = parsed.replace(tzinfo=UTC)
+    return round((datetime.now(UTC) - parsed.astimezone(UTC)).total_seconds(), 3)
 
 
 def _is_older_than(timestamp: Any, ttl_seconds: float | None) -> bool:
@@ -2078,7 +2060,7 @@ def _error_text(error: Exception) -> str:
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _contract_detail(contract: Any) -> str:
@@ -2301,11 +2283,7 @@ def _format_tws_extra_for_log(extra: Any) -> str:
         "bar_date",
         "bar_count",
     )
-    parts = [
-        f"{key}={extra[key]}"
-        for key in keys
-        if extra.get(key) not in (None, "")
-    ]
+    parts = [f"{key}={extra[key]}" for key in keys if extra.get(key) not in (None, "")]
     return " ".join(parts)
 
 
@@ -2329,7 +2307,9 @@ def _atr_1h_diagnostics_payload(
     atr_value = _number_or_none(atr_1h)
     bars = _int_or_none(bar_count) or 0
     last_successful = last_successful or {}
-    status = "STALE" if stale and atr_value is not None else "OK" if atr_value is not None else "MISSING"
+    status = (
+        "STALE" if stale and atr_value is not None else "OK" if atr_value is not None else "MISSING"
+    )
     last_successful_at = (
         (successful_at or last_successful.get("timestamp"))
         if atr_value is not None
@@ -2402,12 +2382,14 @@ def _historical_quote_from_bars(
             "message": f"No historical OHLCV data returned for {symbol}.",
         }
         if one_hour_bars:
-            payload.update(_atr_1h_diagnostics_payload(
-                atr_1h=None,
-                bar_count=0,
-                bar_size=bar_size,
-                error=payload["message"],
-            ))
+            payload.update(
+                _atr_1h_diagnostics_payload(
+                    atr_1h=None,
+                    bar_count=0,
+                    bar_size=bar_size,
+                    error=payload["message"],
+                )
+            )
         return payload
     latest = rows[-1]
     previous = rows[-2] if len(rows) > 1 else {}
@@ -2423,12 +2405,14 @@ def _historical_quote_from_bars(
             "message": f"Historical OHLCV for {symbol} did not include a usable close.",
         }
         if one_hour_bars:
-            payload.update(_atr_1h_diagnostics_payload(
-                atr_1h=None,
-                bar_count=len(rows),
-                bar_size=bar_size,
-                error=payload["message"],
-            ))
+            payload.update(
+                _atr_1h_diagnostics_payload(
+                    atr_1h=None,
+                    bar_count=len(rows),
+                    bar_size=bar_size,
+                    error=payload["message"],
+                )
+            )
         return payload
     atr = average_true_range(rows, period=ATR_PERIOD)
     bar_size_normalized = str(bar_size or "").strip().lower()
@@ -2457,7 +2441,9 @@ def _historical_quote_from_bars(
         "volume_ratio": volume_ratio,
         "volume_ratio_15m": volume_ratio,
         "volume_ratio_closed_bar": volume_ratio,
-        "volume_timeframe": "15m" if "15" in bar_size_normalized and "min" in bar_size_normalized else bar_size,
+        "volume_timeframe": (
+            "15m" if "15" in bar_size_normalized and "min" in bar_size_normalized else bar_size
+        ),
         "volume_comparison_mode": volume_stats["comparison_mode"],
         "volume_sample_days": volume_stats["sample_days"],
         "volume_sample_count": volume_stats["sample_count"],
@@ -2472,16 +2458,18 @@ def _historical_quote_from_bars(
         "message": "",
     }
     if one_hour_bars:
-        payload.update(_atr_1h_diagnostics_payload(
-            atr_1h=atr_1h,
-            bar_count=len(rows),
-            bar_size=bar_size,
-            error=(
-                ""
-                if atr_1h is not None
-                else f"Need at least {BARS_REQUIRED_FOR_ATR} closed 1h bars to compute ATR 1h({ATR_PERIOD})."
-            ),
-        ))
+        payload.update(
+            _atr_1h_diagnostics_payload(
+                atr_1h=atr_1h,
+                bar_count=len(rows),
+                bar_size=bar_size,
+                error=(
+                    ""
+                    if atr_1h is not None
+                    else f"Need at least {BARS_REQUIRED_FOR_ATR} closed 1h bars to compute ATR 1h({ATR_PERIOD})."
+                ),
+            )
+        )
     return payload
 
 
@@ -2599,9 +2587,7 @@ def _merge_hybrid_market_snapshot(
     )
     base["readiness"] = base["market_data_readiness"]["status"]
     messages = [
-        str(item.get("message") or "")
-        for item in (signal, live, atr_1h)
-        if item.get("message")
+        str(item.get("message") or "") for item in (signal, live, atr_1h) if item.get("message")
     ]
     base["message"] = " | ".join(messages)
     return base
@@ -2728,71 +2714,72 @@ def _hybrid_market_data_readiness(
         warnings.append(str(live_decision["warning"]))
     if live_decision.get("blocking_reason"):
         blocking_reasons.append(str(live_decision["blocking_reason"]))
-    fields_list.extend([
-        _readiness_field(
-            "live_market_data",
-            1 if live_status == "LIVE" else live.get("market_data_type_actual"),
-            source="reqMktData",
-            updated_at=live_updated_at,
-            blocking=bool(live_decision.get("blocking")),
-            required_for="order_submission",
-            stale_after_seconds=ttl["live_quote_seconds"],
-            status_override=None if live_status == "LIVE" else str(live_decision["status"]),
-            detail=_market_data_type_label(live.get("market_data_type_actual")),
-        ),
-        _readiness_field(
-            "bars_15m",
-            signal.get("bar_count"),
-            source="reqHistoricalData",
-            updated_at=signal_updated_at,
-            blocking=True,
-            minimum=15,
-            stale_after_seconds=ttl["atr_15m_seconds"],
-        ),
-        _readiness_field(
-            "atr_15m",
-            snapshot.get("atr_15m"),
-            source="local_ATR_14",
-            updated_at=signal_updated_at,
-            blocking=True,
-            stale_after_seconds=ttl["atr_15m_seconds"],
-        ),
-        _readiness_field(
-            "bars_1h",
-            atr_1h.get("bar_count"),
-            source="reqHistoricalData",
-            updated_at=atr_1h_updated_at,
-            blocking=not atr_1h_stale_allowed,
-            minimum=15,
-            stale_after_seconds=ttl["atr_1h_seconds"],
-            status_override="WARNING" if atr_1h_stale_allowed else None,
-        ),
-        _readiness_field(
-            "atr_1h",
-            snapshot.get("atr_1h"),
-            source="local_ATR_14",
-            updated_at=atr_1h_updated_at,
-            blocking=not atr_1h_stale_allowed,
-            stale_after_seconds=ttl["atr_1h_seconds"],
-            status_override=(
-                "WARNING"
-                if atr_1h_stale_allowed
-                else
-                atr_1h.get("atr_1h_status")
-                if atr_1h.get("atr_1h_status") in {"ERROR", "STALE"}
-                else None
+    fields_list.extend(
+        [
+            _readiness_field(
+                "live_market_data",
+                1 if live_status == "LIVE" else live.get("market_data_type_actual"),
+                source="reqMktData",
+                updated_at=live_updated_at,
+                blocking=bool(live_decision.get("blocking")),
+                required_for="order_submission",
+                stale_after_seconds=ttl["live_quote_seconds"],
+                status_override=None if live_status == "LIVE" else str(live_decision["status"]),
+                detail=_market_data_type_label(live.get("market_data_type_actual")),
             ),
-            detail=atr_1h.get("historical_1h_error") or "",
-        ),
-    ])
+            _readiness_field(
+                "bars_15m",
+                signal.get("bar_count"),
+                source="reqHistoricalData",
+                updated_at=signal_updated_at,
+                blocking=True,
+                minimum=15,
+                stale_after_seconds=ttl["atr_15m_seconds"],
+            ),
+            _readiness_field(
+                "atr_15m",
+                snapshot.get("atr_15m"),
+                source="local_ATR_14",
+                updated_at=signal_updated_at,
+                blocking=True,
+                stale_after_seconds=ttl["atr_15m_seconds"],
+            ),
+            _readiness_field(
+                "bars_1h",
+                atr_1h.get("bar_count"),
+                source="reqHistoricalData",
+                updated_at=atr_1h_updated_at,
+                blocking=not atr_1h_stale_allowed,
+                minimum=15,
+                stale_after_seconds=ttl["atr_1h_seconds"],
+                status_override="WARNING" if atr_1h_stale_allowed else None,
+            ),
+            _readiness_field(
+                "atr_1h",
+                snapshot.get("atr_1h"),
+                source="local_ATR_14",
+                updated_at=atr_1h_updated_at,
+                blocking=not atr_1h_stale_allowed,
+                stale_after_seconds=ttl["atr_1h_seconds"],
+                status_override=(
+                    "WARNING"
+                    if atr_1h_stale_allowed
+                    else (
+                        atr_1h.get("atr_1h_status")
+                        if atr_1h.get("atr_1h_status") in {"ERROR", "STALE"}
+                        else None
+                    )
+                ),
+                detail=atr_1h.get("historical_1h_error") or "",
+            ),
+        ]
+    )
     if atr_1h_stale_allowed:
         warnings.append("WARNING_STALE_ATR_1H")
     fields = {item["name"]: item for item in fields_list}
     missing = _readiness_missing_fields(fields)
     blocking_reasons.extend(
-        f"BLOCKED_MISSING_{name.upper()}"
-        for name in missing
-        if name != "live_market_data"
+        f"BLOCKED_MISSING_{name.upper()}" for name in missing if name != "live_market_data"
     )
     warmup_ready = all(
         not item.get("blocking")
@@ -2851,7 +2838,9 @@ def _readiness_field(
     else:
         ok = value not in (None, "")
     age = _age_seconds(updated_at)
-    stale = bool(ok and stale_after_seconds is not None and age is not None and age > stale_after_seconds)
+    stale = bool(
+        ok and stale_after_seconds is not None and age is not None and age > stale_after_seconds
+    )
     status = status_override or ("STALE" if stale else "OK" if ok else "MISSING")
     return {
         "name": name,
@@ -2922,16 +2911,20 @@ def _live_market_data_policy_decision(
     requires_live = (
         bool(policy.get("require_live_market_data_for_live_orders", True))
         if mode == "live"
-        else bool(policy.get("require_live_market_data_for_paper_orders", False))
-        if mode == "paper"
-        else False
+        else (
+            bool(policy.get("require_live_market_data_for_paper_orders", False))
+            if mode == "paper"
+            else False
+        )
     )
     allows_delayed = (
         bool(policy.get("allow_delayed_market_data_in_simulation", True))
         if mode == "simulation"
-        else bool(policy.get("allow_delayed_market_data_in_paper", True))
-        if mode == "paper"
-        else False
+        else (
+            bool(policy.get("allow_delayed_market_data_in_paper", True))
+            if mode == "paper"
+            else False
+        )
     )
     essentials_ready = _delayed_market_data_essentials_ready(snapshot, fields)
     if not requires_live and allows_delayed and essentials_ready:
@@ -2998,8 +2991,14 @@ def _market_readiness_status(missing: list[str]) -> str:
     if not missing:
         return "READY"
     live_missing = "live_market_data" in missing
-    indicator_missing = any(item in {"atr_15m", "atr_1h", "bars_15m", "bars_1h"} for item in missing)
-    other_missing = [item for item in missing if item not in {"live_market_data", "atr_15m", "atr_1h", "bars_15m", "bars_1h"}]
+    indicator_missing = any(
+        item in {"atr_15m", "atr_1h", "bars_15m", "bars_1h"} for item in missing
+    )
+    other_missing = [
+        item
+        for item in missing
+        if item not in {"live_market_data", "atr_15m", "atr_1h", "bars_15m", "bars_1h"}
+    ]
     if live_missing and not indicator_missing and not other_missing:
         return "PAUSED_NOT_LIVE_MARKET_DATA"
     if indicator_missing and not live_missing and not other_missing:

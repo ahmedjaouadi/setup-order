@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.forecasting.forecast_accuracy_calculator import (
@@ -17,7 +17,9 @@ from app.utils.id_generator import new_id
 class ForecastAccuracyService:
     """Evaluates forecasts after their horizon; it has no broker dependency."""
 
-    def __init__(self, repository: ForecastAccuracyRepository, settings: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, repository: ForecastAccuracyRepository, settings: dict[str, Any] | None = None
+    ) -> None:
         self.repository = repository
         raw = (settings or {}).get("forecast_accuracy", {})
         self.min_samples = int(raw.get("min_required_samples", 30))
@@ -50,7 +52,9 @@ class ForecastAccuracyService:
             "forecast_price_end": end,
             "forecast_direction": "UP" if delta > 0 else "DOWN" if delta < 0 else "FLAT",
             "predicted_return_pct": ((end - start) / start * 100) if start else None,
-            "direction_confidence": _confidence(forecast.get("direction_confidence", forecast.get("confidence"))),
+            "direction_confidence": _confidence(
+                forecast.get("direction_confidence", forecast.get("confidence"))
+            ),
             "entry_price_reference": _number(forecast.get("entry_trigger_reference")),
             "stop_price_reference": _number(forecast.get("stop_level_reference")),
             "status": "PENDING",
@@ -66,8 +70,7 @@ class ForecastAccuracyService:
     ) -> dict[str, Any]:
         now = _parse_datetime(evaluated_at)
         observations = {
-            str(key).upper(): _observation(value)
-            for key, value in (prices or {}).items()
+            str(key).upper(): _observation(value) for key, value in (prices or {}).items()
         }
         evaluated: list[dict[str, Any]] = []
         skipped: list[str] = []
@@ -87,7 +90,8 @@ class ForecastAccuracyService:
                 (actual - float(row["forecast_price_start"]))
                 / float(row["forecast_price_start"])
                 * 100
-                if row.get("forecast_price_start") else None
+                if row.get("forecast_price_start")
+                else None
             )
             result = {
                 **row,
@@ -99,11 +103,19 @@ class ForecastAccuracyService:
                 "quality_bucket": _quality_bucket(metrics),
                 "evaluated_at": now.isoformat(),
                 "status": "EVALUATED",
-                "events": [*row.get("payload", {}).get("events", ["FORECAST_CREATED"]), "FORECAST_OUTCOME_READY", "FORECAST_EVALUATED"],
+                "events": [
+                    *row.get("payload", {}).get("events", ["FORECAST_CREATED"]),
+                    "FORECAST_OUTCOME_READY",
+                    "FORECAST_EVALUATED",
+                ],
             }
             self.repository.update_outcome(row["outcome_id"], result)
             evaluated.append(result)
-        return {"evaluated": evaluated, "evaluated_count": len(evaluated), "skipped_without_price": skipped}
+        return {
+            "evaluated": evaluated,
+            "evaluated_count": len(evaluated),
+            "skipped_without_price": skipped,
+        }
 
     def rebuild_scorecards(self) -> list[dict[str, Any]]:
         evaluated = self.repository.outcomes(status="EVALUATED", limit=100000)
@@ -115,20 +127,30 @@ class ForecastAccuracyService:
         scorecards: list[dict[str, Any]] = []
         for (model, symbol, timeframe, horizon), rows in groups.items():
             metrics = aggregate_metrics(rows)
-            scorecards.append({
-                "scorecard_id": new_id("fsc"), "model_name": model, "symbol": symbol,
-                "timeframe": timeframe, "horizon_bars": horizon, **metrics,
-                "enough_data": metrics["sample_size"] >= self.min_samples,
-                "min_required_samples": self.min_samples,
-                "reliability_grade": reliability_grade(metrics, min_samples=self.min_samples, grades=self.grades),
-                "updated_at": now,
-                "computed_at": now,
-                "events": ["FORECAST_SCORECARD_UPDATED"],
-            })
+            scorecards.append(
+                {
+                    "scorecard_id": new_id("fsc"),
+                    "model_name": model,
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "horizon_bars": horizon,
+                    **metrics,
+                    "enough_data": metrics["sample_size"] >= self.min_samples,
+                    "min_required_samples": self.min_samples,
+                    "reliability_grade": reliability_grade(
+                        metrics, min_samples=self.min_samples, grades=self.grades
+                    ),
+                    "updated_at": now,
+                    "computed_at": now,
+                    "events": ["FORECAST_SCORECARD_UPDATED"],
+                }
+            )
         self.repository.replace_scorecards(scorecards)
         return scorecards
 
-    def scorecards(self, model_name: str, *, symbol: str | None = None, timeframe: str | None = None) -> list[dict[str, Any]]:
+    def scorecards(
+        self, model_name: str, *, symbol: str | None = None, timeframe: str | None = None
+    ) -> list[dict[str, Any]]:
         return self.repository.scorecards(model_name, symbol=symbol, timeframe=timeframe)
 
     def outcomes(
@@ -151,10 +173,10 @@ class ForecastAccuracyService:
 
 def _parse_datetime(value: Any = None) -> datetime:
     if not value:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
     text = str(value).replace("Z", "+00:00")
     parsed = datetime.fromisoformat(text)
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def _bar_duration(timeframe: str) -> timedelta:
@@ -189,7 +211,11 @@ def _confidence(value: Any) -> float | None:
 
 def _observation(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
-        path = [_number(item) for item in value.get("path", [])] if isinstance(value.get("path"), list) else []
+        path = (
+            [_number(item) for item in value.get("path", [])]
+            if isinstance(value.get("path"), list)
+            else []
+        )
         clean_path = [item for item in path if item is not None]
         price = _number(value.get("price", value.get("close")))
         if price is None and clean_path:
@@ -221,8 +247,12 @@ def _touch_metrics(row: dict[str, Any], observation: dict[str, Any]) -> dict[str
     stop_touched = touched(stop)
     stop_before_entry: bool | None = None
     if entry is not None and stop is not None and path:
-        entry_index = next((index for index, price in enumerate(path) if _level_reached(start, entry, price)), None)
-        stop_index = next((index for index, price in enumerate(path) if _level_reached(start, stop, price)), None)
+        entry_index = next(
+            (index for index, price in enumerate(path) if _level_reached(start, entry, price)), None
+        )
+        stop_index = next(
+            (index for index, price in enumerate(path) if _level_reached(start, stop, price)), None
+        )
         if stop_index is not None:
             stop_before_entry = entry_index is None or stop_index < entry_index
         elif entry_index is not None:
@@ -242,9 +272,17 @@ def _level_reached(start: float | None, level: float, price: float) -> bool:
 
 def _quality_bucket(metrics: dict[str, Any]) -> str:
     percentage_error = _number(metrics.get("percentage_error"))
-    if metrics.get("direction_correct") and percentage_error is not None and percentage_error <= 0.03:
+    if (
+        metrics.get("direction_correct")
+        and percentage_error is not None
+        and percentage_error <= 0.03
+    ):
         return "EXCELLENT"
-    if metrics.get("direction_correct") and percentage_error is not None and percentage_error <= 0.08:
+    if (
+        metrics.get("direction_correct")
+        and percentage_error is not None
+        and percentage_error <= 0.08
+    ):
         return "GOOD"
     if metrics.get("direction_correct"):
         return "DIRECTION_ONLY"

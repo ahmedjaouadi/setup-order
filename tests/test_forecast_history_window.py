@@ -43,12 +43,8 @@ class ForecastMarketHistoryWiringTests(unittest.TestCase):
 
         class StubEngine:
             settings = type("S", (), {"raw": {"forecasting": {"context_bars": 256}}})()
-            _normalize_chart_timeframe = staticmethod(
-                TradingEngine._normalize_chart_timeframe
-            )
-            _forecast_history_duration = staticmethod(
-                TradingEngine._forecast_history_duration
-            )
+            _normalize_chart_timeframe = staticmethod(TradingEngine._normalize_chart_timeframe)
+            _forecast_history_duration = staticmethod(TradingEngine._forecast_history_duration)
 
             async def market_history(self, symbol, timeframe, *, duration=None):
                 captured["symbol"] = symbol
@@ -57,9 +53,7 @@ class ForecastMarketHistoryWiringTests(unittest.TestCase):
                 return {"symbol": symbol, "historical_bars": []}
 
         stub = StubEngine()
-        result = asyncio.run(
-            TradingEngine.forecast_market_history(stub, "NEWCO", "15m")
-        )
+        result = asyncio.run(TradingEngine.forecast_market_history(stub, "NEWCO", "15m"))
 
         self.assertEqual(captured["symbol"], "NEWCO")
         self.assertEqual(captured["timeframe"], "15m")

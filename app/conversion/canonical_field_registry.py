@@ -21,9 +21,7 @@ def load_canonical_fields(alias_file: str | None = None) -> tuple[CanonicalField
     try:
         import yaml
     except ImportError as exc:
-        raise RuntimeError(
-            "PyYAML is required to load canonical field aliases."
-        ) from exc
+        raise RuntimeError("PyYAML is required to load canonical field aliases.") from exc
 
     with path.open("r", encoding="utf-8") as handle:
         payload = yaml.safe_load(handle) or {}
@@ -40,9 +38,7 @@ def load_canonical_fields(alias_file: str | None = None) -> tuple[CanonicalField
         elif isinstance(aliases, list) and all(isinstance(item, str) for item in aliases):
             alias_values = tuple(aliases)
         else:
-            raise ValueError(
-                f"Aliases for {canonical_path} must be a list of strings."
-            )
+            raise ValueError(f"Aliases for {canonical_path} must be a list of strings.")
         fields.append(
             CanonicalField(
                 canonical_path=canonical_path,

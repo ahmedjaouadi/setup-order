@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import tempfile
+import unittest
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
-import tempfile
-import unittest
 
 from app.engine.setup_engine import SetupEngine
 from app.engine.setup_status_reporter import SetupStatusReporter

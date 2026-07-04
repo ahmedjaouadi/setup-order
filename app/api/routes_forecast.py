@@ -4,7 +4,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
 
-
 router = APIRouter(prefix="/api/forecast")
 
 

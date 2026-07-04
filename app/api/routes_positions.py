@@ -5,7 +5,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.engine.broker_reality import REPORT_STATE_KEY, positions_broker_truth_overlay
 
-
 router = APIRouter()
 
 

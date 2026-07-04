@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Callable
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any
 
 from app.engine.broker_reality import (
     REPORT_STATE_KEY,
@@ -19,7 +20,6 @@ from app.setups.setup_roles import (
 )
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
-
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ def revalidate_setup(
         "last_revalidated_at": iso timestamp
     }
     """
-    now_dt = _as_datetime(now) or datetime.now(timezone.utc)
+    now_dt = _as_datetime(now) or datetime.now(UTC)
     now_iso = now_dt.isoformat()
     config = setup.get("config") if isinstance(setup.get("config"), dict) else {}
     current_status = str(setup.get("status") or "")
@@ -138,10 +138,7 @@ def revalidate_setup(
     healthy_status = (
         SetupStatus.WAITING_ACTIVATION.value
         if current_status
-        in (
-            LIFECYCLE_MANAGED_STATUSES
-            | {SetupStatus.DISABLED.value, SetupStatus.VALIDATED.value}
-        )
+        in (LIFECYCLE_MANAGED_STATUSES | {SetupStatus.DISABLED.value, SetupStatus.VALIDATED.value})
         else current_status
     )
 
@@ -202,20 +199,15 @@ def revalidate_setup(
     if executable is None:
         executable = prices["price"]
     if max_limit is not None and executable is not None:
-        too_far_reason = (
-            "PRICE_TOO_FAR_ABOVE_ENTRY" if is_long else "PRICE_TOO_FAR_BELOW_ENTRY"
-        )
+        too_far_reason = "PRICE_TOO_FAR_ABOVE_ENTRY" if is_long else "PRICE_TOO_FAR_BELOW_ENTRY"
         beyond_limit = executable > max_limit if is_long else executable < max_limit
         if beyond_limit:
             retest_zone = _retest_zone(config)
             threshold = _anti_chase_threshold(config, entry_ref or max_limit, is_long, settings)
-            beyond_threshold = (
-                executable > threshold if is_long else executable < threshold
-            )
+            beyond_threshold = executable > threshold if is_long else executable < threshold
             if retest_zone is not None:
                 warnings.append(
-                    "RETEST_ZONE_AVAILABLE:"
-                    f"{retest_zone[0]:.4f}-{retest_zone[1]:.4f}"
+                    "RETEST_ZONE_AVAILABLE:" f"{retest_zone[0]:.4f}-{retest_zone[1]:.4f}"
                 )
                 return result(
                     SetupStatus.MISSED_BREAKOUT_WAIT_RETEST.value,
@@ -299,7 +291,7 @@ class SetupLifecycleService:
         self.state_machine = state_machine or StateMachine()
         self.settings = settings if isinstance(settings, dict) else {}
         self.market_snapshot_provider = market_snapshot_provider
-        self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
+        self.now_provider = now_provider or (lambda: datetime.now(UTC))
         self._last_full_revalidation: datetime | None = None
 
     def revalidate(
@@ -379,9 +371,7 @@ class SetupLifecycleService:
         )
         decision = self.state_machine.explain_transition(current_enum, target_enum, role)
         if not decision.allowed:
-            logger.warning(
-                "Lifecycle transition rejected for %s: %s", setup_id, decision.reason
-            )
+            logger.warning("Lifecycle transition rejected for %s: %s", setup_id, decision.reason)
             self.repository.update_setup_revalidation(setup_id, reason, revalidated_at)
             return result
         self.repository.update_setup_status(
@@ -422,9 +412,7 @@ class SetupLifecycleService:
             try:
                 results.append(self.revalidate_and_apply(setup, now=now))
             except Exception:
-                logger.exception(
-                    "Setup revalidation failed for %s", setup.get("setup_id")
-                )
+                logger.exception("Setup revalidation failed for %s", setup.get("setup_id"))
         return results
 
     def _revalidate_interval_seconds(self) -> float:
@@ -441,9 +429,7 @@ class SetupLifecycleService:
         context: dict[str, Any] = {}
         if isinstance(report, dict) and report.get("broker_last_sync_at"):
             try:
-                context = dict(
-                    freshen_broker_reality_report(report, settings=self.settings)
-                )
+                context = dict(freshen_broker_reality_report(report, settings=self.settings))
             except Exception:
                 context = dict(report)
         setup_id = str(setup.get("setup_id") or "")
@@ -732,12 +718,12 @@ def _as_datetime(value: Any) -> datetime | None:
     if value is None or value == "":
         return None
     if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
     try:
         parsed = datetime.fromisoformat(str(value))
     except (TypeError, ValueError):
         return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def _number_or_none(value: Any) -> float | None:

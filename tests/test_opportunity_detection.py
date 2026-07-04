@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import tempfile
+import unittest
 from copy import deepcopy
 from pathlib import Path
-import tempfile
 from typing import Any
-import unittest
 
-from app.engine.setup_diagnostics import build_setup_analysis_trace
 from app.engine.opportunity_alert_service import OpportunityAlertService
+from app.engine.setup_diagnostics import build_setup_analysis_trace
 from app.engine.signal_engine import SignalEngine
 from app.engine.stock_market_monitor import StockMarketMonitor
 from app.market_data.market_data_service import MarketDataService
@@ -223,10 +223,7 @@ class OpportunityPipelineTests(unittest.TestCase):
             processed["trace"]["next_step"],
             "Verifier le risque, construire le bracket entree + stop, puis envoyer l'ordre protege.",
         )
-        trace_checks = {
-            check["label"]: check["state"]
-            for check in processed["trace"]["checks"]
-        }
+        trace_checks = {check["label"]: check["state"] for check in processed["trace"]["checks"]}
         self.assertEqual(trace_checks["Prix dans zone retest"], "ok")
         self.assertEqual(trace_checks["Bougie de confirmation"], "ok")
         self.assertEqual(trace_checks["Signal entree"], "ok")
@@ -289,9 +286,7 @@ class StockMarketMonitorOpportunityTests(unittest.IsolatedAsyncioTestCase):
             BreakoutRetestSetup(config).to_record(SetupStatus.WAITING_ENTRY_SIGNAL)
         )
 
-        processed = await self.monitor.analyze_market_snapshot(
-            breakout_retest_entry_snapshot()
-        )
+        processed = await self.monitor.analyze_market_snapshot(breakout_retest_entry_snapshot())
 
         self.assertEqual(len(processed), 1)
         self.assertEqual(processed[0]["action"], SignalAction.ENTRY_READY.value)

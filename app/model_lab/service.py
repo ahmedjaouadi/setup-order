@@ -30,7 +30,9 @@ class ModelLabService:
             "setup_id": setup_id or None,
             "scenario_id": payload.get("scenario_id"),
             "symbol": symbol,
-            "timeframe": payload.get("timeframe") or _nested(setup or {}, "config", "timeframes", "signal") or "15m",
+            "timeframe": payload.get("timeframe")
+            or _nested(setup or {}, "config", "timeframes", "signal")
+            or "15m",
             "status": "COMPLETED",
             "metrics": metrics,
             "config": payload,
@@ -83,7 +85,9 @@ class ModelLabService:
         report = {
             "baseline_setup_rules_only": comparison["baseline_setup_rules_only"],
             "setup_rules_plus_timesfm_alignment": comparison["setup_rules_plus_timesfm_alignment"],
-            "setup_rules_plus_ensemble_forecast_alignment": comparison["setup_rules_plus_ensemble_forecast_alignment"],
+            "setup_rules_plus_ensemble_forecast_alignment": comparison[
+                "setup_rules_plus_ensemble_forecast_alignment"
+            ],
             "setup_rules_plus_score_threshold": comparison["setup_rules_plus_score_threshold"],
             "forecast_filter_value": comparison["forecast_filter_value"],
             "metrics": metrics_snapshot,
@@ -179,7 +183,9 @@ class ModelLabService:
             "timeframe": payload.get("timeframe", "15m"),
             "horizon": str(payload.get("horizon", "")),
             "metrics": metrics,
-            "beats_baseline": bool(payload.get("beats_baseline", metrics["direction_accuracy"] > 0.5)),
+            "beats_baseline": bool(
+                payload.get("beats_baseline", metrics["direction_accuracy"] > 0.5)
+            ),
             "created_at": utc_now_iso(),
         }
         self.repository.add_model_benchmark(benchmark)
@@ -194,9 +200,7 @@ class ModelLabService:
             "symbol": symbol.upper(),
             "benchmarks": items,
             "useful_models": [
-                item.get("model_name")
-                for item in items
-                if bool(item.get("beats_baseline"))
+                item.get("model_name") for item in items if bool(item.get("beats_baseline"))
             ],
         }
 
@@ -313,9 +317,7 @@ class ModelLabService:
                         {"entry": entry, "limit": limit, "stop": stop},
                     )
                 )
-                events.append(
-                    _backtest_event(backtest_id, "SCENARIO_SIGNAL_VALID", symbol, {})
-                )
+                events.append(_backtest_event(backtest_id, "SCENARIO_SIGNAL_VALID", symbol, {}))
                 events.append(_backtest_event(backtest_id, "RISK_APPROVED", symbol, {}))
                 events.append(
                     _backtest_event(
@@ -330,8 +332,16 @@ class ModelLabService:
                 high = _number(candle.get("high"))
                 low = _number(candle.get("low"))
                 opened = _number(candle.get("open"))
-                gap_above_limit = opened is not None and opened > limit and (low is None or low > limit)
-                if high is not None and high >= entry and not gap_above_limit and low is not None and low <= limit:
+                gap_above_limit = (
+                    opened is not None and opened > limit and (low is None or low > limit)
+                )
+                if (
+                    high is not None
+                    and high >= entry
+                    and not gap_above_limit
+                    and low is not None
+                    and low <= limit
+                ):
                     fill_price = limit + slippage
                     position = {
                         "entry_time": candle.get("timestamp") or candle.get("date"),
@@ -428,7 +438,9 @@ class ModelLabService:
         return {
             "number_of_trades": len(trades),
             "win_rate": round(len(wins) / len(trades), 4),
-            "profit_factor": round(gross_wins / gross_losses, 4) if gross_losses else float(len(wins)),
+            "profit_factor": (
+                round(gross_wins / gross_losses, 4) if gross_losses else float(len(wins))
+            ),
             "expectancy_r": round(sum(pnl_values) / len(trades), 4),
             "max_drawdown_r": round(min(0.0, min(pnl_values)), 4),
             "stop_hit_rate": round(len(losses) / len(trades), 4),
@@ -443,7 +455,9 @@ class ModelLabService:
         metrics: dict[str, Any],
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        baseline = float(payload.get("baseline_performance_r") or metrics.get("expectancy_r") or 0.0)
+        baseline = float(
+            payload.get("baseline_performance_r") or metrics.get("expectancy_r") or 0.0
+        )
         timesfm_delta = float(payload.get("timesfm_filter_delta_r") or 0.0)
         ensemble_delta = float(payload.get("ensemble_filter_delta_r") or timesfm_delta)
         score_delta = float(payload.get("score_threshold_delta_r") or 0.0)
@@ -715,15 +729,26 @@ def _model_metrics(
     else:
         up_moves = sum(1 for previous, current in zip(closes, closes[1:]) if current >= previous)
         direction_accuracy = up_moves / (len(closes) - 1)
-        mae = sum(abs(current - previous) for previous, current in zip(closes, closes[1:])) / (len(closes) - 1)
+        mae = sum(abs(current - previous) for previous, current in zip(closes, closes[1:])) / (
+            len(closes) - 1
+        )
     direction_accuracy = float(payload.get("direction_accuracy") or direction_accuracy)
     pnl_effect = float(payload.get("pnl_filter_effect_r") or (direction_accuracy - 0.5) * 10)
     return {
         "direction_accuracy": round(direction_accuracy, 4),
         "mae": round(float(payload.get("mae") or mae), 4),
-        "hit_entry_accuracy": round(float(payload.get("hit_entry_accuracy") or direction_accuracy), 4),
-        "stop_before_entry_accuracy": round(float(payload.get("stop_before_entry_accuracy") or max(0.0, 1 - mae)), 4),
-        "calibration_error": round(float(payload.get("calibration_error") or max(0.0, 0.5 - abs(direction_accuracy - 0.5))), 4),
+        "hit_entry_accuracy": round(
+            float(payload.get("hit_entry_accuracy") or direction_accuracy), 4
+        ),
+        "stop_before_entry_accuracy": round(
+            float(payload.get("stop_before_entry_accuracy") or max(0.0, 1 - mae)), 4
+        ),
+        "calibration_error": round(
+            float(
+                payload.get("calibration_error") or max(0.0, 0.5 - abs(direction_accuracy - 0.5))
+            ),
+            4,
+        ),
         "pnl_filter_effect_r": round(pnl_effect, 4),
     }
 

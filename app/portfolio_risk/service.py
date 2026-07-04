@@ -76,7 +76,12 @@ class PortfolioRiskService:
     ) -> tuple[str, list[str]]:
         config = self._config()
         warnings = []
-        max_total = float(config.get("max_total_exposure_usd", self.settings.get("risk", {}).get("max_total_exposure_usd", 1000)))
+        max_total = float(
+            config.get(
+                "max_total_exposure_usd",
+                self.settings.get("risk", {}).get("max_total_exposure_usd", 1000),
+            )
+        )
         if total_exposure > max_total:
             warnings.append(f"Total exposure {total_exposure:.2f} exceeds {max_total:.2f}.")
         max_sector_pct = float(config.get("max_sector_exposure_pct", 40))
@@ -113,10 +118,7 @@ class PortfolioRiskService:
         return config if isinstance(config, dict) else {}
 
     def _correlation_matrix(self, symbols: list[str]) -> dict[str, Any]:
-        histories = {
-            symbol: self._returns_for_symbol(symbol)
-            for symbol in symbols
-        }
+        histories = {symbol: self._returns_for_symbol(symbol) for symbol in symbols}
         matrix: dict[str, dict[str, float | None]] = {}
         high_pairs = []
         threshold = float(self._config().get("high_correlation_threshold", 0.75))
@@ -130,11 +132,7 @@ class PortfolioRiskService:
                 matrix[left][right] = round(corr, 4) if corr is not None else None
                 if left < right and corr is not None and corr >= threshold:
                     high_pairs.append({"symbols": [left, right], "correlation": round(corr, 4)})
-        correlated_symbols = {
-            symbol
-            for pair in high_pairs
-            for symbol in pair["symbols"]
-        }
+        correlated_symbols = {symbol for pair in high_pairs for symbol in pair["symbols"]}
         return {
             "method": "pearson_returns_from_local_history",
             "symbols": symbols,
@@ -143,10 +141,7 @@ class PortfolioRiskService:
                 "high_correlation_threshold": threshold,
                 "high_correlation_pairs": high_pairs,
                 "max_correlated_positions": len(correlated_symbols) if high_pairs else 0,
-                "history_points": {
-                    symbol: len(histories.get(symbol, []))
-                    for symbol in symbols
-                },
+                "history_points": {symbol: len(histories.get(symbol, [])) for symbol in symbols},
             },
         }
 
@@ -159,7 +154,9 @@ class PortfolioRiskService:
             if isinstance(bars, list) and bars:
                 closes = [
                     value
-                    for value in (_number(bar.get("close")) for bar in bars if isinstance(bar, dict))
+                    for value in (
+                        _number(bar.get("close")) for bar in bars if isinstance(bar, dict)
+                    )
                     if value is not None and value > 0
                 ]
                 if closes:
@@ -167,7 +164,11 @@ class PortfolioRiskService:
             close = _number(data.get("close") or data.get("price") or data.get("last"))
             if close is not None and close > 0:
                 closes.append(close)
-        closes = list(reversed(closes)) if len(closes) > 1 and not _looks_chronological(closes) else closes
+        closes = (
+            list(reversed(closes))
+            if len(closes) > 1 and not _looks_chronological(closes)
+            else closes
+        )
         return [
             (current - previous) / previous
             for previous, current in zip(closes, closes[1:])
@@ -188,7 +189,9 @@ class PortfolioRiskService:
         max_sector_pct = float(config.get("max_sector_exposure_pct", 40))
         max_symbol_pct = float(config.get("max_single_symbol_exposure_pct", 20))
         corr_summary = correlation.get("summary") if isinstance(correlation, dict) else {}
-        high_pairs = corr_summary.get("high_correlation_pairs", []) if isinstance(corr_summary, dict) else []
+        high_pairs = (
+            corr_summary.get("high_correlation_pairs", []) if isinstance(corr_summary, dict) else []
+        )
         correlated_symbols = {
             symbol
             for pair in high_pairs

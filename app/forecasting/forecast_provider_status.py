@@ -5,9 +5,9 @@ from typing import Any
 from app.forecasting.forecast_stack_config import ForecastStackConfig
 from app.forecasting.provider_statuses import (
     AVAILABLE,
+    DISABLED_BY_CONFIG,
     EXTERNAL_WORKER_CONFIGURED,
     EXTERNAL_WORKER_OK,
-    DISABLED_BY_CONFIG,
     LOAD_ERROR,
     MISSING_DEPENDENCY,
     WORKER_ERROR,
@@ -38,10 +38,16 @@ class ForecastProviderStatusService:
 
     def list(self) -> dict[str, Any]:
         availability = self.forecast_service.models()
-        discovered = [availability.get("timesfm", {}), *availability.get("external_models", []), *availability.get("baselines", [])]
+        discovered = [
+            availability.get("timesfm", {}),
+            *availability.get("external_models", []),
+            *availability.get("baselines", []),
+        ]
         by_name = {str(item.get("model")): item for item in discovered}
         items = []
-        for name, provider in sorted(self.config.providers.items(), key=lambda item: item[1].priority):
+        for name, provider in sorted(
+            self.config.providers.items(), key=lambda item: item[1].priority
+        ):
             runtime = by_name.get(name, {})
             runtime_status = str(runtime.get("status") or "")
             if runtime_status == "AVAILABLE":
@@ -55,7 +61,9 @@ class ForecastProviderStatusService:
             )
             installation_managed = provider.enabled or provider.auto_enable_when_ready
             if runtime_status not in self.STATUSES:
-                runtime_status = AVAILABLE if runtime.get("available") else status_from_reason(reason)
+                runtime_status = (
+                    AVAILABLE if runtime.get("available") else status_from_reason(reason)
+                )
             status = runtime_status if installation_managed else DISABLED_BY_CONFIG
             installed = runtime_status != MISSING_DEPENDENCY
             available = is_available_status(status)
@@ -64,7 +72,8 @@ class ForecastProviderStatusService:
             forecast_repository = getattr(self.forecast_service, "repository", None)
             latest = (
                 forecast_repository.latest_for_model(persisted_name)
-                if forecast_repository is not None and hasattr(forecast_repository, "latest_for_model")
+                if forecast_repository is not None
+                and hasattr(forecast_repository, "latest_for_model")
                 else None
             )
             latest_payload = _latest_payload(latest)
@@ -88,7 +97,9 @@ class ForecastProviderStatusService:
                 historical_grade=historical_grade,
             )
             forecast_summary = _forecast_summary(latest)
-            eligible_for_runtime_forecast = provider.use_for_runtime_forecast and not bool(runtime.get("model_lab_only"))
+            eligible_for_runtime_forecast = provider.use_for_runtime_forecast and not bool(
+                runtime.get("model_lab_only")
+            )
             eligible_for_display = available and forecast_status in {"FORECAST_OK", "NOT_RUN"}
             eligible_for_execution = False
             execution_block_reason = _execution_block_reason(
@@ -105,53 +116,70 @@ class ForecastProviderStatusService:
                 fallback_reason=execution_block_reason,
             )
             action_required = _action_required(status, reason)
-            items.append({
-                "model_name": name, "role": provider.role, "priority": provider.priority,
-                "status": status, "installed": installed,
-                "available": available,
-                "configured": status != DISABLED_BY_CONFIG,
-                "enabled": provider.enabled or provider.auto_enable_when_ready,
-                "worker_status": worker_status,
-                "dependency_status": dependency_status,
-                "input_data_status": "INPUT_DATA_READY" if available else "NOT_APPLICABLE",
-                "forecast_status": forecast_status,
-                "current_run_status": forecast_status,
-                "historical_accuracy_status": historical_accuracy_status,
-                "reliability_status": historical_accuracy_status,
-                "accuracy_samples": sample_size,
-                "min_accuracy_samples_required": self.config.min_accuracy_samples_for_boost,
-                "eligible_for_display": eligible_for_display,
-                "eligible_for_execution": eligible_for_execution,
-                "execution_block_reason": execution_block_reason,
-                "action_required": action_required,
-                "unavailable_reason": None if available else (
-                    reason if status != DISABLED_BY_CONFIG else "Disabled by forecast_stack configuration"
-                ),
-                "activation_mode": "AUTO_WHEN_READY" if provider.auto_enable_when_ready else "MANUAL",
-                "runtime_mode": runtime_mode,
-                "use_for_scoring": provider.use_for_setup_score,
-                "use_for_execution": False,
-                "use_for_model_lab": provider.use_for_model_lab,
-                "last_run": latest.get("generated_at") if latest else None,
-                "last_error": last_error,
-                "direction": forecast_summary["direction"],
-                "confidence": forecast_summary["confidence"],
-                "confidence_display": forecast_summary["confidence_display"],
-                "direction_confidence": forecast_summary["direction_confidence"],
-                "expected_move_pct": forecast_summary["expected_move_pct"],
-                "uncertainty_width_pct": forecast_summary["uncertainty_width_pct"],
-                "forecast_horizon": forecast_summary["forecast_horizon"],
-                "q10_end_price": forecast_summary["q10_end_price"],
-                "q90_end_price": forecast_summary["q90_end_price"],
-                "reliability_grade": _gui_reliability_label(historical_accuracy_status, historical_grade),
-                "historical_reliability_grade": historical_grade or None,
-                "sample_size": sample_size,
-                "historical_samples": sample_size,
-                "latest_forecast_payload": latest_payload or None,
-            })
+            items.append(
+                {
+                    "model_name": name,
+                    "role": provider.role,
+                    "priority": provider.priority,
+                    "status": status,
+                    "installed": installed,
+                    "available": available,
+                    "configured": status != DISABLED_BY_CONFIG,
+                    "enabled": provider.enabled or provider.auto_enable_when_ready,
+                    "worker_status": worker_status,
+                    "dependency_status": dependency_status,
+                    "input_data_status": "INPUT_DATA_READY" if available else "NOT_APPLICABLE",
+                    "forecast_status": forecast_status,
+                    "current_run_status": forecast_status,
+                    "historical_accuracy_status": historical_accuracy_status,
+                    "reliability_status": historical_accuracy_status,
+                    "accuracy_samples": sample_size,
+                    "min_accuracy_samples_required": self.config.min_accuracy_samples_for_boost,
+                    "eligible_for_display": eligible_for_display,
+                    "eligible_for_execution": eligible_for_execution,
+                    "execution_block_reason": execution_block_reason,
+                    "action_required": action_required,
+                    "unavailable_reason": (
+                        None
+                        if available
+                        else (
+                            reason
+                            if status != DISABLED_BY_CONFIG
+                            else "Disabled by forecast_stack configuration"
+                        )
+                    ),
+                    "activation_mode": (
+                        "AUTO_WHEN_READY" if provider.auto_enable_when_ready else "MANUAL"
+                    ),
+                    "runtime_mode": runtime_mode,
+                    "use_for_scoring": provider.use_for_setup_score,
+                    "use_for_execution": False,
+                    "use_for_model_lab": provider.use_for_model_lab,
+                    "last_run": latest.get("generated_at") if latest else None,
+                    "last_error": last_error,
+                    "direction": forecast_summary["direction"],
+                    "confidence": forecast_summary["confidence"],
+                    "confidence_display": forecast_summary["confidence_display"],
+                    "direction_confidence": forecast_summary["direction_confidence"],
+                    "expected_move_pct": forecast_summary["expected_move_pct"],
+                    "uncertainty_width_pct": forecast_summary["uncertainty_width_pct"],
+                    "forecast_horizon": forecast_summary["forecast_horizon"],
+                    "q10_end_price": forecast_summary["q10_end_price"],
+                    "q90_end_price": forecast_summary["q90_end_price"],
+                    "reliability_grade": _gui_reliability_label(
+                        historical_accuracy_status, historical_grade
+                    ),
+                    "historical_reliability_grade": historical_grade or None,
+                    "sample_size": sample_size,
+                    "historical_samples": sample_size,
+                    "latest_forecast_payload": latest_payload or None,
+                }
+            )
         return {
-            "enabled": self.config.enabled, "execution_mode": "scoring_only",
-            "primary_model": self.config.primary_model, "providers": items,
+            "enabled": self.config.enabled,
+            "execution_mode": "scoring_only",
+            "primary_model": self.config.primary_model,
+            "providers": items,
             "model_groups": {
                 "active": list(self.config.active_models),
                 "comparison": list(self.config.comparison_models),
@@ -310,7 +338,11 @@ def _direction(latest: dict[str, Any] | None) -> str | None:
     slope = str(_pick_value(latest, "forecast_slope") or "").strip().upper()
     if slope in {"UP", "DOWN", "FLAT"}:
         return slope
-    expected_move_pct = _number(_pick_value(latest, "forecast_expected_return_pct", "expected_return_pct", "median_return_pct"))
+    expected_move_pct = _number(
+        _pick_value(
+            latest, "forecast_expected_return_pct", "expected_return_pct", "median_return_pct"
+        )
+    )
     if expected_move_pct is not None:
         return _direction_from_prices(0.0, expected_move_pct)
     return _direction_from_prices(
@@ -326,7 +358,9 @@ def _format_percent(raw: float | None) -> str | None:
     return f"{value:.0f}%"
 
 
-def _confidence_fields(latest: dict[str, Any] | None) -> tuple[str | None, str | None, float | None]:
+def _confidence_fields(
+    latest: dict[str, Any] | None,
+) -> tuple[str | None, str | None, float | None]:
     label = str(_pick_value(latest, "confidence") or "").strip().upper() or None
     numeric = _number(_pick_value(latest, "direction_confidence"))
     numeric_display = _format_percent(numeric)
@@ -340,11 +374,17 @@ def _confidence_fields(latest: dict[str, Any] | None) -> tuple[str | None, str |
 
 
 def _expected_move_pct(latest: dict[str, Any] | None) -> float | None:
-    explicit = _number(_pick_value(latest, "forecast_expected_return_pct", "expected_return_pct", "median_return_pct"))
+    explicit = _number(
+        _pick_value(
+            latest, "forecast_expected_return_pct", "expected_return_pct", "median_return_pct"
+        )
+    )
     if explicit is not None:
         return explicit
     current_price = _number(_pick_value(latest, "current_price", "reference_price"))
-    last_price = _number(_pick_value(latest, "forecast_last_price", "median_end_price", "q50_end_price"))
+    last_price = _number(
+        _pick_value(latest, "forecast_last_price", "median_end_price", "q50_end_price")
+    )
     if current_price is None or last_price is None or current_price <= 0:
         return None
     return round(((last_price - current_price) / current_price) * 100, 4)
@@ -357,7 +397,12 @@ def _uncertainty_width_pct(latest: dict[str, Any] | None) -> float | None:
     current_price = _number(_pick_value(latest, "current_price", "reference_price"))
     q10_end_price = _number(_pick_value(latest, "q10_end_price"))
     q90_end_price = _number(_pick_value(latest, "q90_end_price"))
-    if current_price is None or current_price <= 0 or q10_end_price is None or q90_end_price is None:
+    if (
+        current_price is None
+        or current_price <= 0
+        or q10_end_price is None
+        or q90_end_price is None
+    ):
         return None
     return round(abs(q90_end_price - q10_end_price) / current_price * 100, 4)
 

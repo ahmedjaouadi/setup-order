@@ -4,12 +4,12 @@ from pathlib import Path
 from typing import Any
 
 from app.models import utc_now_iso
-from app.opportunity_scanner import MarketContextOpportunityScanner
 from app.opportunities.opportunity_expiration_policy import OpportunityExpirationPolicy
 from app.opportunities.opportunity_explainer import OpportunityExplainer
 from app.opportunities.opportunity_lifecycle_service import OpportunityLifecycleService
 from app.opportunities.scenario_generator import ScenarioGenerator
 from app.opportunities.shortlist_service import OpportunityShortlistService
+from app.opportunity_scanner import MarketContextOpportunityScanner
 from app.scoring.service import SetupQualityEngine
 from app.settings import load_yaml_file
 from app.storage.event_store import EventStore
@@ -157,11 +157,7 @@ class OpportunityScannerService:
             "shortlisted": len(shortlisted),
             "rejected_by_liquidity": rejected_by_liquidity,
             "universe_sources": sorted(
-                {
-                    source
-                    for candidate in candidates
-                    for source in candidate.get("sources", [])
-                }
+                {source for candidate in candidates for source in candidate.get("sources", [])}
             ),
         }
         self.event_store.record_runtime(
@@ -274,11 +270,7 @@ class OpportunityScannerService:
                 add_symbol(symbol, "recent_quote")
         for symbol in self._watchlist_symbols(universe_config):
             setup = next(
-                (
-                    item
-                    for item in setups
-                    if str(item.get("symbol") or "").upper() == symbol
-                ),
+                (item for item in setups if str(item.get("symbol") or "").upper() == symbol),
                 None,
             )
             add_symbol(symbol, "watchlist", setup)
@@ -343,7 +335,9 @@ class OpportunityScannerService:
             "symbol": symbol,
             "opportunity_type": setup_type,
             "timeframe": timeframe,
-            "status": "DETECTED" if score["overall_score"] >= 40 and selection["selected"] else "REJECTED",
+            "status": (
+                "DETECTED" if score["overall_score"] >= 40 and selection["selected"] else "REJECTED"
+            ),
             "score": _bounded_score(float(score["overall_score"]) + selection["score_bonus"]),
             "detected_at": utc_now_iso(),
             "payload": {
@@ -374,7 +368,10 @@ class OpportunityScannerService:
             if _as_dict(scanner_config).get("enabled", True)
         ]
         selected = [item for item in selections if item["selected"]]
-        best = max(selected or selections or [self._selection_context("watchlist", quote, None)], key=lambda item: item["score_bonus"])
+        best = max(
+            selected or selections or [self._selection_context("watchlist", quote, None)],
+            key=lambda item: item["score_bonus"],
+        )
         opportunity_type = str(context_signal.get("opportunity_type") or "WATCHLIST_ANOMALY")
         setup_type = _setup_type_for_context_signal(context_signal, best)
         score = _bounded_score(float(context_signal.get("opportunity_score") or 0))
@@ -382,7 +379,9 @@ class OpportunityScannerService:
             "opportunity_id": f"opp_{symbol}_{opportunity_type}_scanner",
             "symbol": symbol,
             "opportunity_type": opportunity_type,
-            "timeframe": str(_first_value(quote.get("timeframe"), config.get("default_timeframes", ["15m"])[0])),
+            "timeframe": str(
+                _first_value(quote.get("timeframe"), config.get("default_timeframes", ["15m"])[0])
+            ),
             "status": _table_status_for_context_signal(context_signal),
             "score": score,
             "detected_at": utc_now_iso(),
@@ -427,7 +426,9 @@ class OpportunityScannerService:
         metadata = candidate.get("metadata") if isinstance(candidate.get("metadata"), dict) else {}
         sector = str(metadata.get("sector") or quote.get("sector") or "").strip()
         sector_etf = str(metadata.get("sector_etf") or quote.get("sector_etf") or "").strip()
-        metadata_status = "SECTOR_OK" if sector and sector.upper() != "UNKNOWN" else "SECTOR_UNKNOWN"
+        metadata_status = (
+            "SECTOR_OK" if sector and sector.upper() != "UNKNOWN" else "SECTOR_UNKNOWN"
+        )
         return {
             **quote,
             "symbol": candidate.get("symbol"),
@@ -473,8 +474,20 @@ class OpportunityScannerService:
         ema_20 = _number(quote.get("ema_20"))
         ema_50 = _number(quote.get("ema_50"))
         atr = _number(_first_value(quote.get("atr_15m"), quote.get("atr_1h")))
-        support = _number(_first_value(quote.get("support_level"), quote.get("successful_retest_low"), quote.get("structural_support")))
-        volume_ratio = _number(_first_value(quote.get("volume_ratio"), quote.get("volume_ratio_15m"), quote.get("volume_ratio_closed_bar")))
+        support = _number(
+            _first_value(
+                quote.get("support_level"),
+                quote.get("successful_retest_low"),
+                quote.get("structural_support"),
+            )
+        )
+        volume_ratio = _number(
+            _first_value(
+                quote.get("volume_ratio"),
+                quote.get("volume_ratio_15m"),
+                quote.get("volume_ratio_closed_bar"),
+            )
+        )
         min_volume_ratio = float(scanner_config.get("min_volume_ratio", 1.0) or 1.0)
         selected = False
         reasons: list[str] = []
@@ -486,7 +499,9 @@ class OpportunityScannerService:
                 and price >= previous_high
                 and (volume_ratio is None or volume_ratio >= min_volume_ratio)
             )
-            reasons.append("price above previous_high" if selected else "waiting for breakout/volume")
+            reasons.append(
+                "price above previous_high" if selected else "waiting for breakout/volume"
+            )
             bonus = 28.0 if selected else 4.0
         elif opportunity_type == "breakout_retest":
             max_distance_atr = float(scanner_config.get("retest_max_distance_atr", 1.0) or 1.0)
@@ -496,7 +511,9 @@ class OpportunityScannerService:
                 and distance is not None
                 and (atr is None or distance <= atr * max_distance_atr)
             )
-            reasons.append("breakout retest near support" if selected else "waiting for retest quality")
+            reasons.append(
+                "breakout retest near support" if selected else "waiting for retest quality"
+            )
             bonus = 24.0 if selected else 3.0
         elif opportunity_type == "reclaim":
             selected = bool(
@@ -516,7 +533,11 @@ class OpportunityScannerService:
                 and price >= ema_20
                 and price <= ema_20 * 1.05
             )
-            reasons.append("orderly pullback above EMA20" if selected else "waiting for trend/pullback alignment")
+            reasons.append(
+                "orderly pullback above EMA20"
+                if selected
+                else "waiting for trend/pullback alignment"
+            )
             bonus = 18.0 if selected else 2.0
         else:
             selected = bool(price is not None)
@@ -549,7 +570,9 @@ class OpportunityScannerService:
         issues = []
         price = _number(_first_value(quote.get("price"), quote.get("last"), quote.get("close")))
         volume = _number(quote.get("volume"))
-        volume_ratio = _number(_first_value(quote.get("volume_ratio"), quote.get("volume_ratio_15m")))
+        volume_ratio = _number(
+            _first_value(quote.get("volume_ratio"), quote.get("volume_ratio_15m"))
+        )
         spread_pct = _spread_pct(quote)
         if not quote:
             if not (has_setup and filters.get("allow_missing_quote_for_setup", True)):
@@ -563,7 +586,11 @@ class OpportunityScannerService:
         if volume is not None and min_volume is not None and volume < min_volume:
             issues.append("volume_below_minimum")
         min_volume_ratio = _number(filters.get("min_volume_ratio"))
-        if volume_ratio is not None and min_volume_ratio is not None and volume_ratio < min_volume_ratio:
+        if (
+            volume_ratio is not None
+            and min_volume_ratio is not None
+            and volume_ratio < min_volume_ratio
+        ):
             issues.append("volume_ratio_below_minimum")
         max_spread_pct = float(filters.get("max_spread_pct", 0.35) or 0.35)
         if spread_pct is not None and spread_pct > max_spread_pct:

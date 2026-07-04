@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.broker.ib_models import BrokerOrderRequest, BrokerPosition
-
 
 REPORT_STATE_KEY = "broker_reality"
 
@@ -179,11 +178,6 @@ def build_broker_reality_report(
             used_broker_position_symbols.add(symbol)
         rows.append(row)
 
-    known_setup_symbols = {
-        str(setup.get("symbol") or "").upper()
-        for setup in active_setups
-        if str(setup.get("symbol") or "").strip()
-    }
     for symbol, broker_position in sorted(positions_by_symbol.items()):
         if symbol in used_broker_position_symbols or _position_quantity(broker_position) == 0:
             continue
@@ -252,7 +246,9 @@ def build_broker_reality_report(
             else None
         ),
         "broker_active_orders": (
-            _broker_order_count(broker_orders, WORKING_BROKER_STATUSES) if orders_channel_ok else None
+            _broker_order_count(broker_orders, WORKING_BROKER_STATUSES)
+            if orders_channel_ok
+            else None
         ),
         "broker_prepared_not_transmitted_orders": (
             _broker_order_count(broker_orders, {"PREPARED_NOT_TRANSMITTED"})
@@ -335,8 +331,7 @@ def freshen_broker_reality_report(
     pnl = current.get("pnl")
     if isinstance(pnl, dict):
         has_values = any(
-            pnl.get(field) is not None
-            for field in ("daily_pnl", "unrealized_pnl", "realized_pnl")
+            pnl.get(field) is not None for field in ("daily_pnl", "unrealized_pnl", "realized_pnl")
         )
         pnl["age_seconds"] = age
         if status == "OK" and has_values:
@@ -348,9 +343,7 @@ def freshen_broker_reality_report(
             pnl["status"] = "STALE"
             pnl["sync_status"] = status if status != "OK" else "STALE"
             pnl["reason"] = (
-                "NO_RECENT_TWS_PNL_SNAPSHOT"
-                if status == "OK"
-                else f"BROKER_TRACKER_{status}"
+                "NO_RECENT_TWS_PNL_SNAPSHOT" if status == "OK" else f"BROKER_TRACKER_{status}"
             )
             pnl["warning"] = "P&L stale - broker data not fresh"
 
@@ -380,9 +373,7 @@ def freshen_broker_reality_report(
         and safety["block_new_entries_if_broker_tracker_stale"]
     ):
         blocking_reasons.append(
-            "BROKER_TRACKER_NOT_RUNNING"
-            if status == "NOT_RUNNING"
-            else "BROKER_TRACKER_STALE"
+            "BROKER_TRACKER_NOT_RUNNING" if status == "NOT_RUNNING" else "BROKER_TRACKER_STALE"
         )
     if status == "DISCONNECTED":
         blocking_reasons.append("TWS_DISCONNECTED")
@@ -464,9 +455,11 @@ def _broker_reality_row(
     entry_status = (
         _broker_order_status(broker_entry)
         if broker_entry is not None
-        else "NO_BROKER_ORDER"
-        if local_entry is not None or local_status in ORDER_DEPENDENT_SETUP_STATUSES
-        else "NO_ENTRY_ORDER"
+        else (
+            "NO_BROKER_ORDER"
+            if local_entry is not None or local_status in ORDER_DEPENDENT_SETUP_STATUSES
+            else "NO_ENTRY_ORDER"
+        )
     )
     stop_status = _broker_order_status(broker_stop) if broker_stop is not None else "MISSING"
     position_qty = _position_quantity(broker_position)
@@ -614,9 +607,7 @@ def _orphan_broker_position_row(
     protection_status = (
         "POSITION_OPEN_STOP_ACTIVE"
         if broker_connected and stop_working
-        else "POSITION_OPEN_STOP_MISSING_CRITICAL"
-        if broker_connected
-        else "UNKNOWN_BROKER_STATE"
+        else "POSITION_OPEN_STOP_MISSING_CRITICAL" if broker_connected else "UNKNOWN_BROKER_STATE"
     )
     mismatch_reasons = ["BROKER_POSITION_WITHOUT_ACTIVE_LOCAL_SETUP"]
     if local_position is None or (_dict_number(local_position, "quantity") or 0) == 0:
@@ -769,7 +760,9 @@ def _protection_status(
     stop_working = stop_status in WORKING_BROKER_STATUSES
     entry_working = entry_status in WORKING_BROKER_STATUSES
     if position_qty != 0:
-        return "POSITION_OPEN_STOP_ACTIVE" if stop_working else "POSITION_OPEN_STOP_MISSING_CRITICAL"
+        return (
+            "POSITION_OPEN_STOP_ACTIVE" if stop_working else "POSITION_OPEN_STOP_MISSING_CRITICAL"
+        )
     if entry_working and stop_working:
         return "PROTECTED"
     if entry_working:
@@ -835,7 +828,10 @@ def _row_action_and_mismatch(
             reasons,
         )
     if "BROKER_ORDER_PREPARED_NOT_TRANSMITTED" in reasons:
-        return "Do not mark as active. Transmit manually in TWS or cancel the prepared order.", reasons
+        return (
+            "Do not mark as active. Transmit manually in TWS or cancel the prepared order.",
+            reasons,
+        )
     if "BROKER_STOP_NOT_ACTIVE" in reasons:
         return "Stop-loss missing or not transmitted in TWS. Auto execution blocked.", reasons
     if "MISMATCH_POSITION_COUNT" in reasons:
@@ -982,7 +978,9 @@ def orders_broker_truth_overlay(
     overlaid: list[dict[str, Any]] = []
     for order in orders:
         row = dict(order)
-        reality_row = rows_by_setup.get(str(order.get("setup_id") or "")) if broker_connected else None
+        reality_row = (
+            rows_by_setup.get(str(order.get("setup_id") or "")) if broker_connected else None
+        )
         if reality_row is not None:
             is_stop = _local_order_is_stop(order)
             row["source"] = "BROKER_REALITY"
@@ -1049,8 +1047,7 @@ def _matching_broker_entry(
     candidates = [
         order
         for order in broker_orders
-        if str(order.symbol or "").upper() == symbol
-        and str(order.side or "").upper() == side
+        if str(order.symbol or "").upper() == symbol and str(order.side or "").upper() == side
     ]
     return _preferred_broker_order(candidates)
 
@@ -1073,14 +1070,11 @@ def _matching_broker_stop(
     candidates = [
         order
         for order in broker_orders
-        if str(order.symbol or "").upper() == symbol
-        and _is_stop_broker_order(order, side)
+        if str(order.symbol or "").upper() == symbol and _is_stop_broker_order(order, side)
     ]
     parent_keys = _parent_keys(broker_entry, local_entry)
     parent_matches = [
-        order
-        for order in candidates
-        if str(order.parent_id or "").strip() in parent_keys
+        order for order in candidates if str(order.parent_id or "").strip() in parent_keys
     ]
     return _preferred_broker_order(parent_matches or candidates)
 
@@ -1174,19 +1168,26 @@ def _parent_keys(
 ) -> set[str]:
     keys: set[Any] = set()
     if broker_entry is not None:
-        keys.update({broker_entry.client_order_id, broker_entry.broker_order_id, broker_entry.broker_perm_id})
+        keys.update(
+            {
+                broker_entry.client_order_id,
+                broker_entry.broker_order_id,
+                broker_entry.broker_perm_id,
+            }
+        )
     if local_entry is not None:
-        keys.update({local_entry.get("id"), local_entry.get("broker_order_id"), local_entry.get("broker_perm_id")})
+        keys.update(
+            {
+                local_entry.get("id"),
+                local_entry.get("broker_order_id"),
+                local_entry.get("broker_perm_id"),
+            }
+        )
     return _clean_keys(keys)
 
 
 def _clean_keys(values: set[Any]) -> set[str]:
-    return {
-        text
-        for value in values
-        for text in [str(value or "").strip()]
-        if text
-    }
+    return {text for value in values for text in [str(value or "").strip()] if text}
 
 
 def _configured_stop(config: dict[str, Any]) -> float | None:
@@ -1353,11 +1354,15 @@ def _remaining_risk_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         return {
             "total": None,
             "status": "UNKNOWN_CRITICAL",
-            "reason": "POSITION_OPEN_STOP_MISSING_CRITICAL"
-            if unprotected_positions
-            else "ENTRY_ORDER_WITHOUT_STOP_CRITICAL"
-            if unprotected_orders
-            else "MISSING_PRICE_OR_STOP",
+            "reason": (
+                "POSITION_OPEN_STOP_MISSING_CRITICAL"
+                if unprotected_positions
+                else (
+                    "ENTRY_ORDER_WITHOUT_STOP_CRITICAL"
+                    if unprotected_orders
+                    else "MISSING_PRICE_OR_STOP"
+                )
+            ),
             "unprotected_positions": unprotected_positions,
             "unprotected_orders": unprotected_orders,
             "active_stop_orders": active_stop_orders,
@@ -1376,13 +1381,7 @@ def _broker_order_count(
     broker_orders: list[BrokerOrderRequest],
     statuses: set[str],
 ) -> int:
-    return len(
-        [
-            order
-            for order in broker_orders
-            if _broker_order_status(order) in statuses
-        ]
-    )
+    return len([order for order in broker_orders if _broker_order_status(order) in statuses])
 
 
 def _position_quantity(position: BrokerPosition | None) -> int:
@@ -1448,7 +1447,7 @@ def _positive_int(value: Any, default: int) -> int:
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _age_seconds(value: Any, *, now: str | None = None) -> int | None:
@@ -1459,16 +1458,16 @@ def _age_seconds(value: Any, *, now: str | None = None) -> int | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
     if now:
         try:
             current = datetime.fromisoformat(str(now))
         except ValueError:
-            current = datetime.now(timezone.utc)
+            current = datetime.now(UTC)
     else:
-        current = datetime.now(timezone.utc)
+        current = datetime.now(UTC)
     if current.tzinfo is None:
-        current = current.replace(tzinfo=timezone.utc)
+        current = current.replace(tzinfo=UTC)
     return max(int((current - parsed).total_seconds()), 0)
 
 

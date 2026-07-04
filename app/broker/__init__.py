@@ -1,2 +1,1 @@
 """Broker connector package."""
-

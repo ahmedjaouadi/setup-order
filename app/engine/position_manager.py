@@ -76,8 +76,7 @@ class PositionManager:
             unrealized_pnl=float(position["unrealized_pnl"]),
             current_stop=new_stop,
             risk_remaining=round(
-                max(float(position["average_price"]) - new_stop, 0)
-                * int(position["quantity"]),
+                max(float(position["average_price"]) - new_stop, 0) * int(position["quantity"]),
                 2,
             ),
             status=position["status"],
@@ -93,4 +92,3 @@ class PositionManager:
             data={"new_stop": new_stop},
         )
         return True
-

@@ -6,7 +6,6 @@ from fastapi.responses import HTMLResponse
 from app.engine.broker_reality import REPORT_STATE_KEY, orders_broker_truth_overlay
 from app.models import EventLevel
 
-
 router = APIRouter()
 
 DELETABLE_ORDER_STATUSES = {"REJECTED", "CANCELLED", "FILLED", "ERROR"}

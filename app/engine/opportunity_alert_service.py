@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
-from typing import Any, Callable
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any
 
 from app.models import EventLevel, MarketSnapshot, SignalAction
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
-
 
 NEAR_READY_THRESHOLD = 0.96
 DEFAULT_ALERT_COOLDOWN_SECONDS = 300.0
@@ -324,5 +324,5 @@ def age_seconds(value: Any) -> int | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return max(int((datetime.now(timezone.utc) - parsed).total_seconds()), 0)
+        parsed = parsed.replace(tzinfo=UTC)
+    return max(int((datetime.now(UTC) - parsed).total_seconds()), 0)

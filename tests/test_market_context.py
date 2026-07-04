@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-import unittest
 
 from app.api import routes_market_context
 from app.market_context.repository import MarketContextRepository
@@ -127,7 +127,9 @@ class MarketContextServiceTests(unittest.TestCase):
 
     def test_watch_only_setup_remains_visible(self) -> None:
         service = MarketContextService(
-            market_repository=FakeMarketRepository({"NOK": {"symbol": "NOK", "sector": "Technology"}}),
+            market_repository=FakeMarketRepository(
+                {"NOK": {"symbol": "NOK", "sector": "Technology"}}
+            ),
             trading_repository=FakeTradingRepository(
                 setups=[setup_row(setup_id="setup-nok", symbol="NOK", enabled=False)],
                 events=[quote_event("NOK", 10, 10)],
@@ -231,9 +233,7 @@ class MarketContextRouteTests(unittest.IsolatedAsyncioTestCase):
                 return {"view": view, "nodes": []}
 
         request = SimpleNamespace(
-            app=SimpleNamespace(
-                state=SimpleNamespace(market_context=Service())
-            )
+            app=SimpleNamespace(state=SimpleNamespace(market_context=Service()))
         )
 
         result = await routes_market_context.market_context_heatmap(request, view="AUTO_ALLOWED")

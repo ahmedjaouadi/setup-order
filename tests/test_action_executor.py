@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 from app.engine.action_executor import ActionExecutor
 from app.engine.state_machine import StateMachine
-from app.models import SignalAction, SetupSignal, SetupStatus
+from app.models import SetupSignal, SetupStatus, SignalAction
 from app.setups.breakout_retest import BreakoutRetestSetup
 from app.storage.database import Database
 from app.storage.event_store import EventStore
@@ -53,9 +53,7 @@ class ActionExecutorTests(unittest.TestCase):
         events = self.repository.list_events(setup_id=setup.setup_id, limit=5)
         self.assertTrue(handled)
         self.assertEqual(updated["status"], SetupStatus.WAITING_ENTRY_SIGNAL.value)
-        self.assertTrue(
-            any(event["event_type"] == "setup_status_changed" for event in events)
-        )
+        self.assertTrue(any(event["event_type"] == "setup_status_changed" for event in events))
 
 
 if __name__ == "__main__":

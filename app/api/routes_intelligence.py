@@ -11,7 +11,6 @@ from app.intelligence.api_models import (
     RollbackAnalysisRequestModel,
 )
 
-
 router = APIRouter()
 
 
@@ -95,7 +94,9 @@ async def compare_setup_analyses(
             right_scenario_id=payload.right_scenario_id,
         )
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=exc.args[0] if exc.args else "Analysis not found")
+        raise HTTPException(
+            status_code=404, detail=exc.args[0] if exc.args else "Analysis not found"
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -113,7 +114,9 @@ async def rollback_setup_analysis(
             scenario_id=payload.scenario_id,
         )
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=exc.args[0] if exc.args else "Analysis not found")
+        raise HTTPException(
+            status_code=404, detail=exc.args[0] if exc.args else "Analysis not found"
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 

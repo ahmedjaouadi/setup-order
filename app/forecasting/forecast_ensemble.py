@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 EXPERIMENTAL_MODELS = {"moirai", "uni2ts", "moirai_uni2ts"}
 
 
@@ -32,7 +31,10 @@ class ForecastStackConsensus:
         timesfm = by_name.get("timesfm")
         chronos = by_name.get("chronos")
         if timesfm and chronos and timesfm["status"] == chronos["status"] == "OK":
-            if timesfm["direction"] == chronos["direction"] and timesfm["direction"] in {"UP", "DOWN"}:
+            if timesfm["direction"] == chronos["direction"] and timesfm["direction"] in {
+                "UP",
+                "DOWN",
+            }:
                 impact += 6.0 * min(timesfm["score_factor"], chronos["score_factor"])
             elif timesfm["direction"] != chronos["direction"]:
                 warnings.append("TIMESFM_CHRONOS_DIVERGENCE")
@@ -61,7 +63,11 @@ class ForecastStackConsensus:
         execution_block_reasons = ["FORECAST_STACK_ADVISORY_ONLY"]
         if consensus == "MIXED":
             execution_block_reasons.append("MIXED_CONSENSUS")
-        if any(item["reliability_status"] in {"ACCURACY_HISTORY_WARMUP", "INSUFFICIENT_ACCURACY_HISTORY"} for item in usable):
+        if any(
+            item["reliability_status"]
+            in {"ACCURACY_HISTORY_WARMUP", "INSUFFICIENT_ACCURACY_HISTORY"}
+            for item in usable
+        ):
             execution_block_reasons.append("INSUFFICIENT_ACCURACY_HISTORY")
         return {
             "consensus": consensus,
@@ -77,7 +83,9 @@ class ForecastStackConsensus:
             "forecast_eligible_for_execution": False,
             "forecast_execution_policy": "ADVISORY_ONLY",
             "forecast_execution_block_reasons": sorted(set(execution_block_reasons)),
-            "execution_impact": "WARNING_ONLY" if consensus == "MIXED" else "ADVISORY_ONLY" if usable else "NONE",
+            "execution_impact": (
+                "WARNING_ONLY" if consensus == "MIXED" else "ADVISORY_ONLY" if usable else "NONE"
+            ),
             "decision_impact": "SCORING_ONLY" if usable else "NONE",
         }
 
@@ -99,11 +107,13 @@ class ForecastStackConsensus:
             reliability_status = (
                 "ACCURACY_HISTORY_WARMUP"
                 if sample_size <= 0
-                else "INSUFFICIENT_ACCURACY_HISTORY"
-                if sample_size < 30
-                else "OK_CALIBRATED"
-                if grade in {"A", "B", "C", "D", "F"}
-                else "OK_UNCALIBRATED"
+                else (
+                    "INSUFFICIENT_ACCURACY_HISTORY"
+                    if sample_size < 30
+                    else (
+                        "OK_CALIBRATED" if grade in {"A", "B", "C", "D", "F"} else "OK_UNCALIBRATED"
+                    )
+                )
             )
         else:
             grade = "NOT_APPLICABLE"
@@ -117,15 +127,25 @@ class ForecastStackConsensus:
             "model_name": name,
             "status": status,
             "direction": direction if is_ok else "",
-            "direction_confidence": _number(forecast.get("direction_confidence")) if is_ok else None,
-            "expected_return_pct": _number(
-                forecast.get("expected_return_pct", forecast.get("forecast_expected_return_pct"))
-            ) if is_ok else None,
+            "direction_confidence": (
+                _number(forecast.get("direction_confidence")) if is_ok else None
+            ),
+            "expected_return_pct": (
+                _number(
+                    forecast.get(
+                        "expected_return_pct", forecast.get("forecast_expected_return_pct")
+                    )
+                )
+                if is_ok
+                else None
+            ),
             "prob_touch_entry": _number(forecast.get("prob_touch_entry")) if is_ok else None,
             "prob_touch_stop_before_entry": (
                 _number(forecast.get("prob_touch_stop_before_entry")) if is_ok else None
             ),
-            "uncertainty_width_pct": _number(forecast.get("uncertainty_width_pct")) if is_ok else None,
+            "uncertainty_width_pct": (
+                _number(forecast.get("uncertainty_width_pct")) if is_ok else None
+            ),
             "reliability_grade": grade,
             "reliability_status": reliability_status,
             "sample_size": sample_size,

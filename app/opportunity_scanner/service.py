@@ -13,11 +13,11 @@ from app.opportunity_scanner.schemas import (
     NO_ACTION,
     NO_OPPORTUNITY,
     OPPORTUNITY_DETECTED,
-    OpportunitySignal,
     WAIT_FOR_RETEST,
     WATCHLIST_ONLY,
     WATCHLIST_OPPORTUNITY,
     WEAK_OPPORTUNITY,
+    OpportunitySignal,
 )
 from app.opportunity_scanner.scoring import OpportunityContextScorer
 
@@ -67,12 +67,8 @@ class MarketContextOpportunityScanner:
 
     def _normalize_snapshot(self, snapshot: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(snapshot)
-        stock_perf = _number(
-            _first_value(normalized, "perf_stock_1d", "stock_perf_1d")
-        )
-        sector_perf = _number(
-            _first_value(normalized, "perf_sector_1d", "sector_perf_1d")
-        )
+        stock_perf = _number(_first_value(normalized, "perf_stock_1d", "stock_perf_1d"))
+        sector_perf = _number(_first_value(normalized, "perf_sector_1d", "sector_perf_1d"))
         spy_perf = _number(_first_value(normalized, "perf_spy_1d", "spy_perf_1d"))
         if stock_perf is None:
             stock_perf = _percent_change(
@@ -82,7 +78,9 @@ class MarketContextOpportunityScanner:
         normalized["stock_perf_1d"] = stock_perf
         normalized["sector_perf_1d"] = sector_perf
         normalized["spy_perf_1d"] = spy_perf
-        normalized.setdefault("relative_strength_vs_sector", _relative_strength(stock_perf, sector_perf))
+        normalized.setdefault(
+            "relative_strength_vs_sector", _relative_strength(stock_perf, sector_perf)
+        )
         normalized.setdefault("relative_strength_vs_spy", _relative_strength(stock_perf, spy_perf))
         return normalized
 

@@ -5,8 +5,8 @@ import sys
 from typing import Any
 
 import numpy as np
-import torch
 import timesfm
+import torch
 
 
 def main() -> int:

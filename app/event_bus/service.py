@@ -7,7 +7,6 @@ from typing import Any
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
 
-
 EventHandler = Callable[[dict[str, Any]], None]
 
 

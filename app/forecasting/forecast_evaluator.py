@@ -15,9 +15,13 @@ class ForecastEvaluator:
             for i in range(1, len(pairs))
         ]
         return {
-            "status": "OK", "sample_size": len(pairs),
+            "status": "OK",
+            "sample_size": len(pairs),
             "mae": sum(abs(e) for e in errors) / len(errors),
             "rmse": math.sqrt(sum(e * e for e in errors) / len(errors)),
-            "mape": sum(abs(e / a) for (a, _), e in zip(pairs, errors) if a) / max(1, sum(1 for a, _ in pairs if a)),
-            "direction_accuracy": sum(direction_hits) / len(direction_hits) if direction_hits else None,
+            "mape": sum(abs(e / a) for (a, _), e in zip(pairs, errors) if a)
+            / max(1, sum(1 for a, _ in pairs if a)),
+            "direction_accuracy": (
+                sum(direction_hits) / len(direction_hits) if direction_hits else None
+            ),
         }

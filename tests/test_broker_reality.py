@@ -9,7 +9,6 @@ from app.engine.broker_reality import (
     freshen_broker_reality_report,
 )
 
-
 SETTINGS = {
     "broker_tracker": {
         "enabled": True,
@@ -344,7 +343,9 @@ class BrokerRealityTests(unittest.TestCase):
         self.assertEqual(report["broker_active_orders"], 1)
         self.assertEqual(report["broker_prepared_not_transmitted_orders"], 0)
         self.assertEqual(report["mismatch_count"], 1)
-        self.assertEqual(report["rows"][0]["mismatch_reasons"], ["BROKER_ORDER_WITHOUT_LOCAL_SETUP"])
+        self.assertEqual(
+            report["rows"][0]["mismatch_reasons"], ["BROKER_ORDER_WITHOUT_LOCAL_SETUP"]
+        )
 
     def test_open_orders_query_error_is_not_empty_ok(self) -> None:
         report = build_broker_reality_report(

@@ -1,2 +1,1 @@
 """Market data package."""
-

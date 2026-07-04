@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Protocol
+from collections.abc import Callable
+from typing import Any, Protocol
 
 from app.broker.tws_connector import BrokerConnector, SimulatedBrokerConnector
 from app.models import EventLevel, OrderRecord, OrderStatus, PositionRecord, SetupStatus
@@ -15,8 +16,7 @@ class StopOrderPlacer(Protocol):
         quantity: int,
         stop_loss: float,
         parent_id: str | None = None,
-    ) -> OrderRecord:
-        ...
+    ) -> OrderRecord: ...
 
 
 class FillExecutor:

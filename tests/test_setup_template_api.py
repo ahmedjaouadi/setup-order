@@ -115,7 +115,9 @@ class SetupTemplateApiContractTests(unittest.IsolatedAsyncioTestCase):
                 f"{setup_type} still requires legacy risk.protective_stop",
             )
 
-    async def test_management_only_types_require_existing_position_not_entry_transmission(self) -> None:
+    async def test_management_only_types_require_existing_position_not_entry_transmission(
+        self,
+    ) -> None:
         result = await routes_setups.setup_config_template(self.request, template_type="universal")
         required = result["skeleton"]["_template"]["required_by_setup_type"]
 

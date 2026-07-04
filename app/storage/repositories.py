@@ -91,7 +91,10 @@ def _enrich_setup_row(row: dict[str, Any]) -> None:
 def _decode_stack_experiment(row: Any) -> dict[str, Any]:
     result = dict(row)
     for key in ("symbols", "timeframes", "horizons", "models", "config", "summary"):
-        result[key] = json.loads(result.pop(f"{key}_json") or ("[]" if key in {"symbols", "timeframes", "horizons", "models"} else "{}"))
+        result[key] = json.loads(
+            result.pop(f"{key}_json")
+            or ("[]" if key in {"symbols", "timeframes", "horizons", "models"} else "{}")
+        )
     return result
 
 
@@ -268,10 +271,7 @@ def _is_open_position(position: dict[str, Any], setup_id: str) -> bool:
 
 
 def _is_stop_order(order: dict[str, Any]) -> bool:
-    return (
-        str(order.get("side") or "").upper() == "SELL"
-        and order.get("stop_price") is not None
-    )
+    return str(order.get("side") or "").upper() == "SELL" and order.get("stop_price") is not None
 
 
 def _is_entry_order(order: dict[str, Any]) -> bool:
@@ -306,11 +306,7 @@ def _protection_snapshot(
 ) -> dict[str, Any]:
     open_position = any(_is_open_position(position, setup_id) for position in positions)
     active_entry_order = next(
-        (
-            order
-            for order in orders
-            if _is_entry_order(order) and _is_active_order(order)
-        ),
+        (order for order in orders if _is_entry_order(order) and _is_active_order(order)),
         None,
     )
     active_stop_order = _matching_stop_order(
@@ -321,7 +317,10 @@ def _protection_snapshot(
     if active_stop_order is None:
         active_stop_order = _matching_stop_order(orders, active_only=True)
     failed_stop_order = _matching_stop_order(orders)
-    if failed_stop_order and str(failed_stop_order.get("status") or "") not in STOP_FAILURE_STATUSES:
+    if (
+        failed_stop_order
+        and str(failed_stop_order.get("status") or "") not in STOP_FAILURE_STATUSES
+    ):
         failed_stop_order = None
     protection_status = "NO_ENTRY_ORDER"
     blocking_reasons: list[str] = []
@@ -377,12 +376,12 @@ def _enrich_orders_with_protection(
         elif _is_stop_order(order):
             stop_order = order
         row["entry_order_id"] = (
-            order.get("id")
-            if _is_entry_order(order)
-            else order.get("parent_id")
+            order.get("id") if _is_entry_order(order) else order.get("parent_id")
         )
         row["stop_order_id"] = stop_order.get("id") if isinstance(stop_order, dict) else None
-        row["stop_order_status"] = stop_order.get("status") if isinstance(stop_order, dict) else None
+        row["stop_order_status"] = (
+            stop_order.get("status") if isinstance(stop_order, dict) else None
+        )
         row["bracket_order"] = bool(
             (_is_entry_order(order) and stop_order)
             or (_is_stop_order(order) and order.get("parent_id"))
@@ -442,9 +441,7 @@ class TradingRepository:
         )
 
     def list_setups(self) -> list[dict[str, Any]]:
-        rows = self.database.execute(
-            "SELECT * FROM setups ORDER BY symbol, setup_id"
-        ).fetchall()
+        rows = self.database.execute("SELECT * FROM setups ORDER BY symbol, setup_id").fetchall()
         return [_row_to_dict(row) for row in rows]
 
     def get_setup(self, setup_id: str) -> dict[str, Any] | None:
@@ -539,17 +536,32 @@ class TradingRepository:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                snapshot_id, snapshot["setup_id"], snapshot.get("scenario_id"),
-                snapshot.get("opportunity_id"), snapshot["symbol"], snapshot["captured_at"],
-                snapshot.get("last_price"), snapshot.get("bid"), snapshot.get("ask"),
-                snapshot.get("mid_price"), snapshot.get("spread_pct"), snapshot.get("volume"),
-                snapshot.get("volume_ratio"), snapshot.get("atr_15m"), snapshot.get("atr_1h"),
-                snapshot.get("vwap"), snapshot.get("entry_trigger_price"),
-                snapshot.get("entry_limit_price"), initial_stop,
-                snapshot.get("distance_to_trigger_pct"), snapshot.get("distance_to_limit_pct"),
-                snapshot.get("distance_to_stop_pct"), snapshot["data_quality_status"],
+                snapshot_id,
+                snapshot["setup_id"],
+                snapshot.get("scenario_id"),
+                snapshot.get("opportunity_id"),
+                snapshot["symbol"],
+                snapshot["captured_at"],
+                snapshot.get("last_price"),
+                snapshot.get("bid"),
+                snapshot.get("ask"),
+                snapshot.get("mid_price"),
+                snapshot.get("spread_pct"),
+                snapshot.get("volume"),
+                snapshot.get("volume_ratio"),
+                snapshot.get("atr_15m"),
+                snapshot.get("atr_1h"),
+                snapshot.get("vwap"),
+                snapshot.get("entry_trigger_price"),
+                snapshot.get("entry_limit_price"),
+                initial_stop,
+                snapshot.get("distance_to_trigger_pct"),
+                snapshot.get("distance_to_limit_pct"),
+                snapshot.get("distance_to_stop_pct"),
+                snapshot["data_quality_status"],
                 json.dumps(snapshot.get("data_quality_issues", []), sort_keys=True),
-                snapshot["source"], json.dumps(snapshot, sort_keys=True),
+                snapshot["source"],
+                json.dumps(snapshot, sort_keys=True),
             ),
         )
         return snapshot_id
@@ -645,9 +657,7 @@ class TradingRepository:
                 (setup_id,),
             ).fetchall()
         else:
-            rows = self.database.execute(
-                "SELECT * FROM orders ORDER BY created_at DESC"
-            ).fetchall()
+            rows = self.database.execute("SELECT * FROM orders ORDER BY created_at DESC").fetchall()
         return [_row_to_dict(row) for row in rows]
 
     def list_orders_with_protection(
@@ -660,9 +670,7 @@ class TradingRepository:
         order_rows = orders if orders is not None else self.list_orders(setup_id)
         if setup_id and orders is not None:
             order_rows = [
-                order
-                for order in order_rows
-                if str(order.get("setup_id") or "") == setup_id
+                order for order in order_rows if str(order.get("setup_id") or "") == setup_id
             ]
         return _enrich_orders_with_protection(
             order_rows,
@@ -741,9 +749,7 @@ class TradingRepository:
         )
 
     def list_positions(self) -> list[dict[str, Any]]:
-        rows = self.database.execute(
-            "SELECT * FROM positions ORDER BY symbol"
-        ).fetchall()
+        rows = self.database.execute("SELECT * FROM positions ORDER BY symbol").fetchall()
         return [_row_to_dict(row) for row in rows]
 
     def get_position(self, symbol: str) -> dict[str, Any] | None:
@@ -1424,17 +1430,24 @@ class TradingRepository:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                experiment_id, experiment.get("name", "Forecast stack comparison"),
-                json.dumps(experiment.get("symbols", [])), json.dumps(experiment.get("timeframes", [])),
-                json.dumps(experiment.get("horizons", [])), json.dumps(experiment.get("models", [])),
-                json.dumps(experiment.get("config", {}), sort_keys=True), experiment.get("status", "RUNNING"),
-                experiment.get("started_at") or utc_now_iso(), experiment.get("finished_at"),
+                experiment_id,
+                experiment.get("name", "Forecast stack comparison"),
+                json.dumps(experiment.get("symbols", [])),
+                json.dumps(experiment.get("timeframes", [])),
+                json.dumps(experiment.get("horizons", [])),
+                json.dumps(experiment.get("models", [])),
+                json.dumps(experiment.get("config", {}), sort_keys=True),
+                experiment.get("status", "RUNNING"),
+                experiment.get("started_at") or utc_now_iso(),
+                experiment.get("finished_at"),
                 json.dumps(experiment.get("summary", {}), sort_keys=True),
             ),
         )
         return experiment_id
 
-    def update_forecast_stack_experiment(self, experiment_id: str, *, status: str, finished_at: str, summary: dict[str, Any]) -> None:
+    def update_forecast_stack_experiment(
+        self, experiment_id: str, *, status: str, finished_at: str, summary: dict[str, Any]
+    ) -> None:
         self.database.execute(
             "UPDATE forecast_stack_experiments SET status = ?, finished_at = ?, summary_json = ? WHERE experiment_id = ?",
             (status, finished_at, json.dumps(summary, sort_keys=True), experiment_id),
@@ -1451,10 +1464,17 @@ class TradingRepository:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                result_id, result["experiment_id"], result["model_name"], result["symbol"],
-                result["timeframe"], result["horizon_bars"], json.dumps(result.get("metrics", {}), sort_keys=True),
-                json.dumps(result.get("trading_metrics", {}), sort_keys=True), result.get("rank_overall"),
-                1 if result.get("selected_for_symbol") else 0, result.get("created_at") or utc_now_iso(),
+                result_id,
+                result["experiment_id"],
+                result["model_name"],
+                result["symbol"],
+                result["timeframe"],
+                result["horizon_bars"],
+                json.dumps(result.get("metrics", {}), sort_keys=True),
+                json.dumps(result.get("trading_metrics", {}), sort_keys=True),
+                result.get("rank_overall"),
+                1 if result.get("selected_for_symbol") else 0,
+                result.get("created_at") or utc_now_iso(),
             ),
         )
         return result_id
@@ -1471,7 +1491,9 @@ class TradingRepository:
         ).fetchone()
         return _decode_stack_experiment(row) if row else None
 
-    def list_forecast_stack_results(self, *, experiment_id: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
+    def list_forecast_stack_results(
+        self, *, experiment_id: str | None = None, limit: int = 500
+    ) -> list[dict[str, Any]]:
         query = "SELECT * FROM forecast_stack_results"
         params: list[Any] = []
         if experiment_id:

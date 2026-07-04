@@ -64,9 +64,7 @@ class MomentumBreakoutSetup(BaseSetup):
             next_action="WAIT",
         )
         if missing:
-            readiness_status = str(
-                market.get("readiness_status") or "PAUSED_MISSING_MARKET_DATA"
-            )
+            readiness_status = str(market.get("readiness_status") or "PAUSED_MISSING_MARKET_DATA")
             metadata["analysis"].update(
                 {
                     "decision_status": readiness_status,
@@ -473,22 +471,20 @@ class MomentumBreakoutSetup(BaseSetup):
         avg_last_2 = market["average_volume_ratio_last_2_bars"]
         close = snapshot.close if snapshot.close is not None else snapshot.price
         volume_config = _mapping(self.config.get("volume_confirmation"))
-        fast_min = _first_number(
-            volume_config.get("fast_volume_ratio_min"),
-            breakout.get("fast_breakout_volume_ratio_min"),
-            1.50,
-        )
         confirmed_min = _first_number(
             volume_config.get("confirmed_volume_ratio_min"),
             breakout.get("confirmed_breakout_volume_ratio_min"),
             0.80,
         )
         retest_min = _first_number(breakout.get("retest_volume_ratio_min"), 1.00)
-        hold_bars = int(_first_number(
-            volume_config.get("confirmed_hold_bars"),
-            breakout.get("confirmed_breakout_hold_bars"),
-            2,
-        ) or 2)
+        hold_bars = int(
+            _first_number(
+                volume_config.get("confirmed_hold_bars"),
+                breakout.get("confirmed_breakout_hold_bars"),
+                2,
+            )
+            or 2
+        )
         bars_above = _bars_above_resistance(snapshot, resistance)
         fast = volume["status"] == "FAST_VOLUME_CONFIRMED"
         progressive_ratio = _first_number(avg_last_2, volume_closed)
@@ -556,9 +552,7 @@ class MomentumBreakoutSetup(BaseSetup):
         volume = validation.get("volume_confirmation")
         volume_status = str(volume.get("status") if isinstance(volume, dict) else "")
         close_above_resistance = (
-            bool(volume.get("close_above_resistance"))
-            if isinstance(volume, dict)
-            else False
+            bool(volume.get("close_above_resistance")) if isinstance(volume, dict) else False
         )
         if volume_status == "VOLUME_DATA_MISSING":
             return "VOLUME_DATA_MISSING"
@@ -612,7 +606,12 @@ class MomentumBreakoutSetup(BaseSetup):
             elapsed_bar_percent is not None and 0 < elapsed_bar_percent < 0.999
         )
         closed_ratio = _first_number(market.get("volume_ratio_closed_bar"))
-        if closed_ratio is None and current_volume not in (None, "") and average_volume not in (None, "") and current_bar_is_closed:
+        if (
+            closed_ratio is None
+            and current_volume not in (None, "")
+            and average_volume not in (None, "")
+            and current_bar_is_closed
+        ):
             average = float(average_volume)
             if average > 0:
                 closed_ratio = float(current_volume) / average
@@ -632,7 +631,9 @@ class MomentumBreakoutSetup(BaseSetup):
             and float(average_volume) > 0
         ):
             projected_ratio = projected_volume / float(average_volume)
-        ratio = closed_ratio if current_bar_is_closed else _first_number(projected_ratio, closed_ratio)
+        ratio = (
+            closed_ratio if current_bar_is_closed else _first_number(projected_ratio, closed_ratio)
+        )
         candle_range = (high - low) if high is not None and low is not None else 0
         upper_wick = (
             high - max(open_price, close)
@@ -674,18 +675,14 @@ class MomentumBreakoutSetup(BaseSetup):
             "ratio": round(ratio, 4) if ratio is not None else None,
             "closed_bar_volume_ratio": round(closed_ratio, 4) if closed_ratio is not None else None,
             "live_projected_volume_ratio": (
-                round(projected_ratio, 4)
-                if projected_ratio is not None
-                else None
+                round(projected_ratio, 4) if projected_ratio is not None else None
             ),
             "current_bar_volume": current_volume,
             "average_bar_volume": average_volume,
             "current_bar_is_closed": current_bar_is_closed,
             "elapsed_bar_percent": elapsed_bar_percent,
             "projected_bar_volume": (
-                round(projected_volume, 4)
-                if projected_volume is not None
-                else None
+                round(projected_volume, 4) if projected_volume is not None else None
             ),
             "sample_count": market.get("volume_sample_count"),
             "timeframe": str(
@@ -726,7 +723,8 @@ class MomentumBreakoutSetup(BaseSetup):
             return "EXECUTION_LIQUIDITY_WEAK"
         if (
             details["position_vs_dollar_volume_pct"] is not None
-            and details["position_vs_dollar_volume_pct"] > details["max_position_vs_dollar_volume_pct"]
+            and details["position_vs_dollar_volume_pct"]
+            > details["max_position_vs_dollar_volume_pct"]
         ):
             return "EXECUTION_LIQUIDITY_WEAK"
         return "EXECUTION_LIQUIDITY_OK"
@@ -740,10 +738,13 @@ class MomentumBreakoutSetup(BaseSetup):
         liquidity = _mapping(self.config.get("liquidity"))
         planned_position = _first_number(risk.get("max_position_amount_usd"), 0) or 0
         max_spread_bps = _first_number(liquidity.get("max_spread_bps"), 30) or 30
-        max_position_vs_dollar_volume_pct = _first_number(
-            liquidity.get("max_position_vs_dollar_volume_pct"),
-            1.0,
-        ) or 1.0
+        max_position_vs_dollar_volume_pct = (
+            _first_number(
+                liquidity.get("max_position_vs_dollar_volume_pct"),
+                1.0,
+            )
+            or 1.0
+        )
         price = _first_number(market.get("current_price"), market.get("ask"), market.get("bid"))
         volume = _first_number(current_volume)
         dollar_volume = price * volume if price is not None and volume is not None else None
@@ -753,7 +754,8 @@ class MomentumBreakoutSetup(BaseSetup):
             else None
         )
         return {
-            "bid_ask_available": market.get("bid") not in (None, "") and market.get("ask") not in (None, ""),
+            "bid_ask_available": market.get("bid") not in (None, "")
+            and market.get("ask") not in (None, ""),
             "spread_bps": market.get("spread_bps"),
             "max_spread_bps": max_spread_bps,
             "dollar_volume_today": round(dollar_volume, 2) if dollar_volume is not None else None,
@@ -850,15 +852,9 @@ class MomentumBreakoutSetup(BaseSetup):
         max_risk = _first_number(risk.get("max_risk_usd"), 0) or 0
         risk_per_share = worst_case_entry_price - initial_stop
         quantity_by_capital = (
-            math.floor(max_position / worst_case_entry_price)
-            if worst_case_entry_price > 0
-            else 0
+            math.floor(max_position / worst_case_entry_price) if worst_case_entry_price > 0 else 0
         )
-        quantity_by_risk = (
-            math.floor(max_risk / risk_per_share)
-            if risk_per_share > 0
-            else 0
-        )
+        quantity_by_risk = math.floor(max_risk / risk_per_share) if risk_per_share > 0 else 0
         maximum_quantity = min(quantity_by_capital, quantity_by_risk)
         current_risk_per_share = None
         current_max_quantity_by_risk = None
@@ -880,9 +876,7 @@ class MomentumBreakoutSetup(BaseSetup):
             "initial_stop": initial_stop,
             "risk_per_share": round(risk_per_share, 4),
             "current_risk_per_share": (
-                round(current_risk_per_share, 4)
-                if current_risk_per_share is not None
-                else None
+                round(current_risk_per_share, 4) if current_risk_per_share is not None else None
             ),
             "quantity_by_capital": quantity_by_capital,
             "quantity_by_risk": quantity_by_risk,

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
-
 router = APIRouter(prefix="/api/scoring")
 
 

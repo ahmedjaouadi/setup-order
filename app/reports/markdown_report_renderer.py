@@ -33,7 +33,4 @@ class MarkdownReportRenderer:
 def _bullets(rows: list[dict], *keys: str) -> list[str]:
     if not rows:
         return ["- None"]
-    return [
-        "- " + " | ".join(str(row.get(key, "-")) for key in keys)
-        for row in rows[:10]
-    ]
+    return ["- " + " | ".join(str(row.get(key, "-")) for key in keys) for row in rows[:10]]

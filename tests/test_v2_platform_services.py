@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-from copy import deepcopy
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from copy import deepcopy
+from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -163,10 +163,7 @@ class V2PlatformServiceTests(unittest.TestCase):
             app.include_router(router)
 
         paths = {
-            route.path
-            for router in routers
-            for route in router.routes
-            if hasattr(route, "path")
+            route.path for router in routers for route in router.routes if hasattr(route, "path")
         }
         for path in {
             "/api/opportunities",

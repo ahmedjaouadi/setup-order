@@ -4,7 +4,6 @@ import asyncio
 
 from fastapi import APIRouter, HTTPException, Request
 
-
 router = APIRouter()
 
 
@@ -190,7 +189,9 @@ async def darts_run_experiment(request: Request):
     payload["framework"] = "darts_offline"
     try:
         service = request.app.state.forecast_stack_benchmark
-        operation = service.compare if isinstance(payload.get("predictions"), dict) else service.run_native
+        operation = (
+            service.compare if isinstance(payload.get("predictions"), dict) else service.run_native
+        )
         return {"experiment": await asyncio.to_thread(operation, payload)}
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))

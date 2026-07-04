@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from app.market_data.snapshot_payload import market_snapshot_from_payload
-
 
 router = APIRouter()
 
@@ -78,9 +79,7 @@ async def broker_connector(request: Request):
 @router.post("/api/runtime/tws-audit")
 async def tws_audit(request: Request):
     payload = await request.json()
-    return await request.app.state.engine.set_tws_audit_enabled(
-        bool(payload.get("enabled", False))
-    )
+    return await request.app.state.engine.set_tws_audit_enabled(bool(payload.get("enabled", False)))
 
 
 @router.post("/api/market/snapshot")
@@ -103,11 +102,9 @@ async def market_data_diagnostics(request: Request, symbol: str):
         broker_payload = diagnostics(symbol)
     latest = request.app.state.engine.market_data.latest(symbol)
     latest_payload = (
-        request.app.state.engine._market_snapshot_payload(latest)
-        if latest is not None
-        else None
+        request.app.state.engine._market_snapshot_payload(latest) if latest is not None else None
     )
-    setup = next(
+    setup: dict[str, Any] = next(
         (
             item
             for item in request.app.state.repository.list_setups()
@@ -116,9 +113,7 @@ async def market_data_diagnostics(request: Request, symbol: str):
         {},
     )
     readiness = (
-        latest_payload.get("market_data_readiness", {})
-        if isinstance(latest_payload, dict)
-        else {}
+        latest_payload.get("market_data_readiness", {}) if isinstance(latest_payload, dict) else {}
     )
     summary = _market_diagnostics_summary(
         normalized_symbol,
@@ -192,8 +187,7 @@ def _market_diagnostics_summary(
         "last_successful_atr_1h_at": latest_payload.get("last_successful_atr_1h_at"),
         "atr_1h_age_seconds": latest_payload.get("atr_1h_age_seconds"),
         "last_ibkr_error_code": (
-            latest_payload.get("last_ibkr_error_code")
-            or broker_payload.get("last_ibkr_error_code")
+            latest_payload.get("last_ibkr_error_code") or broker_payload.get("last_ibkr_error_code")
         ),
         "last_ibkr_error_message": last_error_message,
         "readiness_level": readiness.get("status") if isinstance(readiness, dict) else None,

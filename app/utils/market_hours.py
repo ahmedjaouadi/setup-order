@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, time, timezone
-from typing import Any
+from datetime import UTC, datetime, time
 from zoneinfo import ZoneInfo
-
 
 US_EQUITY_TIMEZONE = ZoneInfo("America/New_York")
 PREMARKET_OPEN = time(4, 0)
@@ -25,7 +23,7 @@ def coerce_datetime(value: datetime | str | None) -> datetime | None:
     if value is None:
         return None
     if isinstance(value, datetime):
-        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
     text = str(value).strip()
     if not text:
         return None
@@ -34,7 +32,7 @@ def coerce_datetime(value: datetime | str | None) -> datetime | None:
         parsed = datetime.fromisoformat(normalized)
     except ValueError:
         return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def classify_us_equity_session(current_time: datetime) -> str:
@@ -54,7 +52,7 @@ def classify_us_equity_session(current_time: datetime) -> str:
 def current_us_equity_session_context(
     current_time: datetime | str | None = None,
 ) -> MarketSessionContext:
-    parsed = coerce_datetime(current_time) or datetime.now(timezone.utc)
+    parsed = coerce_datetime(current_time) or datetime.now(UTC)
     localized = parsed.astimezone(US_EQUITY_TIMEZONE)
     market_open = datetime.combine(
         localized.date(),

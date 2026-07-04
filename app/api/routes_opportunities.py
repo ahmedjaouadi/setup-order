@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-
 router = APIRouter()
 
 
@@ -35,9 +34,7 @@ async def opportunity_shortlist(request: Request, limit: int = Query(25, ge=1, l
 @router.post("/api/opportunities/rebuild-shortlist")
 async def rebuild_opportunity_shortlist(request: Request):
     payload = await _optional_json(request)
-    return request.app.state.opportunity_scanner.rebuild_shortlist(
-        limit=payload.get("limit")
-    )
+    return request.app.state.opportunity_scanner.rebuild_shortlist(limit=payload.get("limit"))
 
 
 @router.post("/api/opportunities/scan")

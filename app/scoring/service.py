@@ -8,10 +8,9 @@ from app.forecasting.forecast_signal_compiler import ForecastSignalCompiler
 from app.forecasting.forecast_to_score_mapper import ForecastToScoreMapper
 from app.models import utc_now_iso
 from app.observability.decision_trace_models import DecisionTrace
-from app.storage.repositories import TradingRepository
 from app.setups.setup_roles import setup_allows_entry, setup_role_from_config
+from app.storage.repositories import TradingRepository
 from app.utils.id_generator import new_id
-
 
 DEFAULT_WEIGHTS = {
     "technical_score": 0.20,
@@ -39,9 +38,7 @@ class SetupQualityEngine:
         self.forecast_accuracy_service = forecast_accuracy_service
         self.weights = self._weights()
         self.forecast_signal_compiler = (
-            ForecastSignalCompiler(forecast_repository)
-            if forecast_repository is not None
-            else None
+            ForecastSignalCompiler(forecast_repository) if forecast_repository is not None else None
         )
         self.forecast_to_score = ForecastToScoreMapper()
 
@@ -123,9 +120,12 @@ class SetupQualityEngine:
             "forecast_alignment_score": (
                 self._forecast_score(
                     symbol,
-                    direction=str(_nested(setup, "config", "direction") or setup.get("direction") or "long"),
+                    direction=str(
+                        _nested(setup, "config", "direction") or setup.get("direction") or "long"
+                    ),
                 )
-                if forecast_applicable else 50.0
+                if forecast_applicable
+                else 50.0
             ),
             "backtest_score": self._backtest_score(str(setup.get("setup_id") or "")),
         }
@@ -142,7 +142,8 @@ class SetupQualityEngine:
             "explanations": self._explanations(components),
             "forecast_signal": (
                 self._forecast_signal(symbol)
-                if forecast_applicable else {
+                if forecast_applicable
+                else {
                     "status": "NOT_APPLICABLE_MANAGEMENT_ONLY",
                     "alignment_score": 50.0,
                     "used_for_decision": False,
@@ -163,7 +164,9 @@ class SetupQualityEngine:
             )
         trace = DecisionTrace(
             entity_type="setup" if setup.get("setup_id") else "scoring",
-            entity_id=str(setup.get("setup_id") or scenario_id or opportunity_id or score["score_id"]),
+            entity_id=str(
+                setup.get("setup_id") or scenario_id or opportunity_id or score["score_id"]
+            ),
             decision_type="SETUP_QUALITY_SCORE",
             decision="SCORING_ONLY",
             reason_codes=reason_codes,
@@ -221,9 +224,7 @@ class SetupQualityEngine:
 
     def _liquidity_score(self, symbol: str) -> float:
         quote = self._latest_stock_quote(symbol)
-        spread_bps = _first_number(
-            quote.get("spread_bps") if isinstance(quote, dict) else None
-        )
+        spread_bps = _first_number(quote.get("spread_bps") if isinstance(quote, dict) else None)
         spread_pct = _first_number(
             quote.get("spread_pct") if isinstance(quote, dict) else None,
             spread_bps / 100 if spread_bps is not None else None,
@@ -356,10 +357,7 @@ class SetupQualityEngine:
         raw = self.settings.get("scoring", {}).get("weights", {})
         if not isinstance(raw, dict):
             raw = {}
-        weights = {
-            key: float(raw.get(key, value))
-            for key, value in DEFAULT_WEIGHTS.items()
-        }
+        weights = {key: float(raw.get(key, value)) for key, value in DEFAULT_WEIGHTS.items()}
         total = sum(weights.values()) or 1.0
         return {key: value / total for key, value in weights.items()}
 

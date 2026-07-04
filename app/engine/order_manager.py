@@ -67,9 +67,7 @@ class OrderManager:
         self._ensure_broker_matches_setup_mode(setup)
         setup_role = setup_role_from_config(setup.get("config", {}))
         if setup_is_management_only(setup_role):
-            raise ManagementOnlyEntryError(
-                "MANAGEMENT_ONLY setup cannot place an entry order"
-            )
+            raise ManagementOnlyEntryError("MANAGEMENT_ONLY setup cannot place an entry order")
         protection = self.repository.protection_snapshot_for_setup(setup["setup_id"])
         if protection.get("position_open") and not protection.get("has_active_stop_order"):
             raise UnprotectedActiveOrderError(
@@ -83,7 +81,9 @@ class OrderManager:
             raise DuplicateOrderError("An active protected order already exists for this setup")
         trailing_stop = _trailing_initial_stop(setup)
         if trailing_stop is None or trailing_stop <= 0:
-            raise ValueError("Trailing stop-loss initial stop must be ready before submitting an entry order")
+            raise ValueError(
+                "Trailing stop-loss initial stop must be ready before submitting an entry order"
+            )
         if not _trailing_stop_order_ready(setup):
             raise ValueError("BLOCKED_TRAILING_STOP_NOT_READY")
         risk_decision.stop_loss = trailing_stop
@@ -98,9 +98,11 @@ class OrderManager:
         limit_price = None
         if order_type == OrderType.STP_LMT.value:
             limit_price = round(
-                risk_decision.entry_price
-                if risk_decision.trigger_price is not None
-                else trigger_price + limit_offset,
+                (
+                    risk_decision.entry_price
+                    if risk_decision.trigger_price is not None
+                    else trigger_price + limit_offset
+                ),
                 2,
             )
         order = OrderRecord(
@@ -287,9 +289,7 @@ class OrderManager:
                 "stop_loss": stop_loss,
                 "parent_order_id": parent_id,
                 "protection_status": (
-                    "STOP_PENDING_PARENT_FILL"
-                    if parent_id
-                    else "POSITION_OPEN_STOP_ACTIVE"
+                    "STOP_PENDING_PARENT_FILL" if parent_id else "POSITION_OPEN_STOP_ACTIVE"
                 ),
             },
         )
@@ -320,7 +320,8 @@ class OrderManager:
                 for order in self.repository.list_orders(setup_id)
                 if str(order.get("side") or "").upper() == OrderSide.SELL.value
                 and str(order.get("parent_id") or "") == str(entry_order.get("id") or "")
-                and str(order.get("status") or "") in {
+                and str(order.get("status") or "")
+                in {
                     OrderStatus.CREATED.value,
                     OrderStatus.SUBMITTED.value,
                 }
@@ -509,7 +510,9 @@ def _managed_stop_order_type(setup: dict, default_stop_order_type: str) -> str:
     config = setup.get("config", {})
     trailing = config.get("trailing_stop_loss", {}) if isinstance(config, dict) else {}
     broker_order = trailing.get("broker_order", {}) if isinstance(trailing, dict) else {}
-    requested = str(broker_order.get("order_type") or "").upper() if isinstance(broker_order, dict) else ""
+    requested = (
+        str(broker_order.get("order_type") or "").upper() if isinstance(broker_order, dict) else ""
+    )
     if requested in {"TRAIL", "TRAIL_LIMIT", "TRAIL_LMT"}:
         return requested
     return default_stop_order_type
@@ -571,9 +574,4 @@ def _broker_request_keys(order: object) -> set[str]:
 
 
 def _clean_key_set(values: set[object]) -> set[str]:
-    return {
-        text
-        for value in values
-        for text in [str(value or "").strip()]
-        if text
-    }
+    return {text for value in values for text in [str(value or "").strip()] if text}

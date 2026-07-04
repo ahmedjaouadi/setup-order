@@ -12,9 +12,7 @@ def configure_logging(logs_folder: Path) -> None:
     if root.handlers:
         return
 
-    formatter = logging.Formatter(
-        "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
-    )
+    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
     app_handler = RotatingFileHandler(
         logs_folder / "app.log",
         maxBytes=2_000_000,
@@ -30,4 +28,3 @@ def configure_logging(logs_folder: Path) -> None:
 
     root.addHandler(app_handler)
     root.addHandler(console_handler)
-

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from functools import partial
-from contextlib import suppress
 import logging
+from contextlib import suppress
+from functools import partial
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -17,10 +17,10 @@ from app.api import (
     routes_logs,
     routes_market_context,
     routes_observability,
-    routes_orders,
     routes_opportunities,
-    routes_opportunity_radar,
     routes_opportunity_audit,
+    routes_opportunity_radar,
+    routes_orders,
     routes_platform,
     routes_positions,
     routes_reports,
@@ -30,23 +30,23 @@ from app.api import (
     routes_v2_pages,
     websocket,
 )
-from app.data_quality import DataQualityService
 from app.background_jobs import (
     auto_evaluate_forecast_accuracy,
     auto_rebuild_opportunity_shortlist,
     auto_recalculate_forecasts,
     periodic_loop,
 )
+from app.data_quality import DataQualityService
+from app.engine.trading_engine import TradingEngine
 from app.event_bus import EventBus
 from app.features import FeatureStore
-from app.intelligence.repository import IntelligenceRepository
-from app.intelligence.service import IntelligenceService
-from app.forecasting.forecast_repository import ForecastRepository
-from app.forecasting.forecast_service import ForecastService
 from app.forecasting.forecast_accuracy_repository import ForecastAccuracyRepository
 from app.forecasting.forecast_accuracy_service import ForecastAccuracyService
 from app.forecasting.forecast_provider_status import ForecastProviderStatusService
-from app.engine.trading_engine import TradingEngine
+from app.forecasting.forecast_repository import ForecastRepository
+from app.forecasting.forecast_service import ForecastService
+from app.intelligence.repository import IntelligenceRepository
+from app.intelligence.service import IntelligenceService
 from app.market_context.repository import MarketContextRepository
 from app.market_context.service import MarketContextService
 from app.model_lab import ForecastStackBenchmarkService, ModelLabService
@@ -56,11 +56,10 @@ from app.portfolio_risk import PortfolioRiskService
 from app.reports import DailyReportService
 from app.scoring import SetupQualityEngine
 from app.settings import load_settings
+from app.setups.creation_snapshot_service import SetupCreationSnapshotService
 from app.storage.database import Database
 from app.storage.repositories import TradingRepository
-from app.setups.creation_snapshot_service import SetupCreationSnapshotService
 from app.utils.logger import configure_logging
-
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +83,7 @@ def _start_background_tasks(app: FastAPI) -> list[asyncio.Task]:
     raw = getattr(settings, "raw", {}) if settings is not None else {}
     forecasting = raw.get("forecasting", {}) if isinstance(raw.get("forecasting"), dict) else {}
     forecast_accuracy = (
-        raw.get("forecast_accuracy", {})
-        if isinstance(raw.get("forecast_accuracy"), dict)
-        else {}
+        raw.get("forecast_accuracy", {}) if isinstance(raw.get("forecast_accuracy"), dict) else {}
     )
     opportunity_scanner = (
         raw.get("opportunity_scanner", {})

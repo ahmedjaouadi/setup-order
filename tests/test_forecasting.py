@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 from unittest.mock import patch
 
 from app.forecasting.forecast_models import ForecastConfig, TimesFMForecastOutput
@@ -321,15 +321,17 @@ class ForecastingTests(unittest.IsolatedAsyncioTestCase):
             )
 
             first = await service.forecast("FLNC", setup_id="FLNC_20260615_001")
-            repository.insert_forecast({
-                **first,
-                "forecast_id": "forecast_other_setup",
-                "setup_id": "FLNC_OTHER_SETUP",
-                "status": "MODEL_ERROR",
-                "forecast_status": "MODEL_ERROR",
-                "error": "newer forecast from another setup",
-                "generated_at": "2999-01-01T00:00:00+00:00",
-            })
+            repository.insert_forecast(
+                {
+                    **first,
+                    "forecast_id": "forecast_other_setup",
+                    "setup_id": "FLNC_OTHER_SETUP",
+                    "status": "MODEL_ERROR",
+                    "forecast_status": "MODEL_ERROR",
+                    "error": "newer forecast from another setup",
+                    "generated_at": "2999-01-01T00:00:00+00:00",
+                }
+            )
 
             cached = await service.forecast(
                 "FLNC",
@@ -345,9 +347,7 @@ class ForecastingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(cached["status"], "OK")
         self.assertEqual(cached["setup_id"], "FLNC_20260615_001")
-        timesfm = next(
-            item for item in summary["members"] if item["model_name"] == "timesfm"
-        )
+        timesfm = next(item for item in summary["members"] if item["model_name"] == "timesfm")
         self.assertEqual(timesfm["status"], "OK")
 
     async def test_forecast_ensemble_uses_deterministic_baselines(self) -> None:
@@ -457,34 +457,80 @@ class ForecastingTests(unittest.IsolatedAsyncioTestCase):
             },
         }
         external_models = [
-            {"model": "chronos", "status": "AVAILABLE", "available": True, "reason": "available", "baseline": False},
-            {"model": "lag_llama", "status": "AVAILABLE", "available": True, "reason": "available", "baseline": False},
-            {"model": "moirai", "status": "AVAILABLE", "available": True, "reason": "available", "baseline": False},
-            {"model": "moirai_uni2ts", "status": "AVAILABLE", "available": True, "reason": "available", "baseline": False},
-            {"model": "uni2ts", "status": "AVAILABLE", "available": True, "reason": "available", "baseline": False},
-            {"model": "neuralforecast", "status": "AVAILABLE", "available": True, "reason": "available", "baseline": False},
-            {"model": "autogluon", "status": "AVAILABLE", "available": True, "reason": "available", "baseline": False},
+            {
+                "model": "chronos",
+                "status": "AVAILABLE",
+                "available": True,
+                "reason": "available",
+                "baseline": False,
+            },
+            {
+                "model": "lag_llama",
+                "status": "AVAILABLE",
+                "available": True,
+                "reason": "available",
+                "baseline": False,
+            },
+            {
+                "model": "moirai",
+                "status": "AVAILABLE",
+                "available": True,
+                "reason": "available",
+                "baseline": False,
+            },
+            {
+                "model": "moirai_uni2ts",
+                "status": "AVAILABLE",
+                "available": True,
+                "reason": "available",
+                "baseline": False,
+            },
+            {
+                "model": "uni2ts",
+                "status": "AVAILABLE",
+                "available": True,
+                "reason": "available",
+                "baseline": False,
+            },
+            {
+                "model": "neuralforecast",
+                "status": "AVAILABLE",
+                "available": True,
+                "reason": "available",
+                "baseline": False,
+            },
+            {
+                "model": "autogluon",
+                "status": "AVAILABLE",
+                "available": True,
+                "reason": "available",
+                "baseline": False,
+            },
         ]
         with TemporaryDirectory() as folder:
             database = Database(Path(folder) / "state.sqlite")
             database.initialize()
             repository = ForecastRepository(database)
-            with patch.object(
-                ForecastService,
-                "_timesfm_availability",
-                return_value={
-                    "model": "timesfm",
-                    "status": "AVAILABLE",
-                    "available": True,
-                    "reason": "available",
-                    "baseline": False,
-                },
-            ), patch(
-                "app.forecasting.forecast_service.ForecastAdapterRegistry.availability",
-                return_value=external_models,
-            ), patch(
-                "app.forecasting.forecast_service.DartsExperimentRunner.provider_status",
-                return_value={"status": "AVAILABLE", "reason": "available"},
+            with (
+                patch.object(
+                    ForecastService,
+                    "_timesfm_availability",
+                    return_value={
+                        "model": "timesfm",
+                        "status": "AVAILABLE",
+                        "available": True,
+                        "reason": "available",
+                        "baseline": False,
+                    },
+                ),
+                patch(
+                    "app.forecasting.forecast_service.ForecastAdapterRegistry.availability",
+                    return_value=external_models,
+                ),
+                patch(
+                    "app.forecasting.forecast_service.DartsExperimentRunner.provider_status",
+                    return_value={"status": "AVAILABLE", "reason": "available"},
+                ),
             ):
                 service = ForecastService(
                     settings=settings,

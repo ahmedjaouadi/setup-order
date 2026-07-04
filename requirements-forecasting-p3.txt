@@ -1,4 +1,6 @@
 # P3: experimental probabilistic/foundation benchmarks.
+# Not installed in the reference venv used to generate pins elsewhere in this repo
+# (see TODO.md) — pin these to exact versions once installed and verified.
 torch
 pandas
 gluonts

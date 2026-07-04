@@ -4,7 +4,6 @@ from typing import Any
 
 from app.models import SetupRole
 
-
 DEFAULT_SETUP_ROLE = SetupRole.ENTRY_AND_MANAGEMENT
 ENTRY_SETUP_ROLES = frozenset(
     {

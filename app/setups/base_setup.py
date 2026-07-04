@@ -73,9 +73,7 @@ class BaseSetup(ABC):
         if self.mode not in {"paper", "live"}:
             errors.append("mode must be paper or live")
         if not is_valid_setup_role(self.config.get("setup_role", self.setup_role.value)):
-            errors.append(
-                "setup_role must be ENTRY_AND_MANAGEMENT, ENTRY_ONLY or MANAGEMENT_ONLY"
-            )
+            errors.append("setup_role must be ENTRY_AND_MANAGEMENT, ENTRY_ONLY or MANAGEMENT_ONLY")
         entry = self.config.get("entry", {})
         if not isinstance(entry, dict):
             errors.append("entry section must be a mapping")
@@ -93,9 +91,7 @@ class BaseSetup(ABC):
                     errors.append("risk.max_risk_usd must be positive")
             trailing = self.config.get("trailing_stop_loss", {})
             trailing_enabled = (
-                bool(trailing.get("enabled"))
-                if isinstance(trailing, dict)
-                else False
+                bool(trailing.get("enabled")) if isinstance(trailing, dict) else False
             )
             if not trailing_enabled:
                 errors.append("TRAILING_STOP_LOSS_REQUIRED")

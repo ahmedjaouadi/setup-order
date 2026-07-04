@@ -6,7 +6,7 @@ from app.engine.setup_diagnostics import (
     build_setup_analysis_trace,
     market_snapshot_payload,
 )
-from app.models import MarketSnapshot, SetupSignal, SignalAction, SetupStatus
+from app.models import MarketSnapshot, SetupSignal, SetupStatus, SignalAction
 from tests.test_setups import valid_breakout_config
 
 
@@ -44,7 +44,10 @@ class SetupDiagnosticsTests(unittest.TestCase):
 
         labels = {check["label"] for check in trace["checks"]}
         self.assertEqual(trace["phase"], "Recherche signal entree")
-        self.assertEqual(trace["next_step"], "Verifier le risque, construire le bracket entree + stop, puis envoyer l'ordre protege.")
+        self.assertEqual(
+            trace["next_step"],
+            "Verifier le risque, construire le bracket entree + stop, puis envoyer l'ordre protege.",
+        )
         self.assertIn("Breakout journalier", labels)
         self.assertIn("Prix dans zone retest", labels)
         self.assertIn("Signal entree", labels)

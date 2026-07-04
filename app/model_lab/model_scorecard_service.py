@@ -9,7 +9,11 @@ class ModelScorecardService:
 
     def for_symbol(self, symbol: str) -> dict[str, Any]:
         normalized = str(symbol).upper()
-        rows = [row for row in self.repository.list_forecast_stack_results(limit=5000) if str(row.get("symbol")).upper() == normalized]
+        rows = [
+            row
+            for row in self.repository.list_forecast_stack_results(limit=5000)
+            if str(row.get("symbol")).upper() == normalized
+        ]
         return {"symbol": normalized, "items": rows, "count": len(rows)}
 
     def latest_by_scope(self, symbol: str) -> dict[str, dict[str, Any]]:

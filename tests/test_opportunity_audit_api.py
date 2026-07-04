@@ -1,20 +1,20 @@
 from __future__ import annotations
 
+import tempfile
+import unittest
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
-import tempfile
-import unittest
 
 from fastapi import HTTPException
 
 from app.api import routes_opportunity_audit
+from app.models import SetupStatus
 from app.opportunity_audit.api_models import (
     ExpectedOpportunityRequestModel,
     OpportunityReplayRequestModel,
     ReplaySetupRequestModel,
 )
-from app.models import SetupStatus
 from app.setups.breakout_retest import BreakoutRetestSetup
 from app.storage.database import Database
 from app.storage.repositories import TradingRepository
@@ -24,9 +24,7 @@ from tests.test_setups import valid_breakout_config
 class OpportunityAuditApiTests(unittest.IsolatedAsyncioTestCase):
     async def test_replay_route_accepts_inline_setup_and_snapshots(self) -> None:
         config = valid_breakout_config()
-        request = SimpleNamespace(
-            app=SimpleNamespace(state=SimpleNamespace(repository=None))
-        )
+        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(repository=None)))
 
         result = await routes_opportunity_audit.replay_opportunity_audit(
             request,
@@ -72,9 +70,7 @@ class OpportunityAuditApiTests(unittest.IsolatedAsyncioTestCase):
             repository = TradingRepository(database)
             config = deepcopy(valid_breakout_config())
             repository.upsert_setup(
-                BreakoutRetestSetup(config).to_record(
-                    SetupStatus.WAITING_ENTRY_SIGNAL
-                )
+                BreakoutRetestSetup(config).to_record(SetupStatus.WAITING_ENTRY_SIGNAL)
             )
             request = SimpleNamespace(
                 app=SimpleNamespace(state=SimpleNamespace(repository=repository))

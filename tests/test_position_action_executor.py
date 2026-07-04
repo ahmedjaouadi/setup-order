@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 from app.engine.position_action_executor import PositionActionExecutor
 from app.engine.position_manager import PositionManager
 from app.engine.state_machine import StateMachine
-from app.models import SignalAction, SetupSignal, SetupStatus
+from app.models import SetupSignal, SetupStatus, SignalAction
 from app.setups.breakout_retest import BreakoutRetestSetup
 from app.storage.database import Database
 from app.storage.event_store import EventStore
@@ -35,9 +35,7 @@ class PositionActionExecutorTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def _open_setup_position(self) -> tuple[str, str]:
-        setup = BreakoutRetestSetup(valid_breakout_config()).to_record(
-            SetupStatus.IN_POSITION
-        )
+        setup = BreakoutRetestSetup(valid_breakout_config()).to_record(SetupStatus.IN_POSITION)
         self.repository.upsert_setup(setup)
         self.position_manager.open_or_update_position(
             setup_id=setup.setup_id,
@@ -93,9 +91,7 @@ class PositionActionExecutorTests(unittest.TestCase):
         self.assertTrue(handled)
         self.assertEqual(updated_setup["status"], SetupStatus.IN_POSITION.value)
         self.assertEqual(updated_position["current_stop"], 13.85)
-        self.assertTrue(
-            any(event["event_type"] == "stop_move_rejected" for event in events)
-        )
+        self.assertTrue(any(event["event_type"] == "stop_move_rejected" for event in events))
 
     def test_manual_move_stop_uses_same_position_manager_rules(self) -> None:
         _, symbol = self._open_setup_position()
