@@ -1,0 +1,263 @@
+{
+  "schema_version": "2.0.0",
+  "setup_id": "ARM_20260703_001",
+  "symbol": "ARM",
+  "enabled": true,
+  "mode": "paper",
+  "setup_type": "aggressive_rebound",
+  "setup_role": "ENTRY_AND_MANAGEMENT",
+  "direction": "long",
+  "timeframes": {
+    "signal": "15m",
+    "confirmation": "1d",
+    "trailing_management": "15m",
+    "atr_reference": "1h"
+  },
+  "entry": {
+    "enabled": true,
+    "order_type": "STP_LMT",
+    "allowed_order_types": [
+      "STP_LMT",
+      "LMT",
+      "MKT_PROTECTED_BY_TRAILING_STOP"
+    ],
+    "trigger_offset": 0.02,
+    "limit_offset": 0.05,
+    "trigger_price": 318.02,
+    "entry_price": 318.02,
+    "limit_price": 318.07,
+    "maximum_limit_price": 318.07,
+    "cancel_if_not_filled_after_minutes": 30,
+    "requires_trailing_stop_before_transmission": true
+  },
+  "risk": {
+    "max_position_amount_usd": 250,
+    "max_risk_usd": 15,
+    "risk_model": "TRAILING_STOP_INITIAL_RISK",
+    "emergency_exit_if_stop_fails": true,
+    "block_entry_if_risk_unknown": true,
+    "block_entry_if_trailing_stop_missing": true
+  },
+  "trailing_stop_loss": {
+    "enabled": true,
+    "mode": "AUTO_INTELLIGENT",
+    "initial_stop": 303.4,
+    "current_stop": 303.4,
+    "never_lower_stop": true,
+    "stop_source": "AUTO_CALCULATED",
+    "applies_to": "ENTRY_AND_POSITION_MANAGEMENT",
+    "migration_status": "MIGRATED_TO_TRAILING_STOP",
+    "activation": {
+      "mode": "ON_ENTRY_FILL",
+      "activate_before_entry_transmission": true,
+      "entry_order_requires_attached_trailing_stop": true
+    },
+    "calculation": {
+      "method": "HYBRID_ATR_STRUCTURE",
+      "allowed_methods": [
+        "ATR_BASED",
+        "STRUCTURE_BASED",
+        "HYBRID_ATR_STRUCTURE",
+        "PERCENT_BASED_FALLBACK"
+      ],
+      "default_method": "HYBRID_ATR_STRUCTURE",
+      "atr": {
+        "timeframe": "1h",
+        "period": 14,
+        "multiplier_initial": 1.5,
+        "multiplier_trailing": 1.5,
+        "min_multiplier": 1,
+        "max_multiplier": 3.5
+      },
+      "structure": {
+        "reference": "INTRADAY_SUPPORT",
+        "allowed_references": [
+          "HIGHER_LOW",
+          "INTRADAY_SUPPORT",
+          "RANGE_LOW",
+          "BROKEN_RESISTANCE_AS_SUPPORT",
+          "VWAP_PULLBACK",
+          "PREVIOUS_DAY_LOW",
+          "AUTO_SELECT"
+        ],
+        "buffer_policy": "MAX_OF_TICK_SPREAD_ATR_FRACTION",
+        "min_tick_buffer": 2,
+        "spread_buffer_multiplier": 2,
+        "atr_fraction_buffer": 0.1
+      },
+      "stock_specific_adjustment": {
+        "enabled": true,
+        "inputs": [
+          "price",
+          "atr_15m",
+          "atr_1h",
+          "average_true_range_percent",
+          "spread_bps",
+          "relative_volume",
+          "liquidity",
+          "gap_percent",
+          "intraday_range_percent",
+          "sector_volatility",
+          "distance_to_support",
+          "distance_to_breakout_level"
+        ],
+        "volatility_regime": "HIGH",
+        "liquidity_regime": "NORMAL",
+        "spread_regime": "NORMAL"
+      },
+      "risk_constraints": {
+        "respect_max_risk_usd": true,
+        "respect_max_position_amount_usd": true,
+        "minimum_quantity": 1,
+        "block_if_quantity_zero": true,
+        "block_if_initial_stop_above_entry_for_long": true,
+        "block_if_initial_stop_below_entry_for_short": true
+      }
+    },
+    "ratchet_rules": {
+      "enabled": true,
+      "move_only_up_for_long": true,
+      "move_only_down_for_short": true,
+      "update_on_closed_bar_only": true,
+      "timeframe": "15m",
+      "min_improvement_required": 2.2,
+      "min_improvement_atr_fraction": 0.15,
+      "do_not_lower_stop": true,
+      "do_not_update_outside_rth": true,
+      "do_not_update_if_spread_wide": true,
+      "do_not_update_on_unconfirmed_intrabar_move": true,
+      "allow_break_even_move": true,
+      "break_even_policy": {
+        "enabled": true,
+        "trigger_after_profit_r_multiple": 1,
+        "new_stop": "ENTRY_PRICE_PLUS_FEES_BUFFER"
+      }
+    },
+    "broker_order": {
+      "order_type": "TRAIL_OR_MANAGED_STOP",
+      "attach_to_entry_order": true,
+      "required_before_entry_transmission": true,
+      "use_native_ibkr_trailing_order_if_available": true,
+      "fallback_to_managed_stop_updates": true,
+      "parent_child_bracket_required": true,
+      "entry_parent_transmit": false,
+      "trailing_stop_child_transmit": true,
+      "block_if_broker_stop_not_confirmed": true,
+      "trailing_stop_order_ready": false
+    },
+    "audit": {
+      "record_initial_stop_calculation": true,
+      "record_each_stop_update": true,
+      "record_reason": true,
+      "record_old_stop": true,
+      "record_new_stop": true,
+      "record_broker_order_id": true
+    }
+  },
+  "management": {
+    "take_profit_mode": "none",
+    "never_lower_stop": true,
+    "position_management_mode": "TRAILING_STOP_ONLY",
+    "stop_management": {
+      "mode": "TRAILING_STOP_LOSS",
+      "source": "trailing_stop_loss",
+      "never_lower_stop": true,
+      "steps": [],
+      "trail_type": "ATR_OR_STRUCTURE",
+      "atr_timeframe": "1h",
+      "atr_multiplier": 1.5
+    }
+  },
+  "volume_confirmation": {
+    "enabled": true,
+    "signal_timeframe": "15m",
+    "comparison_mode": "SAME_TIME_OF_DAY",
+    "average_sample_days": 20,
+    "fast_volume_ratio_min": 1.5,
+    "normal_volume_ratio_min": 1,
+    "confirmed_volume_ratio_min": 0.8,
+    "confirmed_hold_bars": 2,
+    "close_above_level_required": true,
+    "reject_detection_enabled": true,
+    "max_upper_wick_ratio": 0.5
+  },
+  "support_zone": {
+    "min": 303.67,
+    "max": 309.8,
+    "invalidation_below": 303.4
+  },
+  "rebound_confirmation": {
+    "require_bullish_candle": true,
+    "require_volume_confirmation": true,
+    "confirmation_timeframe": "15m"
+  },
+  "position_source": {
+    "mode": "new_entry",
+    "require_existing_position": false,
+    "account_position_must_match_direction": true
+  },
+  "anti_chase": {
+    "enabled": true,
+    "max_price_above_entry_percent": 1.5,
+    "action_if_too_far": "WAIT_RETEST_SUPPORT_OR_NEW_BASE",
+    "block_entry_if_price_above_maximum_limit": true
+  },
+  "session_policy": {
+    "enabled": true,
+    "require_regular_trading_hours_for_entry": true,
+    "allow_premarket_entry": false,
+    "allow_after_hours_entry": false,
+    "wait_after_open_minutes": 30,
+    "wait_closed_bars_after_open": 2,
+    "wait_bars_timeframe": "15m",
+    "require_rth_volume_confirmation": true,
+    "require_rth_spread_check": true,
+    "require_rth_risk_recalculation": true,
+    "extended_hours": {
+      "allow_detection": true,
+      "allow_auto_execution": false,
+      "allow_manual_review": true
+    }
+  },
+  "broker_safety": {
+    "require_broker_tracker": true,
+    "block_if_broker_tracker_stale": true,
+    "block_if_tws_disconnected": true,
+    "block_if_position_without_stop": true,
+    "block_if_entry_order_without_trailing_stop": true,
+    "block_if_reconciliation_mismatch": true
+  },
+  "entry_decision": {
+    "status": "EVALUATED",
+    "decision": "NO_ENTRY",
+    "can_send_order": false,
+    "display_title": "WATCH - ARM aggressive rebound non armable",
+    "display_message": "ARM est proche d'une zone de support volatile. Le setup attend une reprise de 318.02 avec cloture 15m haussiere, volume confirme, recalcul du risque RTH et trailing stop broker pret avant toute transmission.",
+    "next_action": "Attendre 30 minutes apres l'ouverture RTH, verifier 2 bougies 15m cloturees, confirmer le maintien au-dessus de 303.67-309.80, recalculer ATR/spread, puis armer uniquement si trailing_stop_order_ready=true.",
+    "blocking_reasons": [
+      "trailing_stop_order_ready=false",
+      "can_send_order requires broker trailing stop confirmation",
+      "minimum_quantity=1 but max_position_amount_usd=250 is below one-share notional at planned entry",
+      "current price action shows high volatility and intraday rejection from 358.35",
+      "RTH risk/spread/volume recalculation required before arming"
+    ],
+    "warnings": [
+      "Risque par action a la limite: 318.07 - 303.40 = 14.67 USD",
+      "Quantite maximale par risque: 15 / 14.67 = 1.02 action",
+      "Quantite maximale par capital: 250 / 318.07 = 0.78 action",
+      "Avec minimum_quantity=1, le plafond de position bloque l'ordre entier",
+      "Si fractions autorisees par IBKR/TWS pour ce type d'ordre, une quantite theorique proche de 0.78 action respecterait le capital et le risque"
+    ],
+    "planned_vs_current_risk": {
+      "planned_entry_price": 318.02,
+      "planned_limit_price": 318.07,
+      "planned_initial_stop": 303.4,
+      "risk_per_share_at_limit": 14.67,
+      "max_quantity_by_risk": 1.02,
+      "max_quantity_by_capital": 0.78,
+      "integer_quantity_allowed_by_constraints": 0
+    }
+  },
+  "targets": [],
+  "notes": "Setup WATCH / aggressive_rebound. ARM a fortement corrige depuis la zone haute et reste tres volatil. Le support de travail est 303.67-309.80, avec invalidation sous 303.40. Entree conditionnelle uniquement sur reprise de 318.02, cloture 15m haussiere et volume correct. Aucun take profit: gestion par trailing stop uniquement. Ne pas envoyer l'ordre tant que le trailing stop broker n'est pas confirme et tant que le controle RTH risque/spread/volume n'est pas refait."
+}

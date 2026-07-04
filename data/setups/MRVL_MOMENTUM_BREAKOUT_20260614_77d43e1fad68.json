@@ -1,0 +1,151 @@
+{
+  "setup_id": "MRVL_MOMENTUM_BREAKOUT_20260614_77d43e1fad68",
+  "symbol": "MRVL",
+  "enabled": true,
+  "mode": "paper",
+  "setup_type": "momentum_breakout",
+  "setup_role": "ENTRY_AND_MANAGEMENT",
+  "direction": "long",
+  "entry": {
+    "enabled": true,
+    "order_type": "STP_LMT",
+    "trigger_offset": 0.02,
+    "limit_offset": 0.05,
+    "cancel_if_not_filled_after_minutes": 30
+  },
+  "risk": {
+    "max_position_amount_usd": 250.0,
+    "max_risk_usd": 15.0,
+    "emergency_exit_if_stop_fails": true
+  },
+  "management": {
+    "take_profit_mode": "none",
+    "never_lower_stop": true,
+    "stop_management": {
+      "mode": "step_based",
+      "steps": []
+    }
+  },
+  "targets": [],
+  "breakout": {
+    "resistance": 307.5,
+    "price_above_resistance": true,
+    "volume_above_average": 1.5,
+    "relative_strength_required": false
+  },
+  "trailing_stop_loss": {
+    "enabled": true,
+    "mode": "AUTO_INTELLIGENT",
+    "initial_stop": 305.5,
+    "current_stop": 305.5,
+    "never_lower_stop": true,
+    "stop_source": "MIGRATED_FROM_LEGACY_STOP",
+    "applies_to": "ENTRY_AND_POSITION_MANAGEMENT",
+    "migration_status": "MIGRATED_TO_TRAILING_STOP",
+    "activation": {
+      "mode": "ON_ENTRY_FILL",
+      "activate_before_entry_transmission": true,
+      "entry_order_requires_attached_trailing_stop": true
+    },
+    "calculation": {
+      "method": "HYBRID_ATR_STRUCTURE",
+      "allowed_methods": [
+        "ATR_BASED",
+        "STRUCTURE_BASED",
+        "HYBRID_ATR_STRUCTURE",
+        "PERCENT_BASED_FALLBACK"
+      ],
+      "default_method": "HYBRID_ATR_STRUCTURE",
+      "atr": {
+        "timeframe": "1h",
+        "period": 14,
+        "multiplier_initial": "AUTO",
+        "multiplier_trailing": "AUTO",
+        "min_multiplier": 1.0,
+        "max_multiplier": 3.5
+      },
+      "structure": {
+        "reference": "HIGHER_LOW_OR_SUPPORT",
+        "allowed_references": [
+          "HIGHER_LOW",
+          "INTRADAY_SUPPORT",
+          "RANGE_LOW",
+          "BROKEN_RESISTANCE_AS_SUPPORT",
+          "VWAP_PULLBACK",
+          "PREVIOUS_DAY_LOW",
+          "AUTO_SELECT"
+        ],
+        "buffer_policy": "MAX_OF_TICK_SPREAD_ATR_FRACTION",
+        "min_tick_buffer": 2,
+        "spread_buffer_multiplier": 2,
+        "atr_fraction_buffer": 0.1
+      },
+      "stock_specific_adjustment": {
+        "enabled": true,
+        "inputs": [
+          "price",
+          "atr_15m",
+          "atr_1h",
+          "average_true_range_percent",
+          "spread_bps",
+          "relative_volume",
+          "liquidity",
+          "gap_percent",
+          "intraday_range_percent",
+          "sector_volatility",
+          "distance_to_support",
+          "distance_to_breakout_level"
+        ],
+        "volatility_regime": "AUTO",
+        "liquidity_regime": "AUTO",
+        "spread_regime": "AUTO"
+      },
+      "risk_constraints": {
+        "respect_max_risk_usd": true,
+        "respect_max_position_amount_usd": true,
+        "minimum_quantity": 1,
+        "block_if_quantity_zero": true,
+        "block_if_initial_stop_above_entry_for_long": true,
+        "block_if_initial_stop_below_entry_for_short": true
+      }
+    },
+    "ratchet_rules": {
+      "enabled": true,
+      "move_only_up_for_long": true,
+      "move_only_down_for_short": true,
+      "update_on_closed_bar_only": true,
+      "timeframe": "15m",
+      "min_improvement_required": "AUTO",
+      "min_improvement_atr_fraction": 0.15,
+      "do_not_lower_stop": true,
+      "do_not_update_outside_rth": true,
+      "do_not_update_if_spread_wide": true,
+      "do_not_update_on_unconfirmed_intrabar_move": true,
+      "allow_break_even_move": true,
+      "break_even_policy": {
+        "enabled": true,
+        "trigger_after_profit_r_multiple": 1.0,
+        "new_stop": "ENTRY_PRICE_PLUS_FEES_BUFFER"
+      }
+    },
+    "broker_order": {
+      "order_type": "TRAIL_OR_MANAGED_STOP",
+      "attach_to_entry_order": true,
+      "required_before_entry_transmission": true,
+      "use_native_ibkr_trailing_order_if_available": true,
+      "fallback_to_managed_stop_updates": true,
+      "parent_child_bracket_required": true,
+      "entry_parent_transmit": false,
+      "trailing_stop_child_transmit": true,
+      "block_if_broker_stop_not_confirmed": true
+    },
+    "audit": {
+      "record_initial_stop_calculation": true,
+      "record_each_stop_update": true,
+      "record_reason": true,
+      "record_old_stop": true,
+      "record_new_stop": true,
+      "record_broker_order_id": true
+    }
+  }
+}

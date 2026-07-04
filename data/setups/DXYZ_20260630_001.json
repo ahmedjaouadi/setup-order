@@ -1,0 +1,177 @@
+{
+  "setup_id": "DXYZ_20260630_001",
+  "symbol": "DXYZ",
+  "enabled": true,
+  "mode": "paper",
+  "setup_type": "range_breakout",
+  "setup_role": "ENTRY_AND_MANAGEMENT",
+  "direction": "long",
+  "timeframes": {
+    "signal": "15m",
+    "confirmation": "1d"
+  },
+  "entry": {
+    "enabled": true,
+    "order_type": "STP_LMT",
+    "trigger_offset": 0.02,
+    "limit_offset": 0.05,
+    "trigger_price": 28.52,
+    "entry_price": 28.52,
+    "limit_price": 28.57,
+    "maximum_limit_price": 28.57,
+    "cancel_if_not_filled_after_minutes": 30
+  },
+  "risk": {
+    "max_position_amount_usd": 250,
+    "max_risk_usd": 15,
+    "emergency_exit_if_stop_fails": true
+  },
+  "management": {
+    "take_profit_mode": "none",
+    "never_lower_stop": true,
+    "stop_management": {
+      "mode": "none",
+      "never_lower_stop": true,
+      "trail_type": "ATR_OR_STRUCTURE",
+      "atr_timeframe": "1h",
+      "atr_multiplier": 1.5,
+      "steps": []
+    }
+  },
+  "range": {
+    "high": 28.5,
+    "low": 23.7,
+    "breakout_side": "up",
+    "require_close_outside_range": true
+  },
+  "volume_confirmation": {
+    "enabled": true,
+    "signal_timeframe": "15m",
+    "comparison_mode": "SAME_TIME_OF_DAY",
+    "average_sample_days": 20,
+    "fast_volume_ratio_min": 1.5,
+    "normal_volume_ratio_min": 1,
+    "confirmed_volume_ratio_min": 0.8,
+    "confirmed_hold_bars": 2,
+    "close_above_level_required": true,
+    "reject_detection_enabled": true,
+    "max_upper_wick_ratio": 0.5
+  },
+  "targets": [],
+  "notes": "Setup choisi: range_breakout, car DXYZ est encore en reconstruction après une forte volatilité et le plan le plus propre est une cassure confirmée du range 23.70-28.50, pas une entrée immédiate. Dernier prix disponible: 26.20; donc entrée seulement si clôture 15m au-dessus de 28.50 avec trigger 28.52 et limite 28.57. Stop initial 26.60 pour éviter une perte excessive avec max_risk_usd=15. Ne pas chasser au-dessus de 28.57. Template utilisateur respecté: . Prix actuel: .",
+  "trailing_stop_loss": {
+    "enabled": true,
+    "mode": "AUTO_INTELLIGENT",
+    "initial_stop": 26.6,
+    "current_stop": 26.6,
+    "never_lower_stop": true,
+    "stop_source": "MIGRATED_FROM_LEGACY_STOP",
+    "applies_to": "ENTRY_AND_POSITION_MANAGEMENT",
+    "migration_status": "MIGRATED_TO_TRAILING_STOP",
+    "activation": {
+      "mode": "ON_ENTRY_FILL",
+      "activate_before_entry_transmission": true,
+      "entry_order_requires_attached_trailing_stop": true
+    },
+    "calculation": {
+      "method": "HYBRID_ATR_STRUCTURE",
+      "allowed_methods": [
+        "ATR_BASED",
+        "STRUCTURE_BASED",
+        "HYBRID_ATR_STRUCTURE",
+        "PERCENT_BASED_FALLBACK"
+      ],
+      "default_method": "HYBRID_ATR_STRUCTURE",
+      "atr": {
+        "timeframe": "1h",
+        "period": 14,
+        "multiplier_initial": "AUTO",
+        "multiplier_trailing": "AUTO",
+        "min_multiplier": 1.0,
+        "max_multiplier": 3.5
+      },
+      "structure": {
+        "reference": "HIGHER_LOW_OR_SUPPORT",
+        "allowed_references": [
+          "HIGHER_LOW",
+          "INTRADAY_SUPPORT",
+          "RANGE_LOW",
+          "BROKEN_RESISTANCE_AS_SUPPORT",
+          "VWAP_PULLBACK",
+          "PREVIOUS_DAY_LOW",
+          "AUTO_SELECT"
+        ],
+        "buffer_policy": "MAX_OF_TICK_SPREAD_ATR_FRACTION",
+        "min_tick_buffer": 2,
+        "spread_buffer_multiplier": 2,
+        "atr_fraction_buffer": 0.1
+      },
+      "stock_specific_adjustment": {
+        "enabled": true,
+        "inputs": [
+          "price",
+          "atr_15m",
+          "atr_1h",
+          "average_true_range_percent",
+          "spread_bps",
+          "relative_volume",
+          "liquidity",
+          "gap_percent",
+          "intraday_range_percent",
+          "sector_volatility",
+          "distance_to_support",
+          "distance_to_breakout_level"
+        ],
+        "volatility_regime": "AUTO",
+        "liquidity_regime": "AUTO",
+        "spread_regime": "AUTO"
+      },
+      "risk_constraints": {
+        "respect_max_risk_usd": true,
+        "respect_max_position_amount_usd": true,
+        "minimum_quantity": 1,
+        "block_if_quantity_zero": true,
+        "block_if_initial_stop_above_entry_for_long": true,
+        "block_if_initial_stop_below_entry_for_short": true
+      }
+    },
+    "ratchet_rules": {
+      "enabled": true,
+      "move_only_up_for_long": true,
+      "move_only_down_for_short": true,
+      "update_on_closed_bar_only": true,
+      "timeframe": "15m",
+      "min_improvement_required": "AUTO",
+      "min_improvement_atr_fraction": 0.15,
+      "do_not_lower_stop": true,
+      "do_not_update_outside_rth": true,
+      "do_not_update_if_spread_wide": true,
+      "do_not_update_on_unconfirmed_intrabar_move": true,
+      "allow_break_even_move": true,
+      "break_even_policy": {
+        "enabled": true,
+        "trigger_after_profit_r_multiple": 1.0,
+        "new_stop": "ENTRY_PRICE_PLUS_FEES_BUFFER"
+      }
+    },
+    "broker_order": {
+      "order_type": "TRAIL_OR_MANAGED_STOP",
+      "attach_to_entry_order": true,
+      "required_before_entry_transmission": true,
+      "use_native_ibkr_trailing_order_if_available": true,
+      "fallback_to_managed_stop_updates": true,
+      "parent_child_bracket_required": true,
+      "entry_parent_transmit": false,
+      "trailing_stop_child_transmit": true,
+      "block_if_broker_stop_not_confirmed": true
+    },
+    "audit": {
+      "record_initial_stop_calculation": true,
+      "record_each_stop_update": true,
+      "record_reason": true,
+      "record_old_stop": true,
+      "record_new_stop": true,
+      "record_broker_order_id": true
+    }
+  }
+}

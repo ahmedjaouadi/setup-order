@@ -1,0 +1,293 @@
+{
+  "schema_version": "2.0.0",
+  "setup_id": "JOBY_20260703_001",
+  "symbol": "JOBY",
+  "enabled": true,
+  "mode": "paper",
+  "setup_type": "aggressive_rebound",
+  "setup_role": "ENTRY_AND_MANAGEMENT",
+  "direction": "long",
+  "timeframes": {
+    "signal": "15m",
+    "confirmation": "1d",
+    "trailing_management": "15m",
+    "atr_reference": "1h"
+  },
+  "entry": {
+    "enabled": true,
+    "order_type": "STP_LMT",
+    "trigger_offset": 0.02,
+    "limit_offset": 0.05,
+    "trigger_price": 8.72,
+    "entry_price": 8.72,
+    "limit_price": 8.77,
+    "maximum_limit_price": 8.77,
+    "cancel_if_not_filled_after_minutes": 30,
+    "requires_trailing_stop_before_transmission": true
+  },
+  "risk": {
+    "max_position_amount_usd": 250,
+    "max_risk_usd": 15,
+    "risk_model": "TRAILING_STOP_INITIAL_RISK",
+    "emergency_exit_if_stop_fails": true,
+    "block_entry_if_risk_unknown": true,
+    "block_entry_if_trailing_stop_missing": true,
+    "estimated_max_quantity": 25,
+    "estimated_worst_case_entry_price": 8.77,
+    "estimated_initial_risk_per_share": 0.59,
+    "estimated_max_risk_usd": 14.75
+  },
+  "trailing_stop_loss": {
+    "enabled": true,
+    "mode": "AUTO_INTELLIGENT",
+    "initial_stop": 8.18,
+    "current_stop": 8.18,
+    "never_lower_stop": true,
+    "stop_source": "STRUCTURE_BASED_INITIAL_THEN_AUTO_TRAILING",
+    "applies_to": "ENTRY_AND_POSITION_MANAGEMENT",
+    "migration_status": "MIGRATED_TO_TRAILING_STOP",
+    "activation": {
+      "mode": "ON_ENTRY_FILL",
+      "activate_before_entry_transmission": true,
+      "entry_order_requires_attached_trailing_stop": true
+    },
+    "calculation": {
+      "method": "HYBRID_ATR_STRUCTURE",
+      "allowed_methods": [
+        "ATR_BASED",
+        "STRUCTURE_BASED",
+        "HYBRID_ATR_STRUCTURE",
+        "PERCENT_BASED_FALLBACK"
+      ],
+      "default_method": "HYBRID_ATR_STRUCTURE",
+      "atr": {
+        "timeframe": "1h",
+        "period": 14,
+        "multiplier_initial": 1.5,
+        "multiplier_trailing": 1.5,
+        "min_multiplier": 1,
+        "max_multiplier": 3.5
+      },
+      "structure": {
+        "reference": "INTRADAY_SUPPORT",
+        "allowed_references": [
+          "HIGHER_LOW",
+          "INTRADAY_SUPPORT",
+          "RANGE_LOW",
+          "BROKEN_RESISTANCE_AS_SUPPORT",
+          "VWAP_PULLBACK",
+          "PREVIOUS_DAY_LOW",
+          "AUTO_SELECT"
+        ],
+        "buffer_policy": "MAX_OF_TICK_SPREAD_ATR_FRACTION",
+        "min_tick_buffer": 2,
+        "spread_buffer_multiplier": 2,
+        "atr_fraction_buffer": 0.1,
+        "support_reference_price": 8.31
+      },
+      "stock_specific_adjustment": {
+        "enabled": true,
+        "inputs": [
+          "price",
+          "atr_15m",
+          "atr_1h",
+          "average_true_range_percent",
+          "spread_bps",
+          "relative_volume",
+          "liquidity",
+          "gap_percent",
+          "intraday_range_percent",
+          "sector_volatility",
+          "distance_to_support",
+          "distance_to_breakout_level"
+        ],
+        "volatility_regime": "HIGH",
+        "liquidity_regime": "GOOD",
+        "spread_regime": "NORMAL"
+      },
+      "risk_constraints": {
+        "respect_max_risk_usd": true,
+        "respect_max_position_amount_usd": true,
+        "minimum_quantity": 1,
+        "block_if_quantity_zero": true,
+        "block_if_initial_stop_above_entry_for_long": true,
+        "block_if_initial_stop_below_entry_for_short": true
+      }
+    },
+    "ratchet_rules": {
+      "enabled": true,
+      "move_only_up_for_long": true,
+      "move_only_down_for_short": true,
+      "update_on_closed_bar_only": true,
+      "timeframe": "15m",
+      "min_improvement_required": 0.05,
+      "min_improvement_atr_fraction": 0.15,
+      "do_not_lower_stop": true,
+      "do_not_update_outside_rth": true,
+      "do_not_update_if_spread_wide": true,
+      "do_not_update_on_unconfirmed_intrabar_move": true,
+      "allow_break_even_move": true,
+      "break_even_policy": {
+        "enabled": true,
+        "trigger_after_profit_r_multiple": 1,
+        "new_stop": "ENTRY_PRICE_PLUS_FEES_BUFFER"
+      }
+    },
+    "broker_order": {
+      "order_type": "TRAIL_OR_MANAGED_STOP",
+      "attach_to_entry_order": true,
+      "required_before_entry_transmission": true,
+      "use_native_ibkr_trailing_order_if_available": true,
+      "fallback_to_managed_stop_updates": true,
+      "parent_child_bracket_required": true,
+      "entry_parent_transmit": false,
+      "trailing_stop_child_transmit": true,
+      "block_if_broker_stop_not_confirmed": true,
+      "trailing_stop_order_ready": false
+    },
+    "audit": {
+      "record_initial_stop_calculation": true,
+      "record_each_stop_update": true,
+      "record_reason": true,
+      "record_old_stop": true,
+      "record_new_stop": true,
+      "record_broker_order_id": true
+    }
+  },
+  "management": {
+    "take_profit_mode": "none",
+    "never_lower_stop": true,
+    "position_management_mode": "TRAILING_STOP_ONLY",
+    "stop_management": {
+      "mode": "TRAILING_STOP_LOSS",
+      "source": "trailing_stop_loss",
+      "never_lower_stop": true,
+      "trail_type": "ATR_OR_STRUCTURE",
+      "atr_timeframe": "1h",
+      "atr_multiplier": 1.5,
+      "steps": [
+        {
+          "step": 1,
+          "trigger_type": "CANDLE_CLOSE_ABOVE",
+          "timeframe": "15m",
+          "price": 9.1,
+          "hold_bars": 1,
+          "action": "ALLOW_BREAK_EVEN_MOVE"
+        },
+        {
+          "step": 2,
+          "trigger_type": "CANDLE_CLOSE_ABOVE",
+          "timeframe": "15m",
+          "price": 9.5,
+          "hold_bars": 2,
+          "action": "TRAIL_STOP_BELOW_LAST_15M_HIGHER_LOW"
+        },
+        {
+          "step": 3,
+          "trigger_type": "CONFIRMED_BREAKOUT",
+          "timeframe": "15m",
+          "price": 10.25,
+          "hold_bars": 2,
+          "action": "TIGHTEN_TRAILING_STOP_ATR_MULTIPLIER",
+          "new_atr_multiplier": 1.25
+        },
+        {
+          "step": 4,
+          "trigger_type": "CONFIRMED_BREAKOUT",
+          "timeframe": "1h",
+          "price": 11.0,
+          "hold_bars": 1,
+          "action": "ENABLE_TRAILING_HIGHER_LOWS"
+        }
+      ]
+    }
+  },
+  "volume_confirmation": {
+    "enabled": true,
+    "signal_timeframe": "15m",
+    "comparison_mode": "SAME_TIME_OF_DAY",
+    "average_sample_days": 20,
+    "fast_volume_ratio_min": 1.2,
+    "normal_volume_ratio_min": 1.0,
+    "confirmed_volume_ratio_min": 0.8,
+    "confirmed_hold_bars": 1,
+    "close_above_level_required": true,
+    "reject_detection_enabled": true,
+    "max_upper_wick_ratio": 0.5
+  },
+  "support_zone": {
+    "min": 8.3,
+    "max": 8.5,
+    "invalidation_below": 8.18
+  },
+  "rebound_confirmation": {
+    "require_bullish_candle": true,
+    "require_volume_confirmation": true,
+    "confirmation_timeframe": "15m"
+  },
+  "trend_filter": {
+    "enabled": false,
+    "required_trend": "not_required_for_aggressive_rebound"
+  },
+  "position_source": {
+    "mode": "new_entry",
+    "require_existing_position": false,
+    "account_position_must_match_direction": true
+  },
+  "anti_chase": {
+    "enabled": true,
+    "max_price_above_entry_percent": 1.5,
+    "action_if_too_far": "MISSED_REBOUND_WAIT_RETEST",
+    "block_entry_if_price_above_maximum_limit": true
+  },
+  "session_policy": {
+    "enabled": true,
+    "require_regular_trading_hours_for_entry": true,
+    "allow_premarket_entry": false,
+    "allow_after_hours_entry": false,
+    "wait_after_open_minutes": 30,
+    "wait_closed_bars_after_open": 2,
+    "wait_bars_timeframe": "15m",
+    "require_rth_volume_confirmation": true,
+    "require_rth_spread_check": true,
+    "require_rth_risk_recalculation": true,
+    "extended_hours": {
+      "allow_detection": true,
+      "allow_auto_execution": false,
+      "allow_manual_review": true
+    }
+  },
+  "broker_safety": {
+    "require_broker_tracker": true,
+    "block_if_broker_tracker_stale": true,
+    "block_if_tws_disconnected": true,
+    "block_if_position_without_stop": true,
+    "block_if_entry_order_without_trailing_stop": true,
+    "block_if_reconciliation_mismatch": true
+  },
+  "entry_decision": {
+    "status": "WAITING_ACTIVATION",
+    "decision": "NO_ENTRY",
+    "can_send_order": false,
+    "display_title": "JOBY aggressive rebound en attente",
+    "display_message": "Attendre défense de la zone 8.30-8.50 puis reprise 8.72 en 15m avec volume. Ne pas transmettre l'ordre tant que le trailing stop broker n'est pas prêt.",
+    "next_action": "WAIT_FOR_15M_BULLISH_RECLAIM_ABOVE_8_72",
+    "blocking_reasons": [
+      "TRAILING_STOP_ORDER_NOT_READY",
+      "ENTRY_TRIGGER_NOT_CONFIRMED"
+    ],
+    "warnings": [
+      "SETUP_AGGRESSIVE_REBOUND_HIGH_VOLATILITY",
+      "DO_NOT_CHASE_ABOVE_8_77"
+    ],
+    "planned_vs_current_risk": {
+      "worst_case_entry_price": 8.77,
+      "initial_stop": 8.18,
+      "risk_per_share": 0.59,
+      "estimated_quantity": 25,
+      "estimated_total_risk_usd": 14.75
+    }
+  },
+  "targets": [],
+  "notes": "Setup agressif conditionnel. JOBY doit défendre la zone 8.30-8.50 puis reprendre 8.72 en clôture 15m. Invalidation si clôture 15m sous 8.18 avant activation. La protection principale est trailing_stop_loss.initial_stop, pas risk.initial_stop_loss."
+}

@@ -1,0 +1,258 @@
+{
+  "schema_version": "2.0.0",
+  "setup_id": "QBTS_20260703_001",
+  "symbol": "QBTS",
+  "enabled": true,
+  "mode": "paper",
+  "setup_type": "range_breakout",
+  "setup_role": "ENTRY_AND_MANAGEMENT",
+  "direction": "long",
+  "timeframes": {
+    "signal": "15m",
+    "confirmation": "1d",
+    "trailing_management": "15m",
+    "atr_reference": "1h"
+  },
+  "entry": {
+    "enabled": true,
+    "order_type": "STP_LMT",
+    "trigger_offset": 0.02,
+    "limit_offset": 0.05,
+    "trigger_price": 24.72,
+    "entry_price": 24.72,
+    "limit_price": 24.77,
+    "maximum_limit_price": 24.77,
+    "cancel_if_not_filled_after_minutes": 30,
+    "requires_trailing_stop_before_transmission": true
+  },
+  "risk": {
+    "max_position_amount_usd": 250,
+    "max_risk_usd": 15,
+    "risk_model": "TRAILING_STOP_INITIAL_RISK",
+    "emergency_exit_if_stop_fails": true,
+    "block_entry_if_risk_unknown": true,
+    "block_entry_if_trailing_stop_missing": true,
+    "sizing": {
+      "risk_per_share_usd": 2.47,
+      "max_quantity_by_risk": 6,
+      "max_quantity_by_position_amount": 10,
+      "maximum_quantity": 6,
+      "planned_position_amount_usd": 148.32,
+      "planned_initial_risk_usd": 14.82
+    }
+  },
+  "trailing_stop_loss": {
+    "enabled": true,
+    "mode": "AUTO_INTELLIGENT",
+    "initial_stop": 22.25,
+    "current_stop": 22.25,
+    "never_lower_stop": true,
+    "stop_source": "STRUCTURE_BASED_RANGE_LOW_BUFFER",
+    "applies_to": "ENTRY_AND_POSITION_MANAGEMENT",
+    "migration_status": "MIGRATED_TO_TRAILING_STOP",
+    "activation": {
+      "mode": "ON_ENTRY_FILL",
+      "activate_before_entry_transmission": true,
+      "entry_order_requires_attached_trailing_stop": true
+    },
+    "calculation": {
+      "method": "HYBRID_ATR_STRUCTURE",
+      "allowed_methods": [
+        "ATR_BASED",
+        "STRUCTURE_BASED",
+        "HYBRID_ATR_STRUCTURE",
+        "PERCENT_BASED_FALLBACK"
+      ],
+      "default_method": "HYBRID_ATR_STRUCTURE",
+      "atr": {
+        "timeframe": "1h",
+        "period": 14,
+        "multiplier_initial": 1.5,
+        "multiplier_trailing": 1.5,
+        "min_multiplier": 1,
+        "max_multiplier": 3.5
+      },
+      "structure": {
+        "reference": "RANGE_LOW",
+        "allowed_references": [
+          "HIGHER_LOW",
+          "INTRADAY_SUPPORT",
+          "RANGE_LOW",
+          "BROKEN_RESISTANCE_AS_SUPPORT",
+          "VWAP_PULLBACK",
+          "PREVIOUS_DAY_LOW",
+          "AUTO_SELECT"
+        ],
+        "buffer_policy": "MAX_OF_TICK_SPREAD_ATR_FRACTION",
+        "min_tick_buffer": 2,
+        "spread_buffer_multiplier": 2,
+        "atr_fraction_buffer": 0.1,
+        "structure_level": 22.31,
+        "buffer_used": 0.06
+      },
+      "stock_specific_adjustment": {
+        "enabled": true,
+        "inputs": [
+          "price",
+          "atr_15m",
+          "atr_1h",
+          "average_true_range_percent",
+          "spread_bps",
+          "relative_volume",
+          "liquidity",
+          "gap_percent",
+          "intraday_range_percent",
+          "sector_volatility",
+          "distance_to_support",
+          "distance_to_breakout_level"
+        ],
+        "volatility_regime": "AUTO",
+        "liquidity_regime": "AUTO",
+        "spread_regime": "AUTO"
+      },
+      "risk_constraints": {
+        "respect_max_risk_usd": true,
+        "respect_max_position_amount_usd": true,
+        "minimum_quantity": 1,
+        "block_if_quantity_zero": true,
+        "block_if_initial_stop_above_entry_for_long": true,
+        "block_if_initial_stop_below_entry_for_short": true
+      }
+    },
+    "ratchet_rules": {
+      "enabled": true,
+      "move_only_up_for_long": true,
+      "move_only_down_for_short": true,
+      "update_on_closed_bar_only": true,
+      "timeframe": "15m",
+      "min_improvement_required": 0.35,
+      "min_improvement_atr_fraction": 0.15,
+      "do_not_lower_stop": true,
+      "do_not_update_outside_rth": true,
+      "do_not_update_if_spread_wide": true,
+      "do_not_update_on_unconfirmed_intrabar_move": true,
+      "allow_break_even_move": true,
+      "break_even_policy": {
+        "enabled": true,
+        "trigger_after_profit_r_multiple": 1,
+        "new_stop": "ENTRY_PRICE_PLUS_FEES_BUFFER"
+      }
+    },
+    "broker_order": {
+      "order_type": "TRAIL_OR_MANAGED_STOP",
+      "attach_to_entry_order": true,
+      "required_before_entry_transmission": true,
+      "use_native_ibkr_trailing_order_if_available": true,
+      "fallback_to_managed_stop_updates": true,
+      "parent_child_bracket_required": true,
+      "entry_parent_transmit": false,
+      "trailing_stop_child_transmit": true,
+      "block_if_broker_stop_not_confirmed": true,
+      "trailing_stop_order_ready": false
+    },
+    "audit": {
+      "record_initial_stop_calculation": true,
+      "record_each_stop_update": true,
+      "record_reason": true,
+      "record_old_stop": true,
+      "record_new_stop": true,
+      "record_broker_order_id": true
+    }
+  },
+  "management": {
+    "take_profit_mode": "none",
+    "never_lower_stop": true,
+    "position_management_mode": "TRAILING_STOP_ONLY",
+    "stop_management": {
+      "mode": "TRAILING_STOP_LOSS",
+      "source": "trailing_stop_loss",
+      "never_lower_stop": true,
+      "steps": [],
+      "trail_type": "ATR_OR_STRUCTURE",
+      "atr_timeframe": "1h",
+      "atr_multiplier": 1.5
+    }
+  },
+  "range": {
+    "high": 24.7,
+    "low": 22.31,
+    "breakout_side": "up",
+    "require_close_outside_range": true
+  },
+  "volume_confirmation": {
+    "enabled": true,
+    "signal_timeframe": "15m",
+    "comparison_mode": "SAME_TIME_OF_DAY",
+    "average_sample_days": 20,
+    "fast_volume_ratio_min": 1.5,
+    "normal_volume_ratio_min": 1,
+    "confirmed_volume_ratio_min": 0.8,
+    "confirmed_hold_bars": 2,
+    "close_above_level_required": true,
+    "reject_detection_enabled": true,
+    "max_upper_wick_ratio": 0.5,
+    "required_for_entry": false,
+    "weak_volume_action": "WARNING_ONLY"
+  },
+  "trend_filter": {
+    "enabled": true,
+    "required_trend": "uptrend"
+  },
+  "anti_chase": {
+    "enabled": true,
+    "max_price_above_entry_percent": 1.5,
+    "action_if_too_far": "MISSED_BREAKOUT_WAIT_RETEST",
+    "block_entry_if_price_above_maximum_limit": true
+  },
+  "session_policy": {
+    "enabled": true,
+    "require_regular_trading_hours_for_entry": true,
+    "allow_premarket_entry": false,
+    "allow_after_hours_entry": false,
+    "wait_after_open_minutes": 30,
+    "wait_closed_bars_after_open": 2,
+    "wait_bars_timeframe": "15m",
+    "require_rth_volume_confirmation": true,
+    "require_rth_spread_check": true,
+    "require_rth_risk_recalculation": true,
+    "extended_hours": {
+      "allow_detection": true,
+      "allow_auto_execution": false,
+      "allow_manual_review": true
+    }
+  },
+  "broker_safety": {
+    "require_broker_tracker": true,
+    "block_if_broker_tracker_stale": true,
+    "block_if_tws_disconnected": true,
+    "block_if_position_without_stop": true,
+    "block_if_entry_order_without_trailing_stop": true,
+    "block_if_reconciliation_mismatch": true
+  },
+  "entry_decision": {
+    "status": "WAITING_FOR_TRIGGER",
+    "decision": "NO_ENTRY",
+    "can_send_order": false,
+    "display_title": "QBTS range breakout conditionnel",
+    "display_message": "Pas d'ordre maintenant. Attendre une clôture 15m au-dessus de 24.70, puis entrée STP_LMT à 24.72 avec limite 24.77. Le trailing stop initial doit être prêt avant transmission.",
+    "next_action": "WAIT_FOR_15M_CLOSE_ABOVE_RANGE_HIGH_AND_PREPARE_ATTACHED_TRAILING_STOP",
+    "blocking_reasons": [
+      "PRICE_BELOW_TRIGGER",
+      "TRAILING_STOP_ORDER_NOT_READY",
+      "BROKER_STOP_CONFIRMATION_REQUIRED"
+    ],
+    "warnings": [
+      "QBTS reste très volatil; éviter l'entrée si rejet sous 24.70 ou mèche haute supérieure à 50%.",
+      "Désactiver le setup si clôture 15m sous 22.25 avant déclenchement."
+    ],
+    "planned_vs_current_risk": {
+      "planned_entry_price": 24.72,
+      "planned_initial_stop": 22.25,
+      "planned_risk_per_share_usd": 2.47,
+      "maximum_quantity": 6,
+      "planned_initial_risk_usd": 14.82
+    }
+  },
+  "targets": [],
+  "notes": "Setup choisi: range_breakout. QBTS est actuellement sous le trigger et a rejeté la zone haute intraday; le plan propre est d'attendre une cassure confirmée du range 22.31-24.70. Aucune entrée tant que le prix ne clôture pas en 15m au-dessus de 24.70. Entrée STP_LMT 24.72/24.77 uniquement avec trailing stop attaché et confirmé. Le stop initial du trailing stop est placé à 22.25, sous le bas du range récent. Prix de référence récent utilisé: 22.53, high intraday 24.66, low intraday 22.31. Source format/template utilisateur: . Source prix marché: ."
+}

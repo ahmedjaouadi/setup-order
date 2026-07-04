@@ -1,0 +1,268 @@
+{
+  "schema_version": "2.0.0",
+  "setup_id": "QCOM_20260703_001",
+  "symbol": "QCOM",
+  "enabled": true,
+  "mode": "paper",
+  "setup_type": "aggressive_rebound",
+  "setup_role": "ENTRY_AND_MANAGEMENT",
+  "direction": "long",
+  "timeframes": {
+    "signal": "15m",
+    "confirmation": "1d",
+    "trailing_management": "15m",
+    "atr_reference": "1h"
+  },
+  "entry": {
+    "enabled": true,
+    "order_type": "STP_LMT",
+    "allowed_order_types": [
+      "STP_LMT",
+      "LMT",
+      "MKT_PROTECTED_BY_TRAILING_STOP"
+    ],
+    "trigger_offset": 0.02,
+    "limit_offset": 0.05,
+    "trigger_price": 180.02,
+    "entry_price": 180.02,
+    "limit_price": 180.07,
+    "maximum_limit_price": 180.07,
+    "cancel_if_not_filled_after_minutes": 30,
+    "requires_trailing_stop_before_transmission": true
+  },
+  "risk": {
+    "max_position_amount_usd": 250,
+    "max_risk_usd": 15,
+    "risk_model": "TRAILING_STOP_INITIAL_RISK",
+    "calculated_max_quantity_by_amount": 1,
+    "calculated_max_quantity_by_risk": 1,
+    "final_max_quantity": 1,
+    "planned_entry_price": 180.02,
+    "planned_initial_stop": 171.2,
+    "planned_risk_per_share": 8.82,
+    "planned_position_amount_usd": 180.02,
+    "planned_total_risk_usd": 8.82,
+    "emergency_exit_if_stop_fails": true,
+    "block_entry_if_risk_unknown": true,
+    "block_entry_if_trailing_stop_missing": true
+  },
+  "trailing_stop_loss": {
+    "enabled": true,
+    "mode": "AUTO_INTELLIGENT",
+    "initial_stop": 171.2,
+    "current_stop": 171.2,
+    "never_lower_stop": true,
+    "stop_source": "AUTO_CALCULATED",
+    "applies_to": "ENTRY_AND_POSITION_MANAGEMENT",
+    "migration_status": "MIGRATED_TO_TRAILING_STOP",
+    "activation": {
+      "mode": "ON_ENTRY_FILL",
+      "activate_before_entry_transmission": true,
+      "entry_order_requires_attached_trailing_stop": true
+    },
+    "calculation": {
+      "method": "HYBRID_ATR_STRUCTURE",
+      "allowed_methods": [
+        "ATR_BASED",
+        "STRUCTURE_BASED",
+        "HYBRID_ATR_STRUCTURE",
+        "PERCENT_BASED_FALLBACK"
+      ],
+      "default_method": "HYBRID_ATR_STRUCTURE",
+      "atr": {
+        "timeframe": "1h",
+        "period": 14,
+        "multiplier_initial": 1.8,
+        "multiplier_trailing": 1.5,
+        "min_multiplier": 1,
+        "max_multiplier": 3.5
+      },
+      "structure": {
+        "reference": "INTRADAY_SUPPORT",
+        "allowed_references": [
+          "HIGHER_LOW",
+          "INTRADAY_SUPPORT",
+          "RANGE_LOW",
+          "BROKEN_RESISTANCE_AS_SUPPORT",
+          "VWAP_PULLBACK",
+          "PREVIOUS_DAY_LOW",
+          "AUTO_SELECT"
+        ],
+        "buffer_policy": "MAX_OF_TICK_SPREAD_ATR_FRACTION",
+        "min_tick_buffer": 2,
+        "spread_buffer_multiplier": 2,
+        "atr_fraction_buffer": 0.1,
+        "structure_level": 172.21,
+        "buffer": 1.01
+      },
+      "stock_specific_adjustment": {
+        "enabled": true,
+        "inputs": [
+          "price",
+          "atr_15m",
+          "atr_1h",
+          "average_true_range_percent",
+          "spread_bps",
+          "relative_volume",
+          "liquidity",
+          "gap_percent",
+          "intraday_range_percent",
+          "sector_volatility",
+          "distance_to_support",
+          "distance_to_breakout_level"
+        ],
+        "volatility_regime": "HIGH",
+        "liquidity_regime": "LIQUID",
+        "spread_regime": "AUTO"
+      },
+      "risk_constraints": {
+        "respect_max_risk_usd": true,
+        "respect_max_position_amount_usd": true,
+        "minimum_quantity": 1,
+        "block_if_quantity_zero": true,
+        "block_if_initial_stop_above_entry_for_long": true,
+        "block_if_initial_stop_below_entry_for_short": true
+      }
+    },
+    "ratchet_rules": {
+      "enabled": true,
+      "move_only_up_for_long": true,
+      "move_only_down_for_short": true,
+      "update_on_closed_bar_only": true,
+      "timeframe": "15m",
+      "min_improvement_required": "AUTO",
+      "min_improvement_atr_fraction": 0.15,
+      "do_not_lower_stop": true,
+      "do_not_update_outside_rth": true,
+      "do_not_update_if_spread_wide": true,
+      "do_not_update_on_unconfirmed_intrabar_move": true,
+      "allow_break_even_move": true,
+      "break_even_policy": {
+        "enabled": true,
+        "trigger_after_profit_r_multiple": 1,
+        "new_stop": "ENTRY_PRICE_PLUS_FEES_BUFFER"
+      }
+    },
+    "broker_order": {
+      "order_type": "TRAIL_OR_MANAGED_STOP",
+      "attach_to_entry_order": true,
+      "required_before_entry_transmission": true,
+      "use_native_ibkr_trailing_order_if_available": true,
+      "fallback_to_managed_stop_updates": true,
+      "parent_child_bracket_required": true,
+      "entry_parent_transmit": false,
+      "trailing_stop_child_transmit": true,
+      "block_if_broker_stop_not_confirmed": true,
+      "trailing_stop_order_ready": false
+    },
+    "audit": {
+      "record_initial_stop_calculation": true,
+      "record_each_stop_update": true,
+      "record_reason": true,
+      "record_old_stop": true,
+      "record_new_stop": true,
+      "record_broker_order_id": true
+    }
+  },
+  "management": {
+    "take_profit_mode": "none",
+    "never_lower_stop": true,
+    "position_management_mode": "TRAILING_STOP_ONLY",
+    "stop_management": {
+      "mode": "TRAILING_STOP_LOSS",
+      "source": "trailing_stop_loss",
+      "never_lower_stop": true,
+      "steps": [],
+      "trail_type": "ATR_OR_STRUCTURE",
+      "atr_timeframe": "1h",
+      "atr_multiplier": 1.5
+    }
+  },
+  "support_zone": {
+    "min": 172.2,
+    "max": 176.5,
+    "invalidation_below": 171.2
+  },
+  "rebound_confirmation": {
+    "require_bullish_candle": true,
+    "require_volume_confirmation": true,
+    "confirmation_timeframe": "15m"
+  },
+  "volume_confirmation": {
+    "enabled": true,
+    "signal_timeframe": "15m",
+    "comparison_mode": "SAME_TIME_OF_DAY",
+    "average_sample_days": 20,
+    "fast_volume_ratio_min": 1.5,
+    "normal_volume_ratio_min": 1,
+    "confirmed_volume_ratio_min": 0.8,
+    "confirmed_hold_bars": 2,
+    "close_above_level_required": true,
+    "reject_detection_enabled": true,
+    "max_upper_wick_ratio": 0.5
+  },
+  "trend_filter": {
+    "enabled": false,
+    "required_trend": "uptrend",
+    "reason": "QCOM est en correction forte; ce setup est un rebond agressif conditionnel, pas une continuation de tendance."
+  },
+  "anti_chase": {
+    "enabled": true,
+    "max_price_above_entry_percent": 1.5,
+    "action_if_too_far": "MISSED_BREAKOUT_WAIT_RETEST",
+    "block_entry_if_price_above_maximum_limit": true
+  },
+  "session_policy": {
+    "enabled": true,
+    "require_regular_trading_hours_for_entry": true,
+    "allow_premarket_entry": false,
+    "allow_after_hours_entry": false,
+    "wait_after_open_minutes": 30,
+    "wait_closed_bars_after_open": 2,
+    "wait_bars_timeframe": "15m",
+    "require_rth_volume_confirmation": true,
+    "require_rth_spread_check": true,
+    "require_rth_risk_recalculation": true,
+    "extended_hours": {
+      "allow_detection": true,
+      "allow_auto_execution": false,
+      "allow_manual_review": true
+    }
+  },
+  "broker_safety": {
+    "require_broker_tracker": true,
+    "block_if_broker_tracker_stale": true,
+    "block_if_tws_disconnected": true,
+    "block_if_position_without_stop": true,
+    "block_if_entry_order_without_trailing_stop": true,
+    "block_if_reconciliation_mismatch": true
+  },
+  "entry_decision": {
+    "status": "WAITING_FOR_RECLAIM",
+    "decision": "NO_ENTRY",
+    "can_send_order": false,
+    "display_title": "QCOM - rebond agressif conditionnel",
+    "display_message": "Pas d'entrée maintenant. Attendre un reclaim de 180.00 avec clôture 15m bullish, volume confirmé et trailing stop broker prêt.",
+    "next_action": "ARM_AFTER_15M_CLOSE_ABOVE_TRIGGER_AND_TRAILING_STOP_READY",
+    "blocking_reasons": [
+      "price_below_trigger",
+      "trailing_stop_order_ready_false",
+      "broker_stop_not_confirmed",
+      "rth_confirmation_required"
+    ],
+    "warnings": [
+      "Previous support 184.80 failed; setup précédent invalidé.",
+      "Setup agressif uniquement, car QCOM reste en correction."
+    ],
+    "planned_vs_current_risk": {
+      "current_reference_price": 176.25,
+      "planned_entry_price": 180.02,
+      "planned_initial_stop": 171.2,
+      "risk_per_share": 8.82,
+      "final_max_quantity": 1,
+      "planned_total_risk_usd": 8.82
+    }
+  },
+  "targets": [],
+  "notes": "Choix du setup_type: aggressive_rebound. Le précédent plan autour de 186.20-190.00 est invalidé car QCOM a cassé sous 184.80. Nouveau plan uniquement si le titre défend la zone 172.20-176.50 puis reclaim 180.00. Données marché utilisées: prix 176.25, high intraday 185.73, low intraday 172.21, volume 18.68M. Source marché: . Le schéma v2 impose trailing_stop_loss.enabled=true, interdit d'utiliser risk.initial_stop_loss/protective_stop comme modèle principal et bloque l'entrée si le trailing stop broker n'est pas prêt: "
+}

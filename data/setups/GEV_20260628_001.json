@@ -1,0 +1,209 @@
+{
+  "setup_id": "GEV_20260628_001",
+  "symbol": "GEV",
+  "enabled": true,
+  "mode": "paper",
+  "setup_type": "momentum_breakout",
+  "setup_role": "ENTRY_AND_MANAGEMENT",
+  "direction": "long",
+  "timeframes": {
+    "signal": "15m",
+    "confirmation": "1d"
+  },
+  "entry": {
+    "enabled": true,
+    "order_type": "STP_LMT",
+    "trigger_offset": 1.0,
+    "limit_offset": 5.0,
+    "trigger_price": 1085.0,
+    "entry_price": 1085.0,
+    "limit_price": 1090.0,
+    "maximum_limit_price": 1090.0,
+    "cancel_if_not_filled_after_minutes": 30
+  },
+  "risk": {
+    "max_position_amount_usd": 250,
+    "max_risk_usd": 15,
+    "emergency_exit_if_stop_fails": true
+  },
+  "management": {
+    "take_profit_mode": "none",
+    "never_lower_stop": true,
+    "stop_management": {
+      "mode": "STRUCTURE_BASED_TRAILING",
+      "never_lower_stop": true,
+      "trail_type": "ATR_OR_STRUCTURE",
+      "atr_timeframe": "1h",
+      "atr_multiplier": 1.5,
+      "steps": [
+        {
+          "condition": "two_15m_closes_above",
+          "price": 1095.0,
+          "action": "raise_stop",
+          "new_stop": 1042.8
+        },
+        {
+          "condition": "new_higher_low_confirmed",
+          "timeframe": "15m",
+          "confirmation_bars": 2,
+          "action": "raise_stop_below_confirmed_higher_low",
+          "buffer": 4.0
+        }
+      ]
+    }
+  },
+  "breakout": {
+    "resistance": 1084.0,
+    "broken_resistance": null,
+    "daily_close_above": null,
+    "volume_rule_mode": "FLEXIBLE_CONFIRMATION",
+    "fast_breakout_volume_ratio_min": 1.5,
+    "confirmed_breakout_volume_ratio_min": 0.8,
+    "confirmed_breakout_hold_bars": 2,
+    "confirmed_breakout_timeframe": "15m",
+    "close_above_resistance_required": true
+  },
+  "volume_confirmation": {
+    "enabled": true,
+    "signal_timeframe": "15m",
+    "comparison_mode": "SAME_TIME_OF_DAY",
+    "average_sample_days": 20,
+    "fast_volume_ratio_min": 1.5,
+    "normal_volume_ratio_min": 1.0,
+    "confirmed_volume_ratio_min": 0.8,
+    "confirmed_hold_bars": 2,
+    "close_above_level_required": true,
+    "reject_detection_enabled": true,
+    "max_upper_wick_ratio": 0.5
+  },
+  "missed_breakout": {
+    "retest_zone_min": 1073.0,
+    "retest_zone_max": 1084.0
+  },
+  "rearm": {
+    "new_local_resistance": 1084.0,
+    "new_trigger": 1085.0,
+    "new_limit": 1090.0
+  },
+  "trend_filter": {
+    "enabled": true,
+    "required_trend": "uptrend"
+  },
+  "targets": [],
+  "notes": "Setup momentum_breakout uniquement si GEV casse 1084.00 avec cloture 15m au-dessus. Entree STP_LMT: trigger 1085.00, entry_price 1085.00, limite maximale 1090.00. Ne pas poursuivre si le prix depasse 1090.00 sans execution. Stop initial 1032.00, sous le plus bas recent de 1042.84 avec marge de securite. Retest valide si breakout manque puis retour dans 1073.00-1084.00 avec reprise haussiere. Attention sizing: avec max_position_amount_usd=250, une action entiere est impossible; ce setup necessite fractional shares ou restera en paper avec quantite entiere egale a 0.",
+  "trailing_stop_loss": {
+    "enabled": true,
+    "mode": "AUTO_INTELLIGENT",
+    "initial_stop": 1032.0,
+    "current_stop": 1032.0,
+    "never_lower_stop": true,
+    "stop_source": "MIGRATED_FROM_LEGACY_STOP",
+    "applies_to": "ENTRY_AND_POSITION_MANAGEMENT",
+    "migration_status": "MIGRATED_TO_TRAILING_STOP",
+    "activation": {
+      "mode": "ON_ENTRY_FILL",
+      "activate_before_entry_transmission": true,
+      "entry_order_requires_attached_trailing_stop": true
+    },
+    "calculation": {
+      "method": "HYBRID_ATR_STRUCTURE",
+      "allowed_methods": [
+        "ATR_BASED",
+        "STRUCTURE_BASED",
+        "HYBRID_ATR_STRUCTURE",
+        "PERCENT_BASED_FALLBACK"
+      ],
+      "default_method": "HYBRID_ATR_STRUCTURE",
+      "atr": {
+        "timeframe": "1h",
+        "period": 14,
+        "multiplier_initial": "AUTO",
+        "multiplier_trailing": "AUTO",
+        "min_multiplier": 1.0,
+        "max_multiplier": 3.5
+      },
+      "structure": {
+        "reference": "HIGHER_LOW_OR_SUPPORT",
+        "allowed_references": [
+          "HIGHER_LOW",
+          "INTRADAY_SUPPORT",
+          "RANGE_LOW",
+          "BROKEN_RESISTANCE_AS_SUPPORT",
+          "VWAP_PULLBACK",
+          "PREVIOUS_DAY_LOW",
+          "AUTO_SELECT"
+        ],
+        "buffer_policy": "MAX_OF_TICK_SPREAD_ATR_FRACTION",
+        "min_tick_buffer": 2,
+        "spread_buffer_multiplier": 2,
+        "atr_fraction_buffer": 0.1
+      },
+      "stock_specific_adjustment": {
+        "enabled": true,
+        "inputs": [
+          "price",
+          "atr_15m",
+          "atr_1h",
+          "average_true_range_percent",
+          "spread_bps",
+          "relative_volume",
+          "liquidity",
+          "gap_percent",
+          "intraday_range_percent",
+          "sector_volatility",
+          "distance_to_support",
+          "distance_to_breakout_level"
+        ],
+        "volatility_regime": "AUTO",
+        "liquidity_regime": "AUTO",
+        "spread_regime": "AUTO"
+      },
+      "risk_constraints": {
+        "respect_max_risk_usd": true,
+        "respect_max_position_amount_usd": true,
+        "minimum_quantity": 1,
+        "block_if_quantity_zero": true,
+        "block_if_initial_stop_above_entry_for_long": true,
+        "block_if_initial_stop_below_entry_for_short": true
+      }
+    },
+    "ratchet_rules": {
+      "enabled": true,
+      "move_only_up_for_long": true,
+      "move_only_down_for_short": true,
+      "update_on_closed_bar_only": true,
+      "timeframe": "15m",
+      "min_improvement_required": "AUTO",
+      "min_improvement_atr_fraction": 0.15,
+      "do_not_lower_stop": true,
+      "do_not_update_outside_rth": true,
+      "do_not_update_if_spread_wide": true,
+      "do_not_update_on_unconfirmed_intrabar_move": true,
+      "allow_break_even_move": true,
+      "break_even_policy": {
+        "enabled": true,
+        "trigger_after_profit_r_multiple": 1.0,
+        "new_stop": "ENTRY_PRICE_PLUS_FEES_BUFFER"
+      }
+    },
+    "broker_order": {
+      "order_type": "TRAIL_OR_MANAGED_STOP",
+      "attach_to_entry_order": true,
+      "required_before_entry_transmission": true,
+      "use_native_ibkr_trailing_order_if_available": true,
+      "fallback_to_managed_stop_updates": true,
+      "parent_child_bracket_required": true,
+      "entry_parent_transmit": false,
+      "trailing_stop_child_transmit": true,
+      "block_if_broker_stop_not_confirmed": true
+    },
+    "audit": {
+      "record_initial_stop_calculation": true,
+      "record_each_stop_update": true,
+      "record_reason": true,
+      "record_old_stop": true,
+      "record_new_stop": true,
+      "record_broker_order_id": true
+    }
+  }
+}
