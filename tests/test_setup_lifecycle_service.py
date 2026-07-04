@@ -24,6 +24,11 @@ BROKER_OK = {
     "blocking_reasons": [],
 }
 
+# Deterministic clocks so tests do not depend on when they run: revalidation
+# behaves differently when the US market is open vs closed.
+RTH_NOW = datetime(2026, 7, 6, 14, 0, tzinfo=UTC)  # Monday 10:00 ET -> regular session
+MARKET_CLOSED_NOW = datetime(2026, 7, 4, 14, 0, tzinfo=UTC)  # Saturday -> market closed
+
 
 def lifecycle_config(**overrides) -> dict:
     config = {
@@ -142,16 +147,46 @@ class RevalidateSetupTests(unittest.TestCase):
             None,
             MarketSnapshot(symbol="TEST", price=0.0, bid=None, ask=None, close=None),
         ):
-            result = revalidate_setup(setup, snapshot, BROKER_OK, None)
+            result = revalidate_setup(setup, snapshot, BROKER_OK, RTH_NOW)
             self.assertEqual(result["status"], SetupStatus.BLOCKED.value)
             self.assertEqual(result["status_reason"], "MISSING_MARKET_DATA")
             self.assertNotEqual(result["status"], SetupStatus.INVALIDATED.value)
             self.assertIn("MISSING_MARKET_DATA", result["blocking_reasons"])
             self.assertFalse(result["can_send_order"])
 
+    def test_missing_market_data_when_market_closed_preserves_status(self) -> None:
+        # Weekend / market closed: no live quote is expected. The setup must keep
+        # a readable waiting status instead of flipping to BLOCKED, and no entry
+        # can be sent.
+        setup = lifecycle_setup()
+        for snapshot in (
+            None,
+            MarketSnapshot(symbol="TEST", price=0.0, bid=None, ask=None, close=None),
+        ):
+            result = revalidate_setup(setup, snapshot, BROKER_OK, MARKET_CLOSED_NOW)
+            self.assertEqual(result["status"], SetupStatus.WAITING_ACTIVATION.value)
+            self.assertEqual(result["status_reason"], "MARKET_CLOSED")
+            self.assertNotIn("MISSING_MARKET_DATA", result["blocking_reasons"])
+            self.assertFalse(result["can_send_order"])
+
+    def test_blocked_setup_recovers_when_market_closed(self) -> None:
+        # An already-BLOCKED setup must not stay stuck on BLOCKED over the
+        # weekend just because live data stopped flowing.
+        setup = lifecycle_setup(status=SetupStatus.BLOCKED.value)
+        result = revalidate_setup(setup, None, BROKER_OK, MARKET_CLOSED_NOW)
+        self.assertEqual(result["status"], SetupStatus.WAITING_ACTIVATION.value)
+        self.assertEqual(result["status_reason"], "MARKET_CLOSED")
+
+    def test_disconnected_broker_when_market_closed_does_not_block(self) -> None:
+        setup = lifecycle_setup()
+        broker_reality = {**BROKER_OK, "broker_connected": False}
+        result = revalidate_setup(setup, market(99.0), broker_reality, MARKET_CLOSED_NOW)
+        self.assertNotEqual(result["status"], SetupStatus.BLOCKED.value)
+        self.assertFalse(result["can_send_order"])
+
     def test_waiting_activation_only_when_still_valid(self) -> None:
         setup = lifecycle_setup()
-        result = revalidate_setup(setup, market(99.0), BROKER_OK, None)
+        result = revalidate_setup(setup, market(99.0), BROKER_OK, RTH_NOW)
 
         self.assertEqual(result["status"], SetupStatus.WAITING_ACTIVATION.value)
         self.assertEqual(result["status_reason"], "SETUP_VALID")
@@ -214,7 +249,7 @@ class RevalidateSetupTests(unittest.TestCase):
     def test_broker_disconnected_blocks(self) -> None:
         setup = lifecycle_setup()
         broker_reality = {**BROKER_OK, "broker_connected": False}
-        result = revalidate_setup(setup, market(99.0), broker_reality, None)
+        result = revalidate_setup(setup, market(99.0), broker_reality, RTH_NOW)
 
         self.assertEqual(result["status"], SetupStatus.BLOCKED.value)
         self.assertEqual(result["status_reason"], "BROKER_DISCONNECTED")

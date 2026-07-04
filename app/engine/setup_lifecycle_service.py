@@ -20,6 +20,7 @@ from app.setups.setup_roles import (
 )
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
+from app.utils.market_hours import classify_us_equity_session
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,15 @@ def revalidate_setup(
     blocking: list[str] = []
     warnings: list[str] = []
 
+    # When the US market is not in a regular session (weekend, overnight,
+    # pre/after-hours), the absence of live quotes and a stale broker tracker
+    # are EXPECTED, not a fault of the setup. In that case we must not degrade a
+    # pre-entry setup to BLOCKED for those environment reasons: it would hide
+    # whether the setup itself is still valid. Entries stay impossible anyway
+    # (the session policy blocks them and no live signal can fire).
+    session = classify_us_equity_session(now_dt)
+    market_in_session = session == "RTH"
+
     def result(status: str, reason: str, *, can_be_armed: bool | None = None) -> dict[str, Any]:
         armed = can_be_armed
         if armed is None:
@@ -114,6 +124,7 @@ def revalidate_setup(
         can_send = (
             status in SENDABLE_STATUSES
             and not blocking
+            and market_in_session
             and setup_allows_entry(role)
             and _entry_enabled(config)
             and _auto_execution_enabled(setup, config)
@@ -151,6 +162,7 @@ def revalidate_setup(
             blocking,
             warnings,
             result,
+            market_in_session=market_in_session,
         )
 
     direction = str(config.get("direction") or "long").strip().lower()
@@ -185,6 +197,11 @@ def revalidate_setup(
     # 4. Market data must be present before any price-based judgement.
     prices = _snapshot_prices(market_snapshot, symbol=str(setup.get("symbol") or ""))
     if prices is None:
+        if not market_in_session:
+            # Market closed: no live quote is expected. Keep the setup's waiting
+            # status so it stays readable instead of flipping to BLOCKED.
+            warnings.append("MARKET_CLOSED_NO_LIVE_DATA")
+            return result(healthy_status, "MARKET_CLOSED")
         blocking.append("MISSING_MARKET_DATA")
         return result(SetupStatus.BLOCKED.value, "MISSING_MARKET_DATA")
 
@@ -218,17 +235,23 @@ def revalidate_setup(
             blocking.append("PRICE_ABOVE_MAXIMUM_LIMIT" if is_long else "PRICE_BELOW_MINIMUM_LIMIT")
             warnings.append("PRICE_BEYOND_LIMIT_WITHIN_ANTI_CHASE_BUFFER")
 
-    # 7. Broker execution environment.
+    # 7. Broker execution environment (only enforced during a live session).
     broker_reason = _broker_blocking_reason(broker_reality, settings)
     if broker_reason:
-        blocking.append(broker_reason)
-        return result(SetupStatus.BLOCKED.value, broker_reason)
+        if market_in_session:
+            blocking.append(broker_reason)
+            return result(SetupStatus.BLOCKED.value, broker_reason)
+        # Market closed: a disconnected broker / stale tracker is expected and
+        # must not mask the setup's own validity. Keep it as a warning.
+        warnings.append(f"{broker_reason}_WHILE_MARKET_CLOSED")
 
-    # 8. Spread quality.
+    # 8. Spread quality (needs a live quote; skip when the market is closed).
     spread_reason = _spread_blocking_reason(config, prices)
     if spread_reason:
-        blocking.append(spread_reason)
-        return result(SetupStatus.BLOCKED.value, spread_reason)
+        if market_in_session:
+            blocking.append(spread_reason)
+            return result(SetupStatus.BLOCKED.value, spread_reason)
+        warnings.append(f"{spread_reason}_WHILE_MARKET_CLOSED")
 
     # 9. Non-status blockers: order transmission remains impossible but the
     # setup itself is still a valid waiting setup.
@@ -250,11 +273,15 @@ def _revalidate_management_only(
     blocking: list[str],
     warnings: list[str],
     result: Callable[..., dict[str, Any]],
+    *,
+    market_in_session: bool = True,
 ) -> dict[str, Any]:
     broker_reason = _broker_blocking_reason(broker_reality, None)
     if broker_reason:
-        blocking.append(broker_reason)
-        return result(SetupStatus.BLOCKED.value, broker_reason, can_be_armed=False)
+        if market_in_session:
+            blocking.append(broker_reason)
+            return result(SetupStatus.BLOCKED.value, broker_reason, can_be_armed=False)
+        warnings.append(f"{broker_reason}_WHILE_MARKET_CLOSED")
     position_open = _position_open(broker_reality)
     if position_open is False:
         blocking.append("MANAGEMENT_ONLY_POSITION_MISSING")
