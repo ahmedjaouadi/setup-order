@@ -34,38 +34,6 @@
   </article>
 </section>
 
-<section class="panel">
-  <div class="panel-heading">
-    <div>
-      <h2>Broker Reality</h2>
-      <p class="panel-subtitle">Etat confirme par TWS: ordres transmis, stops reels, positions, P&L et ecarts de reconciliation.</p>
-    </div>
-    <span class="status" id="broker-reality-blocked">UNKNOWN</span>
-  </div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Symbol</th>
-          <th>Position Qty</th>
-          <th>Avg Price</th>
-          <th>Current Price</th>
-          <th>Daily P&L</th>
-          <th>Unrealized P&L</th>
-          <th>Entry Order</th>
-          <th>Stop Order</th>
-          <th>Trailing Stop</th>
-          <th>Protection</th>
-          <th>Broker Status</th>
-          <th>Last Sync</th>
-          <th>Action Required</th>
-        </tr>
-      </thead>
-      <tbody id="broker-reality-table"></tbody>
-    </table>
-  </div>
-</section>
-
 <section class="content-grid trading-book-grid">
   <div class="panel">
     <div class="panel-heading">
@@ -127,6 +95,38 @@
         <tbody id="orders-table"></tbody>
       </table>
     </div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Broker Reality</h2>
+      <p class="panel-subtitle">Etat confirme par TWS: ordres transmis, stops reels, positions, P&L et ecarts de reconciliation.</p>
+    </div>
+    <span class="status" id="broker-reality-blocked">UNKNOWN</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Position Qty</th>
+          <th>Avg Price</th>
+          <th>Current Price</th>
+          <th>Daily P&L</th>
+          <th>Unrealized P&L</th>
+          <th>Entry Order</th>
+          <th>Stop Order</th>
+          <th>Trailing Stop</th>
+          <th>Protection</th>
+          <th>Broker Status</th>
+          <th>Last Sync</th>
+          <th>Action Required</th>
+        </tr>
+      </thead>
+      <tbody id="broker-reality-table"></tbody>
+    </table>
   </div>
 </section>
 {% endblock %}
