@@ -588,6 +588,19 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS detection_techniques (
+                    technique_id   TEXT PRIMARY KEY,
+                    name           TEXT NOT NULL,
+                    description    TEXT NOT NULL DEFAULT '',
+                    rule_json      TEXT NOT NULL,
+                    enabled        INTEGER NOT NULL DEFAULT 1,
+                    origin         TEXT NOT NULL,
+                    parent_id      TEXT,
+                    status         TEXT NOT NULL DEFAULT 'ACTIVE',
+                    created_at     TEXT NOT NULL,
+                    updated_at     TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_setups_status ON setups(status);
                 CREATE INDEX IF NOT EXISTS idx_orders_setup_id ON orders(setup_id);
                 CREATE INDEX IF NOT EXISTS idx_orders_broker_perm_id ON orders(broker_perm_id);
@@ -657,6 +670,10 @@ class Database:
                     ON forecast_stack_results(experiment_id, rank_overall);
                 CREATE INDEX IF NOT EXISTS idx_equity_snapshots_captured
                     ON equity_snapshots(captured_at);
+                CREATE INDEX IF NOT EXISTS idx_detection_techniques_status
+                    ON detection_techniques(status, enabled);
+                CREATE INDEX IF NOT EXISTS idx_detection_techniques_parent
+                    ON detection_techniques(parent_id);
                 """)
             conn.execute("""
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
@@ -766,6 +783,10 @@ class Database:
             conn.execute("""
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
                 VALUES ('v2_4_1_snapshot_trailing_stop_initial_stop', CURRENT_TIMESTAMP)
+                """)
+            conn.execute("""
+                INSERT OR IGNORE INTO schema_migrations (version, applied_at)
+                VALUES ('v2_5_detection_techniques', CURRENT_TIMESTAMP)
                 """)
 
     def execute(

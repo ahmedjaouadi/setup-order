@@ -52,6 +52,8 @@ from app.market_context.service import MarketContextService
 from app.model_lab import ForecastStackBenchmarkService, ModelLabService
 from app.observability import ObservabilityService
 from app.opportunities import OpportunityScannerService
+from app.opportunity_scanner.technique_repository import TechniqueRepository
+from app.opportunity_scanner.technique_seed import seed_builtin_techniques
 from app.portfolio_risk import PortfolioRiskService
 from app.reports import DailyReportService
 from app.scoring import SetupQualityEngine
@@ -141,6 +143,7 @@ def create_app() -> FastAPI:
     configure_logging(settings.logs_folder)
     database = Database(settings.database_file)
     database.initialize()
+    seed_builtin_techniques(TechniqueRepository(database))
     repository = TradingRepository(database)
     intelligence_repository = IntelligenceRepository(database)
     forecast_repository = ForecastRepository(database)

@@ -30,6 +30,7 @@ class OpportunitySignal:
     risk_adjusted_score: float = 0.0
     badges: list[str] = field(default_factory=list)
     source_snapshot: dict[str, Any] = field(default_factory=dict)
+    detected_by: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

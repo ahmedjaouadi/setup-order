@@ -12,6 +12,7 @@ from app.market_context.relative_strength import (
 )
 from app.market_context.repository import MarketContextRepository
 from app.opportunity_scanner import MarketContextOpportunityScanner
+from app.opportunity_scanner.technique_repository import TechniqueRepository
 from app.settings import load_yaml_file
 from app.storage.repositories import TradingRepository
 
@@ -38,7 +39,18 @@ class MarketContextService:
         self.trading_repository = trading_repository
         self.sector_etfs_path = sector_etfs_path
         self.symbol_metadata_path = symbol_metadata_path
-        self.opportunity_context_scanner = MarketContextOpportunityScanner(settings)
+        # `trading_repository` is sometimes a lightweight test double that only
+        # implements the read methods this service actually calls, without a
+        # `.database` attribute - fall back to the legacy hardcoded rules then,
+        # exactly as if no technique library were configured.
+        database = getattr(trading_repository, "database", None)
+        self.technique_repository = TechniqueRepository(database) if database is not None else None
+        self.opportunity_context_scanner = MarketContextOpportunityScanner(
+            settings,
+            technique_provider=(
+                self.technique_repository.list_active if self.technique_repository else None
+            ),
+        )
 
     def overview(self) -> dict[str, Any]:
         heatmap = self.heatmap()

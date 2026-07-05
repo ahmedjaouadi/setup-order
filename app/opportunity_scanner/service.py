@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from app.models import utc_now_iso
@@ -20,26 +21,43 @@ from app.opportunity_scanner.schemas import (
     OpportunitySignal,
 )
 from app.opportunity_scanner.scoring import OpportunityContextScorer
+from app.opportunity_scanner.technique_evaluator import TechniqueEvaluator
+
+TechniqueProvider = Callable[[], list[dict[str, Any]]]
 
 
 class MarketContextOpportunityScanner:
-    """Turns descriptive market context snapshots into non-executable signals."""
+    """Turns descriptive market context snapshots into non-executable signals.
 
-    def __init__(self, settings: dict[str, Any] | None = None) -> None:
+    When `technique_provider` is supplied, detection is delegated to the
+    persisted technique library (`detection_techniques`) instead of the
+    hardcoded rules in `detectors.py`. Without one, behaviour is unchanged
+    (legacy hardcoded rules) - this keeps callers that don't have a database
+    (e.g. plain unit tests) working exactly as before.
+    """
+
+    def __init__(
+        self,
+        settings: dict[str, Any] | None = None,
+        technique_provider: TechniqueProvider | None = None,
+    ) -> None:
         self.settings = settings or {}
         self.scorer = OpportunityContextScorer(settings)
+        self.technique_provider = technique_provider
+        self.technique_evaluator = TechniqueEvaluator()
 
     def evaluate(self, snapshot: dict[str, Any]) -> dict[str, Any]:
         normalized = self._normalize_snapshot(snapshot)
-        types = detect_opportunity_types(normalized)
+        types, detected_by = self._detect(normalized)
         score_payload = self.scorer.score(normalized, types)
         status = self._status(score_payload, types)
         recommended_action = self._recommended_action(status, score_payload["warnings"])
         badges = self._badges(status, types, score_payload["warnings"])
+        primary_type = primary_opportunity_type(types)
         signal = OpportunitySignal(
             symbol=str(normalized.get("symbol") or "").upper(),
             opportunity_status=status,
-            opportunity_type=primary_opportunity_type(types),
+            opportunity_type=primary_type,
             opportunity_types=types or ["WATCHLIST_ANOMALY"],
             opportunity_score=score_payload["score"],
             discovery_score=score_payload["discovery_score"],
@@ -50,8 +68,15 @@ class MarketContextOpportunityScanner:
             can_send_order=False,
             badges=badges,
             source_snapshot={**normalized, "detected_at": utc_now_iso()},
+            detected_by=detected_by.get(primary_type),
         )
         return signal.to_dict()
+
+    def _detect(self, normalized: dict[str, Any]) -> tuple[list[str], dict[str, str]]:
+        if self.technique_provider is None:
+            return detect_opportunity_types(normalized), {}
+        techniques = self.technique_provider()
+        return self.technique_evaluator.evaluate(techniques, normalized)
 
     def scan(self, snapshots: list[dict[str, Any]]) -> dict[str, Any]:
         items = [self.evaluate(snapshot) for snapshot in snapshots]

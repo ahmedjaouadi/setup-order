@@ -10,6 +10,7 @@ from app.opportunities.opportunity_lifecycle_service import OpportunityLifecycle
 from app.opportunities.scenario_generator import ScenarioGenerator
 from app.opportunities.shortlist_service import OpportunityShortlistService
 from app.opportunity_scanner import MarketContextOpportunityScanner
+from app.opportunity_scanner.technique_repository import TechniqueRepository
 from app.scoring.service import SetupQualityEngine
 from app.settings import load_yaml_file
 from app.storage.event_store import EventStore
@@ -30,7 +31,11 @@ class OpportunityScannerService:
         self.settings = settings or {}
         self._paused = False
         self._last_run: dict[str, Any] = {}
-        self.context_scanner = MarketContextOpportunityScanner(self.settings)
+        self.technique_repository = TechniqueRepository(repository.database)
+        self.context_scanner = MarketContextOpportunityScanner(
+            self.settings,
+            technique_provider=self.technique_repository.list_active,
+        )
         self.expiration_policy = OpportunityExpirationPolicy(self.settings)
         self.shortlist_service = OpportunityShortlistService(
             repository,
@@ -269,11 +274,11 @@ class OpportunityScannerService:
             for symbol in quotes:
                 add_symbol(symbol, "recent_quote")
         for symbol in self._watchlist_symbols(universe_config):
-            setup = next(
+            matched_setup = next(
                 (item for item in setups if str(item.get("symbol") or "").upper() == symbol),
                 None,
             )
-            add_symbol(symbol, "watchlist", setup)
+            add_symbol(symbol, "watchlist", matched_setup)
 
         def priority(candidate: dict[str, Any]) -> tuple[int, str]:
             metadata_priority = _number(candidate.get("metadata", {}).get("custom_priority")) or 0
@@ -357,7 +362,8 @@ class OpportunityScannerService:
         config: dict[str, Any],
     ) -> dict[str, Any]:
         symbol = str(candidate.get("symbol") or "").upper()
-        quote = candidate.get("quote") if isinstance(candidate.get("quote"), dict) else {}
+        raw_quote = candidate.get("quote")
+        quote: dict[str, Any] = raw_quote if isinstance(raw_quote, dict) else {}
         context_signal = self.context_scanner.evaluate(
             self._context_snapshot_from_candidate(candidate, quote)
         )
@@ -413,6 +419,7 @@ class OpportunityScannerService:
                 "all_selection_rules": selections,
                 "market_context_signal": context_signal,
                 "source_snapshot": context_signal.get("source_snapshot", {}),
+                "detected_by": context_signal.get("detected_by"),
                 "executable": False,
                 "reason": "Scanner opportunity; generate a setup candidate before any setup can be armed.",
             },
@@ -423,7 +430,8 @@ class OpportunityScannerService:
         candidate: dict[str, Any],
         quote: dict[str, Any],
     ) -> dict[str, Any]:
-        metadata = candidate.get("metadata") if isinstance(candidate.get("metadata"), dict) else {}
+        raw_metadata = candidate.get("metadata")
+        metadata: dict[str, Any] = raw_metadata if isinstance(raw_metadata, dict) else {}
         sector = str(metadata.get("sector") or quote.get("sector") or "").strip()
         sector_etf = str(metadata.get("sector_etf") or quote.get("sector_etf") or "").strip()
         metadata_status = (
@@ -565,7 +573,8 @@ class OpportunityScannerService:
         config: dict[str, Any],
     ) -> dict[str, Any]:
         filters = _as_dict(config.get("filters"))
-        quote = candidate.get("quote") if isinstance(candidate.get("quote"), dict) else {}
+        raw_quote = candidate.get("quote")
+        quote: dict[str, Any] = raw_quote if isinstance(raw_quote, dict) else {}
         has_setup = isinstance(candidate.get("setup"), dict)
         issues = []
         price = _number(_first_value(quote.get("price"), quote.get("last"), quote.get("close")))
@@ -667,7 +676,8 @@ class OpportunityScannerService:
             symbol = str(event.get("symbol") or "").upper()
             if not symbol or symbol in quotes:
                 continue
-            data = event.get("data") if isinstance(event.get("data"), dict) else {}
+            raw_data = event.get("data")
+            data: dict[str, Any] = raw_data if isinstance(raw_data, dict) else {}
             quotes[symbol] = {
                 **data,
                 "event_timestamp": event.get("timestamp"),
