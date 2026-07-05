@@ -48,7 +48,7 @@ class MarketContextOpportunityScanner:
 
     def evaluate(self, snapshot: dict[str, Any]) -> dict[str, Any]:
         normalized = self._normalize_snapshot(snapshot)
-        types, detected_by = self._detect(normalized)
+        types, detected_by, matched_ids = self._detect(normalized)
         score_payload = self.scorer.score(normalized, types)
         status = self._status(score_payload, types)
         recommended_action = self._recommended_action(status, score_payload["warnings"])
@@ -69,15 +69,17 @@ class MarketContextOpportunityScanner:
             badges=badges,
             source_snapshot={**normalized, "detected_at": utc_now_iso()},
             detected_by=detected_by.get(primary_type),
-            detected_by_techniques=list(dict.fromkeys(detected_by.values())),
+            detected_by_techniques=matched_ids,
         )
         return signal.to_dict()
 
-    def _detect(self, normalized: dict[str, Any]) -> tuple[list[str], dict[str, str]]:
+    def _detect(self, normalized: dict[str, Any]) -> tuple[list[str], dict[str, str], list[str]]:
         if self.technique_provider is None:
-            return detect_opportunity_types(normalized), {}
+            return detect_opportunity_types(normalized), {}, []
         techniques = self.technique_provider()
-        return self.technique_evaluator.evaluate(techniques, normalized)
+        types, detected_by = self.technique_evaluator.evaluate(techniques, normalized)
+        matched_ids = self.technique_evaluator.matched_technique_ids(techniques, normalized)
+        return types, detected_by, matched_ids
 
     def scan(self, snapshots: list[dict[str, Any]]) -> dict[str, Any]:
         items = [self.evaluate(snapshot) for snapshot in snapshots]

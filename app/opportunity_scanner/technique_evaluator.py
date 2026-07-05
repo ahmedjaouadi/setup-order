@@ -27,6 +27,25 @@ class TechniqueEvaluator:
                 types.append(opportunity_type)
         return types, detected_by
 
+    def matched_technique_ids(
+        self,
+        techniques: list[dict[str, Any]],
+        snapshot: dict[str, Any],
+    ) -> list[str]:
+        """Every technique whose rule matches, not deduplicated by type.
+
+        Outcome tracking needs all matches (including CANDIDATE variants that
+        share an opportunity type with their parent), whereas `evaluate` keeps
+        one winner per type for the scanner's opportunity output.
+        """
+        matched: list[str] = []
+        for technique in techniques:
+            if _opportunity_type(technique) is None:
+                continue
+            if evaluate_rule(technique.get("rule_json"), snapshot):
+                matched.append(str(technique["technique_id"]))
+        return matched
+
 
 def _opportunity_type(technique: dict[str, Any]) -> str | None:
     parsed = parse_rule(technique.get("rule_json"))

@@ -12,6 +12,7 @@ from app.opportunity_scanner.schemas import (
     TechniqueCreateRequest,
     TechniquePatchRequest,
 )
+from app.opportunity_scanner.learning_loop import LearningLoop
 from app.opportunity_scanner.technique_repository import TechniqueRepository
 from app.opportunity_scanner.technique_seed import seed_builtin_techniques
 from app.opportunity_scanner.technique_service import TechniqueService
@@ -28,8 +29,14 @@ class TechniquesApiTests(unittest.IsolatedAsyncioTestCase):
         self.repository = TechniqueRepository(self.database)
         seed_builtin_techniques(self.repository)
         self.service = TechniqueService(self.repository)
+        self.learning_loop = LearningLoop(self.repository, lambda: {}, settings={})
         self.request = SimpleNamespace(
-            app=SimpleNamespace(state=SimpleNamespace(techniques=self.service))
+            app=SimpleNamespace(
+                state=SimpleNamespace(
+                    techniques=self.service,
+                    learning_loop=self.learning_loop,
+                )
+            )
         )
 
     def tearDown(self) -> None:
@@ -133,10 +140,11 @@ class TechniquesApiTests(unittest.IsolatedAsyncioTestCase):
             await routes_techniques.technique_outcomes(self.request, "nope")
         self.assertEqual(ctx.exception.status_code, 404)
 
-    async def test_learning_run_not_implemented(self) -> None:
-        with self.assertRaises(HTTPException) as ctx:
-            await routes_techniques.run_learning(self.request)
-        self.assertEqual(ctx.exception.status_code, 501)
+    async def test_learning_run_respects_kill_switch_by_default(self) -> None:
+        # Kill-switch defaults to off, so a forced run mutates nothing.
+        result = await routes_techniques.run_learning(self.request)
+        self.assertFalse(result["enabled"])
+        self.assertEqual(result["decisions"], [])
 
     async def test_stats_are_empty_before_outcome_tracking(self) -> None:
         result = await routes_techniques.list_techniques(self.request)

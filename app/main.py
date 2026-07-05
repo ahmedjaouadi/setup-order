@@ -36,6 +36,7 @@ from app.background_jobs import (
     auto_evaluate_forecast_accuracy,
     auto_rebuild_opportunity_shortlist,
     auto_recalculate_forecasts,
+    auto_run_learning_loop,
     periodic_loop,
 )
 from app.data_quality import DataQualityService
@@ -54,6 +55,7 @@ from app.market_context.service import MarketContextService
 from app.model_lab import ForecastStackBenchmarkService, ModelLabService
 from app.observability import ObservabilityService
 from app.opportunities import OpportunityScannerService
+from app.opportunity_scanner.learning_loop import LearningLoop
 from app.opportunity_scanner.outcome_repository import OutcomeRepository
 from app.opportunity_scanner.outcome_tracker import OutcomeTracker
 from app.opportunity_scanner.technique_repository import TechniqueRepository
@@ -106,6 +108,12 @@ def _start_background_tasks(app: FastAPI) -> list[asyncio.Task]:
     outcome_interval = int(
         opportunity_scanner.get("outcome_evaluation_interval_seconds", 900) or 900
     )
+    learning_cfg = (
+        opportunity_scanner.get("learning", {})
+        if isinstance(opportunity_scanner.get("learning"), dict)
+        else {}
+    )
+    learning_interval = int(learning_cfg.get("interval_seconds", 86400) or 86400)
     tasks: list[asyncio.Task] = []
     if forecast_interval > 0:
         tasks.append(
@@ -153,6 +161,18 @@ def _start_background_tasks(app: FastAPI) -> list[asyncio.Task]:
                     initial_delay_seconds=15,
                 ),
                 name="setup-order-detection-outcome-auto-evaluate",
+            )
+        )
+    if learning_interval > 0:
+        tasks.append(
+            asyncio.create_task(
+                periodic_loop(
+                    name="technique-learning-auto-run",
+                    interval_seconds=learning_interval,
+                    callback=partial(auto_run_learning_loop, app),
+                    initial_delay_seconds=20,
+                ),
+                name="setup-order-technique-learning-auto-run",
             )
         )
     return tasks
@@ -231,6 +251,12 @@ def create_app() -> FastAPI:
         TechniqueRepository(database),
         stats_provider=app.state.outcome_tracker.technique_stats,
         outcomes_provider=app.state.outcome_tracker.repository.outcomes_for_technique,
+    )
+    app.state.learning_loop = LearningLoop(
+        TechniqueRepository(database),
+        app.state.outcome_tracker.technique_stats,
+        event_store=app.state.engine.event_store,
+        settings=settings.raw,
     )
     app.state.portfolio_risk = PortfolioRiskService(repository, settings.raw)
     app.state.model_lab = ModelLabService(repository, settings.raw)

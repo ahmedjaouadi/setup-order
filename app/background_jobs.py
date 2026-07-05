@@ -236,6 +236,24 @@ async def auto_evaluate_detection_outcomes(app: Any) -> dict[str, Any]:
     return summary
 
 
+async def auto_run_learning_loop(app: Any) -> dict[str, Any]:
+    loop = getattr(app.state, "learning_loop", None)
+    if loop is None:
+        summary = {"ok": False, "reason": "learning_loop_not_ready"}
+        app.state.learning_loop_auto_refresh = summary
+        return summary
+    try:
+        result = await asyncio.to_thread(loop.run)
+    except Exception as exc:
+        logger.exception("Technique learning cycle failed")
+        summary = {"ok": False, "reason": f"learning_error: {exc}"}
+        app.state.learning_loop_auto_refresh = summary
+        return summary
+    summary = {"ok": True, "generated_at": utc_now_iso(), **result}
+    app.state.learning_loop_auto_refresh = summary
+    return summary
+
+
 async def _daily_bars(engine: Any, symbol: str) -> list[dict[str, Any]]:
     if engine is None or not hasattr(engine, "market_history"):
         return []

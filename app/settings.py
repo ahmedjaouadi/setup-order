@@ -455,6 +455,16 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "reclaim": {"enabled": True, "min_volume_ratio": 1.0},
             "pullback_continuation": {"enabled": True},
         },
+        "outcome_evaluation_interval_seconds": 900,
+        "learning": {
+            # Kill-switch: OFF by default. While false the learning loop makes
+            # zero mutations to the technique library.
+            "enabled": False,
+            "interval_seconds": 86400,
+            "max_active": 20,
+            "min_samples": 30,
+            "variant_factors": [0.8, 1.2],
+        },
     },
     "event_risk": {
         "earnings": {

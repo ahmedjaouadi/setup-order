@@ -68,6 +68,8 @@ async def technique_outcomes(request: Request, technique_id: str):
 
 @router.post("/api/techniques/learning/run")
 async def run_learning(request: Request):
-    # Learning loop is implemented in P2-b. The route exists now so the contract
-    # is stable, but forcing a cycle is a no-op until then.
-    raise HTTPException(status_code=501, detail="Learning loop is not implemented yet (P2-b)")
+    """Force one learning cycle (debug). Honours the kill-switch and guardrails."""
+    loop = getattr(request.app.state, "learning_loop", None)
+    if loop is None:
+        raise HTTPException(status_code=503, detail="Learning loop is not available")
+    return loop.run()
