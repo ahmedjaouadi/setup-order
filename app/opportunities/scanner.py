@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import suppress
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -10,11 +12,14 @@ from app.opportunities.opportunity_lifecycle_service import OpportunityLifecycle
 from app.opportunities.scenario_generator import ScenarioGenerator
 from app.opportunities.shortlist_service import OpportunityShortlistService
 from app.opportunity_scanner import MarketContextOpportunityScanner
+from app.opportunity_scanner.outcome_repository import OutcomeRepository
+from app.opportunity_scanner.outcome_tracker import OutcomeTracker
 from app.opportunity_scanner.technique_repository import TechniqueRepository
 from app.scoring.service import SetupQualityEngine
 from app.settings import load_yaml_file
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
+from app.utils.market_hours import classify_us_equity_session
 
 
 class OpportunityScannerService:
@@ -32,6 +37,7 @@ class OpportunityScannerService:
         self._paused = False
         self._last_run: dict[str, Any] = {}
         self.technique_repository = TechniqueRepository(repository.database)
+        self.outcome_tracker = OutcomeTracker(OutcomeRepository(repository.database))
         self.context_scanner = MarketContextOpportunityScanner(
             self.settings,
             technique_provider=self.technique_repository.list_active,
@@ -364,9 +370,9 @@ class OpportunityScannerService:
         symbol = str(candidate.get("symbol") or "").upper()
         raw_quote = candidate.get("quote")
         quote: dict[str, Any] = raw_quote if isinstance(raw_quote, dict) else {}
-        context_signal = self.context_scanner.evaluate(
-            self._context_snapshot_from_candidate(candidate, quote)
-        )
+        context_snapshot = self._context_snapshot_from_candidate(candidate, quote)
+        context_signal = self.context_scanner.evaluate(context_snapshot)
+        self._record_detection_outcomes(symbol, context_snapshot, context_signal)
         scanners = _as_dict(config.get("scanners"))
         selections = [
             self._selection_context(scanner_name, quote, None, scanner_config)
@@ -424,6 +430,25 @@ class OpportunityScannerService:
                 "reason": "Scanner opportunity; generate a setup candidate before any setup can be armed.",
             },
         }
+
+    def _record_detection_outcomes(
+        self,
+        symbol: str,
+        snapshot: dict[str, Any],
+        context_signal: dict[str, Any],
+    ) -> None:
+        """Record a pending outcome per matched technique, RTH only.
+
+        Outside regular trading hours nothing is recorded, so outcome stats stay
+        frozen. Never raises: outcome tracking must not break a scan.
+        """
+        if classify_us_equity_session(datetime.now(UTC)) != "RTH":
+            return
+        technique_ids = context_signal.get("detected_by_techniques") or []
+        if not technique_ids:
+            return
+        with suppress(Exception):
+            self.outcome_tracker.record_matches(technique_ids, symbol, snapshot)
 
     def _context_snapshot_from_candidate(
         self,

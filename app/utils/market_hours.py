@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, time
+from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 US_EQUITY_TIMEZONE = ZoneInfo("America/New_York")
@@ -33,6 +33,27 @@ def coerce_datetime(value: datetime | str | None) -> datetime | None:
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def is_trading_day(day: datetime) -> bool:
+    """True for Mon-Fri. Holidays are not modelled anywhere in this codebase."""
+    return day.astimezone(US_EQUITY_TIMEZONE).weekday() < 5
+
+
+def next_trading_day(reference: datetime, sessions: int) -> datetime:
+    """Return the datetime ``sessions`` trading days ahead of ``reference``.
+
+    Weekends are skipped (holidays are not tracked). The result keeps the
+    reference's time-of-day; callers that want an end-of-session due time pin
+    the clock themselves.
+    """
+    localized = reference.astimezone(US_EQUITY_TIMEZONE)
+    remaining = max(0, int(sessions))
+    while remaining > 0:
+        localized = localized + timedelta(days=1)
+        if localized.weekday() < 5:
+            remaining -= 1
+    return localized
 
 
 def classify_us_equity_session(current_time: datetime) -> str:

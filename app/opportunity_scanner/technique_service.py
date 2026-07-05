@@ -19,9 +19,11 @@ from app.opportunity_scanner.schemas import (
 )
 from app.opportunity_scanner.technique_repository import TechniqueRepository
 
-# Injected once outcome tracking (P2-a) lands; returns per-technique stats
-# keyed by technique_id. Absent for now -> every technique reports empty stats.
+# Injected by P2-a outcome tracking; returns per-technique stats keyed by
+# technique_id. Absent -> every technique reports empty stats.
 StatsProvider = Callable[[], dict[str, dict[str, Any]]]
+# Injected by P2-a; returns the recorded outcome history for one technique.
+OutcomesProvider = Callable[[str], list[dict[str, Any]]]
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -46,9 +48,11 @@ class TechniqueService:
         self,
         repository: TechniqueRepository,
         stats_provider: StatsProvider | None = None,
+        outcomes_provider: OutcomesProvider | None = None,
     ) -> None:
         self.repository = repository
         self.stats_provider = stats_provider
+        self.outcomes_provider = outcomes_provider
 
     def list_techniques(self) -> list[dict[str, Any]]:
         stats = self._stats()
@@ -115,9 +119,11 @@ class TechniqueService:
         return self.get_technique(technique_id)
 
     def list_outcomes(self, technique_id: str) -> list[dict[str, Any]]:
-        # Route exists now; outcome history lands with P2-a. 404 if unknown.
+        # 404 if the technique is unknown; empty history until outcomes exist.
         self._require(technique_id)
-        return []
+        if self.outcomes_provider is None:
+            return []
+        return self.outcomes_provider(technique_id)
 
     def _require(self, technique_id: str) -> dict[str, Any]:
         row = self.repository.get(technique_id)

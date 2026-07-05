@@ -33,6 +33,7 @@ class OpportunitySignal:
     badges: list[str] = field(default_factory=list)
     source_snapshot: dict[str, Any] = field(default_factory=dict)
     detected_by: str | None = None
+    detected_by_techniques: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -66,10 +67,14 @@ class TechniquePatchRequest(BaseModel):
 
 
 class TechniqueStats(BaseModel):
-    """Per-technique outcome stats. Empty until outcome tracking (P2-a) lands."""
+    """Per-technique outcome stats. Empty until outcome tracking (P2-a) fills them."""
 
     sample_size: int = 0
     hit_rate: float | None = None
+    avg_forward_return_pct: float | None = None
+    median_forward_return_pct: float | None = None
+    avg_mfe_pct: float | None = None
+    avg_mae_pct: float | None = None
     expectancy_r: float | None = None
     status_label: str = "—"
 

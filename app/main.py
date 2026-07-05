@@ -32,6 +32,7 @@ from app.api import (
     websocket,
 )
 from app.background_jobs import (
+    auto_evaluate_detection_outcomes,
     auto_evaluate_forecast_accuracy,
     auto_rebuild_opportunity_shortlist,
     auto_recalculate_forecasts,
@@ -53,6 +54,8 @@ from app.market_context.service import MarketContextService
 from app.model_lab import ForecastStackBenchmarkService, ModelLabService
 from app.observability import ObservabilityService
 from app.opportunities import OpportunityScannerService
+from app.opportunity_scanner.outcome_repository import OutcomeRepository
+from app.opportunity_scanner.outcome_tracker import OutcomeTracker
 from app.opportunity_scanner.technique_repository import TechniqueRepository
 from app.opportunity_scanner.technique_seed import seed_builtin_techniques
 from app.opportunity_scanner.technique_service import TechniqueService
@@ -100,6 +103,9 @@ def _start_background_tasks(app: FastAPI) -> list[asyncio.Task]:
         or forecast_interval
     )
     scan_interval = int(opportunity_scanner.get("scan_interval_seconds", 30) or 30)
+    outcome_interval = int(
+        opportunity_scanner.get("outcome_evaluation_interval_seconds", 900) or 900
+    )
     tasks: list[asyncio.Task] = []
     if forecast_interval > 0:
         tasks.append(
@@ -135,6 +141,18 @@ def _start_background_tasks(app: FastAPI) -> list[asyncio.Task]:
                     initial_delay_seconds=10,
                 ),
                 name="setup-order-forecast-accuracy-auto-evaluate",
+            )
+        )
+    if outcome_interval > 0:
+        tasks.append(
+            asyncio.create_task(
+                periodic_loop(
+                    name="detection-outcome-auto-evaluate",
+                    interval_seconds=outcome_interval,
+                    callback=partial(auto_evaluate_detection_outcomes, app),
+                    initial_delay_seconds=15,
+                ),
+                name="setup-order-detection-outcome-auto-evaluate",
             )
         )
     return tasks
@@ -208,7 +226,12 @@ def create_app() -> FastAPI:
         event_store=app.state.engine.event_store,
         settings=settings.raw,
     )
-    app.state.techniques = TechniqueService(TechniqueRepository(database))
+    app.state.outcome_tracker = OutcomeTracker(OutcomeRepository(database))
+    app.state.techniques = TechniqueService(
+        TechniqueRepository(database),
+        stats_provider=app.state.outcome_tracker.technique_stats,
+        outcomes_provider=app.state.outcome_tracker.repository.outcomes_for_technique,
+    )
     app.state.portfolio_risk = PortfolioRiskService(repository, settings.raw)
     app.state.model_lab = ModelLabService(repository, settings.raw)
     app.state.forecast_stack_benchmark = ForecastStackBenchmarkService(

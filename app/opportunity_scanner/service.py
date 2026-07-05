@@ -69,6 +69,7 @@ class MarketContextOpportunityScanner:
             badges=badges,
             source_snapshot={**normalized, "detected_at": utc_now_iso()},
             detected_by=detected_by.get(primary_type),
+            detected_by_techniques=list(dict.fromkeys(detected_by.values())),
         )
         return signal.to_dict()
 

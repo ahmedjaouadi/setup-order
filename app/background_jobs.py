@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from app.models import utc_now_iso
+from app.utils.market_hours import classify_us_equity_session
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +193,78 @@ async def auto_evaluate_forecast_accuracy(app: Any) -> dict[str, Any]:
     }
     app.state.forecast_accuracy_auto_refresh = summary
     return summary
+
+
+async def auto_evaluate_detection_outcomes(app: Any) -> dict[str, Any]:
+    tracker = getattr(app.state, "outcome_tracker", None)
+    if tracker is None:
+        summary = {"ok": False, "reason": "outcome_tracker_not_ready"}
+        app.state.detection_outcomes_auto_refresh = summary
+        return summary
+
+    # Evaluation and stats are frozen outside regular trading hours.
+    if classify_us_equity_session(datetime.now(UTC)) != "RTH":
+        summary = {"ok": True, "skipped": "outside_rth", "evaluated": 0, "expired": 0}
+        app.state.detection_outcomes_auto_refresh = summary
+        return summary
+
+    now = utc_now_iso()
+    try:
+        due = await asyncio.to_thread(tracker.repository.due_outcomes, now)
+    except Exception as exc:
+        logger.exception("Detection outcome due lookup failed")
+        summary = {"ok": False, "reason": f"due_lookup_error: {exc}"}
+        app.state.detection_outcomes_auto_refresh = summary
+        return summary
+
+    engine = getattr(app.state, "engine", None)
+    symbols = sorted({str(item.get("symbol") or "").upper() for item in due if item.get("symbol")})
+    bars_by_symbol = {symbol: await _daily_bars(engine, symbol) for symbol in symbols}
+
+    def provider(symbol: str, start: str, end: str) -> list[dict[str, Any]]:
+        return _bars_in_window(bars_by_symbol.get(symbol.upper(), []), start, end)
+
+    result = await asyncio.to_thread(tracker.evaluate_due, provider, now=now)
+    summary = {
+        "ok": True,
+        "generated_at": now,
+        "due_count": len(due),
+        "evaluated": int(result.get("evaluated") or 0),
+        "expired": int(result.get("expired") or 0),
+    }
+    app.state.detection_outcomes_auto_refresh = summary
+    return summary
+
+
+async def _daily_bars(engine: Any, symbol: str) -> list[dict[str, Any]]:
+    if engine is None or not hasattr(engine, "market_history"):
+        return []
+    try:
+        payload = await engine.market_history(symbol, "1d")
+    except Exception:
+        logger.debug("Daily history unavailable for %s", symbol, exc_info=True)
+        return []
+    bars = payload.get("historical_bars") if isinstance(payload, dict) else None
+    return bars if isinstance(bars, list) else []
+
+
+def _bars_in_window(bars: list[dict[str, Any]], start: str, end: str) -> list[dict[str, Any]]:
+    start_date = _date_key(start)
+    end_date = _date_key(end)
+    window: list[dict[str, Any]] = []
+    for bar in bars:
+        if not isinstance(bar, dict):
+            continue
+        bar_date = _date_key(str(bar.get("date") or ""))
+        if bar_date and start_date <= bar_date <= end_date:
+            window.append(bar)
+    return window
+
+
+def _date_key(value: str) -> str:
+    """Normalise a date/datetime string to YYYYMMDD for windowing."""
+    digits = "".join(ch for ch in value if ch.isdigit())
+    return digits[:8]
 
 
 def _setup_needs_refresh(setup: dict[str, Any]) -> bool:

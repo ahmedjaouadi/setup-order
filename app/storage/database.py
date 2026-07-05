@@ -601,6 +601,27 @@ class Database:
                     updated_at     TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS detection_outcomes (
+                    outcome_id          TEXT PRIMARY KEY,
+                    technique_id        TEXT NOT NULL,
+                    symbol              TEXT NOT NULL,
+                    detected_at         TEXT NOT NULL,
+                    price_at_detection  REAL,
+                    features_snapshot   TEXT,
+                    r_unit_pct          REAL,
+                    horizon             TEXT NOT NULL,
+                    evaluation_due_at   TEXT NOT NULL,
+                    price_at_horizon    REAL,
+                    forward_return_pct  REAL,
+                    mfe_pct             REAL,
+                    mae_pct             REAL,
+                    label_1r            INTEGER,
+                    human_feedback      TEXT,
+                    status              TEXT NOT NULL DEFAULT 'PENDING',
+                    payload_json        TEXT,
+                    created_at          TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_setups_status ON setups(status);
                 CREATE INDEX IF NOT EXISTS idx_orders_setup_id ON orders(setup_id);
                 CREATE INDEX IF NOT EXISTS idx_orders_broker_perm_id ON orders(broker_perm_id);
@@ -674,6 +695,10 @@ class Database:
                     ON detection_techniques(status, enabled);
                 CREATE INDEX IF NOT EXISTS idx_detection_techniques_parent
                     ON detection_techniques(parent_id);
+                CREATE INDEX IF NOT EXISTS idx_detection_outcomes_due
+                    ON detection_outcomes(status, evaluation_due_at);
+                CREATE INDEX IF NOT EXISTS idx_detection_outcomes_technique
+                    ON detection_outcomes(technique_id);
                 """)
             conn.execute("""
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
@@ -787,6 +812,10 @@ class Database:
             conn.execute("""
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
                 VALUES ('v2_5_detection_techniques', CURRENT_TIMESTAMP)
+                """)
+            conn.execute("""
+                INSERT OR IGNORE INTO schema_migrations (version, applied_at)
+                VALUES ('v2_6_detection_outcomes', CURRENT_TIMESTAMP)
                 """)
 
     def execute(
