@@ -8,11 +8,13 @@ from types import SimpleNamespace
 from fastapi import HTTPException
 
 from app.api import routes_techniques
+from app.opportunity_scanner.learning_loop import LearningLoop
+from app.opportunity_scanner.outcome_repository import OutcomeRepository
 from app.opportunity_scanner.schemas import (
+    OutcomeFeedbackRequest,
     TechniqueCreateRequest,
     TechniquePatchRequest,
 )
-from app.opportunity_scanner.learning_loop import LearningLoop
 from app.opportunity_scanner.technique_repository import TechniqueRepository
 from app.opportunity_scanner.technique_seed import seed_builtin_techniques
 from app.opportunity_scanner.technique_service import TechniqueService
@@ -28,7 +30,12 @@ class TechniquesApiTests(unittest.IsolatedAsyncioTestCase):
         self.database.initialize()
         self.repository = TechniqueRepository(self.database)
         seed_builtin_techniques(self.repository)
-        self.service = TechniqueService(self.repository)
+        self.outcomes = OutcomeRepository(self.database)
+        self.service = TechniqueService(
+            self.repository,
+            outcomes_provider=self.outcomes.outcomes_for_technique,
+            feedback_recorder=self.outcomes.set_feedback,
+        )
         self.learning_loop = LearningLoop(self.repository, lambda: {}, settings={})
         self.request = SimpleNamespace(
             app=SimpleNamespace(
@@ -138,6 +145,43 @@ class TechniquesApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["items"], [])
         with self.assertRaises(HTTPException) as ctx:
             await routes_techniques.technique_outcomes(self.request, "nope")
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def _seed_outcome(self, outcome_id: str) -> None:
+        self.outcomes.create_outcome(
+            {
+                "outcome_id": outcome_id,
+                "technique_id": BUILTIN_ID,
+                "symbol": "AAPL",
+                "detected_at": "2026-07-03T14:00:00+00:00",
+                "horizon": "1d",
+                "evaluation_due_at": "2026-07-06T20:00:00+00:00",
+                "status": "PENDING",
+                "created_at": "2026-07-03T14:00:00+00:00",
+            }
+        )
+
+    async def test_feedback_persists_canonical_value(self) -> None:
+        self._seed_outcome("dco_1")
+        result = await routes_techniques.set_outcome_feedback(
+            self.request, "dco_1", OutcomeFeedbackRequest(feedback="too_late")
+        )
+        self.assertEqual(result["human_feedback"], "too_late")
+        stored = self.outcomes.outcomes_for_technique(BUILTIN_ID)[0]
+        self.assertEqual(stored["human_feedback"], "too_late")
+
+    async def test_feedback_accepts_free_text(self) -> None:
+        self._seed_outcome("dco_2")
+        result = await routes_techniques.set_outcome_feedback(
+            self.request, "dco_2", OutcomeFeedbackRequest(feedback="entered too high on the gap")
+        )
+        self.assertEqual(result["human_feedback"], "entered too high on the gap")
+
+    async def test_feedback_unknown_outcome_returns_404(self) -> None:
+        with self.assertRaises(HTTPException) as ctx:
+            await routes_techniques.set_outcome_feedback(
+                self.request, "missing", OutcomeFeedbackRequest(feedback="good")
+            )
         self.assertEqual(ctx.exception.status_code, 404)
 
     async def test_learning_run_respects_kill_switch_by_default(self) -> None:

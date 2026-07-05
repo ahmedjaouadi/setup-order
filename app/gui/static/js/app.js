@@ -7413,19 +7413,59 @@ function wireDetectionTechniqueRows(table, items) {
   });
 }
 
-function showDetectionTechniqueDetail(item) {
+const FEEDBACK_OPTIONS = ["good", "too_late", "false_signal", "bad_structure"];
+
+async function showDetectionTechniqueDetail(item) {
   const box = document.getElementById("detection-technique-detail");
   if (!box) return;
   box.hidden = false;
   const stats = item.stats || {};
+  const hitRate = stats.hit_rate == null ? "-" : `${(stats.hit_rate * 100).toFixed(0)}%`;
   box.innerHTML = `
     <strong>${escapeHtml(item.name || item.technique_id)}</strong>
     <div class="muted">${escapeHtml(item.description || "")}</div>
     <div>Regle : <code>${escapeHtml(item.rule_summary || "-")}</code></div>
     <div>Type d'opportunite : ${escapeHtml(item.opportunity_type || "-")}</div>
     <div>Origine : ${escapeHtml(item.origin || "-")} · Statut : ${escapeHtml(item.status || "-")}</div>
-    <div>Stats : ${escapeHtml(stats.status_label || "-")} (${escapeHtml(String(stats.sample_size || 0))} samples)</div>
+    <div>Stats : ${escapeHtml(stats.status_label || "-")} (${escapeHtml(String(stats.sample_size || 0))} samples, hit rate ${escapeHtml(hitRate)})</div>
+    <div id="detection-technique-outcomes" class="muted">Chargement des detections…</div>
   `;
+  const outcomes = await api(`/api/techniques/${encodeURIComponent(item.technique_id)}/outcomes`)
+    .then((res) => res.items || [])
+    .catch(() => []);
+  renderTechniqueOutcomes(outcomes);
+}
+
+function renderTechniqueOutcomes(outcomes) {
+  const target = document.getElementById("detection-technique-outcomes");
+  if (!target) return;
+  if (!outcomes.length) {
+    target.textContent = "Aucune detection enregistree pour le moment.";
+    return;
+  }
+  target.classList.remove("muted");
+  target.innerHTML = outcomes.slice(0, 20).map((outcome) => `
+    <div class="detection-outcome-row" data-outcome-id="${escapeHtml(outcome.outcome_id)}">
+      <span>${escapeHtml(outcome.symbol || "-")} · ${escapeHtml(outcome.horizon || "-")} · ${escapeHtml(outcome.status || "-")}${outcome.label_1r == null ? "" : ` · label ${escapeHtml(String(outcome.label_1r))}`}</span>
+      <span class="detection-feedback">
+        ${FEEDBACK_OPTIONS.map((value) => `<button type="button" class="v2-inline-toggle" data-feedback="${value}">${value}</button>`).join("")}
+        <em class="detection-feedback-value">${escapeHtml(outcome.human_feedback || "")}</em>
+      </span>
+    </div>
+  `).join("");
+  target.querySelectorAll(".detection-outcome-row").forEach((row) => {
+    const outcomeId = row.getAttribute("data-outcome-id");
+    row.querySelectorAll("[data-feedback]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await api(`/api/techniques/outcomes/${encodeURIComponent(outcomeId)}/feedback`, {
+          method: "PATCH",
+          body: { feedback: button.getAttribute("data-feedback") },
+        });
+        const label = row.querySelector(".detection-feedback-value");
+        if (label) label.textContent = button.getAttribute("data-feedback");
+      });
+    });
+  });
 }
 
 async function renderObservabilityPage() {

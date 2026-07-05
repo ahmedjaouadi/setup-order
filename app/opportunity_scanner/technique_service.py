@@ -24,12 +24,19 @@ from app.opportunity_scanner.technique_repository import TechniqueRepository
 StatsProvider = Callable[[], dict[str, dict[str, Any]]]
 # Injected by P2-a; returns the recorded outcome history for one technique.
 OutcomesProvider = Callable[[str], list[dict[str, Any]]]
+# Injected by P2-b bis; persists human feedback, returns False if the outcome
+# is unknown.
+FeedbackRecorder = Callable[[str, str], bool]
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
 class TechniqueNotFoundError(KeyError):
     """Raised when a technique_id does not exist."""
+
+
+class OutcomeNotFoundError(KeyError):
+    """Raised when an outcome_id does not exist."""
 
 
 class InvalidRuleError(ValueError):
@@ -49,10 +56,12 @@ class TechniqueService:
         repository: TechniqueRepository,
         stats_provider: StatsProvider | None = None,
         outcomes_provider: OutcomesProvider | None = None,
+        feedback_recorder: FeedbackRecorder | None = None,
     ) -> None:
         self.repository = repository
         self.stats_provider = stats_provider
         self.outcomes_provider = outcomes_provider
+        self.feedback_recorder = feedback_recorder
 
     def list_techniques(self) -> list[dict[str, Any]]:
         stats = self._stats()
@@ -124,6 +133,12 @@ class TechniqueService:
         if self.outcomes_provider is None:
             return []
         return self.outcomes_provider(technique_id)
+
+    def set_outcome_feedback(self, outcome_id: str, feedback: str) -> dict[str, Any]:
+        """Persist human feedback on a detection outcome. 404 if unknown."""
+        if self.feedback_recorder is None or not self.feedback_recorder(outcome_id, feedback):
+            raise OutcomeNotFoundError(outcome_id)
+        return {"ok": True, "outcome_id": outcome_id, "human_feedback": feedback}
 
     def _require(self, technique_id: str) -> dict[str, Any]:
         row = self.repository.get(technique_id)

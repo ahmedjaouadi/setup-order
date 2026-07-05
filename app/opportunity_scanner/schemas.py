@@ -66,6 +66,14 @@ class TechniquePatchRequest(BaseModel):
     enabled: bool | None = None
 
 
+class OutcomeFeedbackRequest(BaseModel):
+    """Human feedback on a detection outcome. Free text is accepted alongside the
+    canonical values (good / too_late / false_signal / bad_structure). Stored
+    only - it never feeds the learning loop at this stage."""
+
+    feedback: str = Field(min_length=1, max_length=500)
+
+
 class TechniqueStats(BaseModel):
     """Per-technique outcome stats. Empty until outcome tracking (P2-a) fills them."""
 

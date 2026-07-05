@@ -3,11 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 
 from app.opportunity_scanner.schemas import (
+    OutcomeFeedbackRequest,
     TechniqueCreateRequest,
     TechniquePatchRequest,
 )
 from app.opportunity_scanner.technique_service import (
     InvalidRuleError,
+    OutcomeNotFoundError,
     TechniqueNotFoundError,
     TechniqueService,
 )
@@ -64,6 +66,14 @@ async def technique_outcomes(request: Request, technique_id: str):
         return {"items": _service(request).list_outcomes(technique_id)}
     except TechniqueNotFoundError:
         raise HTTPException(status_code=404, detail="Technique not found")
+
+
+@router.patch("/api/techniques/outcomes/{outcome_id}/feedback")
+async def set_outcome_feedback(request: Request, outcome_id: str, payload: OutcomeFeedbackRequest):
+    try:
+        return _service(request).set_outcome_feedback(outcome_id, payload.feedback)
+    except OutcomeNotFoundError:
+        raise HTTPException(status_code=404, detail="Outcome not found")
 
 
 @router.post("/api/techniques/learning/run")
