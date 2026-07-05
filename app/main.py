@@ -27,6 +27,7 @@ from app.api import (
     routes_research,
     routes_scoring,
     routes_setups,
+    routes_techniques,
     routes_v2_pages,
     websocket,
 )
@@ -54,6 +55,7 @@ from app.observability import ObservabilityService
 from app.opportunities import OpportunityScannerService
 from app.opportunity_scanner.technique_repository import TechniqueRepository
 from app.opportunity_scanner.technique_seed import seed_builtin_techniques
+from app.opportunity_scanner.technique_service import TechniqueService
 from app.portfolio_risk import PortfolioRiskService
 from app.reports import DailyReportService
 from app.scoring import SetupQualityEngine
@@ -206,6 +208,7 @@ def create_app() -> FastAPI:
         event_store=app.state.engine.event_store,
         settings=settings.raw,
     )
+    app.state.techniques = TechniqueService(TechniqueRepository(database))
     app.state.portfolio_risk = PortfolioRiskService(repository, settings.raw)
     app.state.model_lab = ModelLabService(repository, settings.raw)
     app.state.forecast_stack_benchmark = ForecastStackBenchmarkService(
@@ -228,6 +231,7 @@ def create_app() -> FastAPI:
 
     app.include_router(routes_dashboard.router)
     app.include_router(routes_setups.router)
+    app.include_router(routes_techniques.router)
     app.include_router(routes_forecast.router)
     app.include_router(routes_forecasting.router)
     app.include_router(routes_intelligence.router)

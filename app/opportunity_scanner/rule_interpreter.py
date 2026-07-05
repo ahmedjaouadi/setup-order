@@ -159,6 +159,53 @@ def _collect_errors(node: Any, errors: list[str]) -> None:
             errors.append("'between' requires a value of [low, high]")
 
 
+_OPERATOR_LABELS: dict[str, str] = {
+    ">=": "≥",
+    ">": ">",
+    "<=": "≤",
+    "<": "<",
+    "==": "=",
+}
+
+
+def describe_rule(rule: dict[str, Any] | str | None) -> str:
+    """Render a rule as a compact human-readable string for the UI.
+
+    Purely descriptive; never raises. A malformed rule renders as an empty string.
+    """
+    parsed = parse_rule(rule)
+    if parsed is None:
+        return ""
+    return _describe_node(parsed)
+
+
+def _describe_node(node: Any) -> str:
+    if not isinstance(node, dict):
+        return ""
+    for combinator, joiner in (("all", " AND "), ("any", " OR ")):
+        if combinator in node:
+            children = node.get(combinator)
+            if not isinstance(children, list) or not children:
+                return ""
+            parts = [_describe_node(child) for child in children]
+            rendered = joiner.join(part for part in parts if part)
+            return f"({rendered})" if rendered else ""
+    return _describe_condition(node)
+
+
+def _describe_condition(condition: dict[str, Any]) -> str:
+    field = condition.get("field")
+    op = condition.get("op")
+    if not isinstance(field, str) or not isinstance(op, str):
+        return ""
+    value = condition.get("value")
+    if op == "between":
+        if isinstance(value, list | tuple) and len(value) == 2:
+            return f"{field} in [{value[0]}, {value[1]}]"
+        return field
+    return f"{field} {_OPERATOR_LABELS.get(op, op)} {value}"
+
+
 def _first_value(payload: dict[str, Any], *keys: str) -> Any:
     for key in keys:
         value = payload.get(key)

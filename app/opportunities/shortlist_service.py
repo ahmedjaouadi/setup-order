@@ -96,6 +96,7 @@ class OpportunityShortlistService:
             "data_quality_ok": not bool(liquidity.get("blocked")),
             "distance_to_trigger": _distance_to_trigger(selection),
             "blocking_reasons": liquidity.get("issues", []),
+            "detected_by": payload.get("detected_by"),
         }
 
     @staticmethod

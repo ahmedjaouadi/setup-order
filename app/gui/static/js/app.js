@@ -7355,8 +7355,77 @@ async function renderLogsPage() {
 async function renderRadarHubPage() {
   await Promise.all([
     renderV2ScannerPage({ afterAction: renderRadarHubPage }),
+    renderDetectionTechniquesPanel(),
     renderV2OpportunitiesPage({ afterScan: renderRadarHubPage }),
   ]);
+}
+
+async function renderDetectionTechniquesPanel() {
+  const table = document.getElementById("detection-techniques-table");
+  if (!table) return;
+  const result = await api("/api/techniques");
+  const items = result.items || [];
+  setText("detection-techniques-count", `${items.length} techniques`);
+  const stats = (item) => item.stats || {};
+  renderV2Table("detection-techniques-table", [
+    ["name", "Technique"],
+    ["status", "Statut"],
+    ["origin", "Origine"],
+    ["hit_rate", "Hit rate"],
+    ["samples", "Samples"],
+    ["enabled", "Actif"],
+  ], items.map((item) => ({
+    ...item,
+    status: statusBadge(item.status),
+    hit_rate: stats(item).hit_rate == null ? "-" : `${(stats(item).hit_rate * 100).toFixed(0)}%`,
+    samples: stats(item).sample_size || 0,
+    enabled: techniqueToggleCell(item),
+  })));
+  wireDetectionTechniqueRows(table, items);
+}
+
+function techniqueToggleCell(item) {
+  const label = item.enabled ? "ON" : "OFF";
+  const tone = item.enabled ? "positive" : "muted";
+  return `<button type="button" class="v2-inline-toggle ${tone}" data-technique-toggle="${escapeHtml(item.technique_id)}">${label}</button>`;
+}
+
+function wireDetectionTechniqueRows(table, items) {
+  const byId = new Map(items.map((item) => [item.technique_id, item]));
+  table.querySelectorAll("[data-technique-toggle]").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      const id = button.getAttribute("data-technique-toggle");
+      const current = byId.get(id);
+      if (!current) return;
+      await api(`/api/techniques/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: { enabled: !current.enabled },
+      });
+      await renderDetectionTechniquesPanel();
+    });
+  });
+  table.querySelectorAll("tbody tr").forEach((row, index) => {
+    const item = items[index];
+    if (!item) return;
+    row.style.cursor = "pointer";
+    row.addEventListener("click", () => showDetectionTechniqueDetail(item));
+  });
+}
+
+function showDetectionTechniqueDetail(item) {
+  const box = document.getElementById("detection-technique-detail");
+  if (!box) return;
+  box.hidden = false;
+  const stats = item.stats || {};
+  box.innerHTML = `
+    <strong>${escapeHtml(item.name || item.technique_id)}</strong>
+    <div class="muted">${escapeHtml(item.description || "")}</div>
+    <div>Regle : <code>${escapeHtml(item.rule_summary || "-")}</code></div>
+    <div>Type d'opportunite : ${escapeHtml(item.opportunity_type || "-")}</div>
+    <div>Origine : ${escapeHtml(item.origin || "-")} · Statut : ${escapeHtml(item.status || "-")}</div>
+    <div>Stats : ${escapeHtml(stats.status_label || "-")} (${escapeHtml(String(stats.sample_size || 0))} samples)</div>
+  `;
 }
 
 async function renderObservabilityPage() {
@@ -7401,6 +7470,7 @@ async function renderV2OpportunitiesPage(options = {}) {
   renderV2Table("v2-opportunities-table", [
     ["symbol", "Symbol"],
     ["opportunity_type", "Type"],
+    ["detected_by", "Detecte par"],
     ["timeframe", "TF"],
     ["score", "Score"],
     ["status", "Status"],
@@ -7408,6 +7478,7 @@ async function renderV2OpportunitiesPage(options = {}) {
     ["reason", "Reason"],
   ], rows.map((item) => ({
     ...item,
+    detected_by: item.detected_by || (item.payload && item.payload.detected_by) || "-",
     reason: (item.payload && item.payload.reason) || "",
     status: statusBadge(item.status),
   })));
