@@ -252,6 +252,7 @@ def create_app() -> FastAPI:
         stats_provider=app.state.outcome_tracker.technique_stats,
         outcomes_provider=app.state.outcome_tracker.repository.outcomes_for_technique,
         feedback_recorder=app.state.outcome_tracker.repository.set_feedback,
+        event_store=app.state.engine.event_store,
     )
     app.state.learning_loop = LearningLoop(
         TechniqueRepository(database),

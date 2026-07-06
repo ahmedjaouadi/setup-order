@@ -98,6 +98,8 @@ class TechniqueResponse(BaseModel):
     origin: str
     parent_id: str | None
     status: str
+    config_version: str = "1"
+    revision: int = 1
     created_at: str
     updated_at: str
     stats: TechniqueStats

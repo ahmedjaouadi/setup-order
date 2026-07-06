@@ -20,9 +20,10 @@ class TechniqueRepository:
             """
             INSERT OR IGNORE INTO detection_techniques (
                 technique_id, name, description, rule_json, enabled,
-                origin, parent_id, status, created_at, updated_at
+                origin, parent_id, status, created_at, updated_at,
+                config_version, revision
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 technique["technique_id"],
@@ -35,6 +36,10 @@ class TechniqueRepository:
                 technique.get("status", "ACTIVE"),
                 technique["created_at"],
                 technique["updated_at"],
+                # Versioning (skills.md 30bis): learned variants and seeds are
+                # born at revision 1; their lineage is carried by parent_id.
+                str(technique.get("config_version", "1")),
+                int(technique.get("revision", 1)),
             ),
         )
         return cursor.rowcount > 0
@@ -72,6 +77,25 @@ class TechniqueRepository:
             values,
         )
         return cursor.rowcount > 0
+
+    def bump_revision(self, technique_id: str, *, updated_at: str) -> int | None:
+        """Increment a technique's `revision` (skills.md 30bis). Returns the new revision.
+
+        Called when — and only when — a technique's `rule_json` changes, so the
+        learning engine can replay a past decision against the rule of its epoch.
+        """
+        cursor = self.database.execute(
+            """
+            UPDATE detection_techniques
+            SET revision = revision + 1, updated_at = ?
+            WHERE technique_id = ?
+            """,
+            (updated_at, technique_id),
+        )
+        if cursor.rowcount <= 0:
+            return None
+        row = self.get(technique_id)
+        return int(row["revision"]) if row is not None else None
 
     def retire(self, technique_id: str, *, updated_at: str) -> bool:
         """Soft delete: flips status to RETIRED and disables the technique. Never deletes the row."""

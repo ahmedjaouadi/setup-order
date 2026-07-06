@@ -780,6 +780,21 @@ class Database:
                 "last_revalidated_at",
                 "TEXT",
             )
+            # Technique versioning (docs/skills.md section 30bis): every edit of a
+            # technique's rule bumps `revision` so a past decision can be replayed
+            # with the exact rule of its epoch.
+            self._ensure_column(
+                conn,
+                "detection_techniques",
+                "config_version",
+                "TEXT NOT NULL DEFAULT '1'",
+            )
+            self._ensure_column(
+                conn,
+                "detection_techniques",
+                "revision",
+                "INTEGER NOT NULL DEFAULT 1",
+            )
             self._migrate_setup_creation_snapshot_stop_column(conn)
             conn.execute("""
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)

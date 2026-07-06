@@ -7426,7 +7426,7 @@ async function showDetectionTechniqueDetail(item) {
     <div class="muted">${escapeHtml(item.description || "")}</div>
     <div>Regle : <code>${escapeHtml(item.rule_summary || "-")}</code></div>
     <div>Type d'opportunite : ${escapeHtml(item.opportunity_type || "-")}</div>
-    <div>Origine : ${escapeHtml(item.origin || "-")} · Statut : ${escapeHtml(item.status || "-")}</div>
+    <div>Origine : ${escapeHtml(item.origin || "-")} · Statut : ${escapeHtml(item.status || "-")} · Revision : ${escapeHtml(String(item.revision || 1))} (config v${escapeHtml(String(item.config_version || "1"))})</div>
     <div>Stats : ${escapeHtml(stats.status_label || "-")} (${escapeHtml(String(stats.sample_size || 0))} samples, hit rate ${escapeHtml(hitRate)})</div>
     <div id="detection-technique-outcomes" class="muted">Chargement des detections…</div>
   `;

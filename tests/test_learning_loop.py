@@ -7,7 +7,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app.opportunity_scanner.learning_loop import LearningLoop, scale_rule
+from app.opportunity_scanner.learning_loop import (
+    LearningLoop,
+    _numeric_leaves,
+    scale_rule,
+)
 from app.opportunity_scanner.technique_repository import TechniqueRepository
 from app.storage.database import Database
 
@@ -182,6 +186,112 @@ class LearningLoopTests(unittest.TestCase):
         self.assertEqual(self.repo.get("cand")["status"], "RETIRED")
         active = [r for r in self.repo.list_all() if r["status"] == "ACTIVE" and r["enabled"]]
         self.assertLessEqual(len(active), 20)
+
+
+class SpawnVariantTests(unittest.TestCase):
+    """One-parameter-at-a-time mutation (skills.md 32.2ter)."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.database = Database(Path(self.tmp.name) / "s.sqlite")
+        self.database.initialize()
+        self.repo = TechniqueRepository(self.database)
+        self.events = FakeEventStore()
+
+    def tearDown(self) -> None:
+        self.database.close()
+        self.tmp.cleanup()
+
+    def _insert_rule(self, technique_id: str, rule: dict[str, Any]) -> None:
+        self.repo.insert_if_absent(
+            {
+                "technique_id": technique_id,
+                "name": technique_id,
+                "description": "",
+                "rule_json": json.dumps(rule),
+                "enabled": True,
+                "origin": "manual",
+                "parent_id": None,
+                "status": "ACTIVE",
+                "created_at": "2026-07-01T00:00:00+00:00",
+                "updated_at": "2026-07-01T00:00:00+00:00",
+            }
+        )
+
+    def _run(self, parent_id: str, rule: dict[str, Any], settings: dict[str, Any]) -> None:
+        self._insert_rule(parent_id, rule)
+        stats = {parent_id: {"sample_size": 40, "expectancy_r": 1.5}}
+        LearningLoop(self.repo, lambda: stats, event_store=self.events, settings=settings).run(
+            now=RTH_NOW
+        )
+
+    def _candidates(self, parent_id: str) -> list[dict[str, Any]]:
+        return [
+            row
+            for row in self.repo.list_all()
+            if row["status"] == "CANDIDATE" and row["parent_id"] == parent_id
+        ]
+
+    def test_variant_differs_from_parent_by_exactly_one_threshold(self) -> None:
+        rule = {
+            "all": [
+                {"field": "gap_pct", "op": ">=", "value": 3.0},
+                {"field": "spread_pct", "op": "<=", "value": 0.5},
+            ]
+        }
+        self._run("t1", rule, ENABLED)
+        candidates = self._candidates("t1")
+        # 2 leaves x 2 factors = 4 variants, all within the default cap of 4.
+        self.assertEqual(len(candidates), 4)
+        parent_leaves = _numeric_leaves(rule)
+        for row in candidates:
+            variant_leaves = _numeric_leaves(json.loads(row["rule_json"]))
+            diffs = [
+                (pf, pv, vv)
+                for (pf, pv), (_vf, vv) in zip(parent_leaves, variant_leaves)
+                if pv != vv
+            ]
+            self.assertEqual(len(diffs), 1, f"{row['technique_id']} mutates >1 leaf")
+            field, old, new = diffs[0]
+            self.assertIn(round(new, 6), {round(old * 0.8, 6), round(old * 1.2, 6)})
+
+    def test_cap_and_leaf_order(self) -> None:
+        rule = {
+            "all": [
+                {"field": "gap_pct", "op": ">=", "value": 3.0},
+                {"field": "perf_stock_1d", "op": ">=", "value": 5.0},
+                {"field": "spread_pct", "op": "<=", "value": 0.5},
+            ]
+        }
+        # 3 numeric leaves x 2 factors = 6 possible, capped at 4 -> first 2 leaves.
+        settings = {"opportunity_scanner": {"learning": {"enabled": True}}}
+        self._run("t1", rule, settings)
+        candidates = self._candidates("t1")
+        self.assertEqual(len(candidates), 4)
+        mutated_fields = set()
+        for row in candidates:
+            parent_leaves = _numeric_leaves(rule)
+            variant_leaves = _numeric_leaves(json.loads(row["rule_json"]))
+            for (pf, pv), (_vf, vv) in zip(parent_leaves, variant_leaves):
+                if pv != vv:
+                    mutated_fields.add(pf)
+        # The cap keeps the earliest leaves in rule order; spread_pct is dropped.
+        self.assertEqual(mutated_fields, {"gap_pct", "perf_stock_1d"})
+
+    def test_rule_without_numeric_leaf_spawns_nothing(self) -> None:
+        # A `between` range and a bare non-condition node carry no mutable scalar.
+        rule = {"all": [{"field": "gap_pct", "op": "between", "value": [2, 4]}]}
+        self._run("t1", rule, ENABLED)
+        self.assertEqual(self._candidates("t1"), [])
+
+    def test_trace_carries_mutated_field_and_factor(self) -> None:
+        rule = {"field": "gap_pct", "op": ">=", "value": 3.0, "opportunity_type": "t1"}
+        self._run("t1", rule, ENABLED)
+        spawned = [t for t in self.events.traces if t["final_decision"] == "VARIANT_SPAWNED"]
+        self.assertTrue(spawned)
+        for trace in spawned:
+            self.assertEqual(trace["trace"]["mutated_field"], "gap_pct")
+            self.assertIn(trace["trace"]["factor"], {0.8, 1.2})
 
 
 if __name__ == "__main__":

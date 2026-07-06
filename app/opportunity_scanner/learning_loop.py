@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from contextlib import suppress
+from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
@@ -16,6 +17,12 @@ StatsProvider = Callable[[], dict[str, dict[str, Any]]]
 DEFAULT_MAX_ACTIVE = 20
 DEFAULT_MIN_SAMPLES = 30
 DEFAULT_VARIANT_FACTORS: tuple[float, ...] = (0.8, 1.2)
+DEFAULT_MAX_VARIANTS_PER_PARENT = 4
+
+# Only these comparison operators carry a single scalar numeric threshold that a
+# one-parameter-at-a-time mutation can tune (skills.md 32.2ter). `==` (string or
+# boolean equality) and `between` (two bounds) are deliberately left alone.
+_MUTABLE_OPS: frozenset[str] = frozenset({">=", ">", "<=", "<"})
 
 
 class LearningLoop:
@@ -44,6 +51,9 @@ class LearningLoop:
         self.min_samples = int(config.get("min_samples", DEFAULT_MIN_SAMPLES))
         factors = config.get("variant_factors") or DEFAULT_VARIANT_FACTORS
         self.variant_factors = tuple(float(factor) for factor in factors)
+        self.max_variants_per_parent = int(
+            config.get("max_variants_per_parent", DEFAULT_MAX_VARIANTS_PER_PARENT)
+        )
 
     def run(self, *, now: datetime | None = None) -> dict[str, Any]:
         if not self.enabled:
@@ -118,33 +128,64 @@ class LearningLoop:
                         self._trace(
                             "VARIANT_SPAWNED",
                             variant,
-                            {"parent_id": tech["technique_id"], "expectancy_r": expectancy},
+                            {
+                                "parent_id": tech["technique_id"],
+                                "expectancy_r": expectancy,
+                                "mutated_field": variant.get("mutated_field"),
+                                "factor": variant.get("factor"),
+                            },
                         )
                     )
         return {"enabled": True, "decisions": decisions}
 
     def _spawn_variants(self, parent: dict[str, Any], iso: str) -> list[dict[str, Any]]:
+        """Spawn one-parameter-at-a-time variants of a parent (skills.md 32.2ter).
+
+        Each variant mutates exactly ONE numeric leaf threshold of the parent
+        rule by one factor, so a later promotion/retirement can attribute the
+        effect to that single change. Leaves are taken in rule order and the
+        number of variants created is capped by `max_variants_per_parent`.
+        """
         parent_rule = parse_rule(parent.get("rule_json")) or {}
+        leaves = _numeric_leaves(parent_rule)
+        if not leaves:
+            return []
+        parent_id = parent["technique_id"]
+        parent_name = str(parent.get("name") or parent_id)
         created: list[dict[str, Any]] = []
-        for factor in self.variant_factors:
-            suffix = _factor_suffix(factor)
-            variant_id = self._unique_id(f"{parent['technique_id']}_{suffix}")
-            inserted = self.repository.insert_if_absent(
-                {
-                    "technique_id": variant_id,
-                    "name": f"{parent.get('name') or parent['technique_id']} ({suffix})",
-                    "description": str(parent.get("description") or ""),
-                    "rule_json": json.dumps(scale_rule(parent_rule, factor)),
-                    "enabled": True,
-                    "origin": "learned",
-                    "parent_id": parent["technique_id"],
-                    "status": "CANDIDATE",
-                    "created_at": iso,
-                    "updated_at": iso,
-                }
-            )
-            if inserted:
-                created.append({"technique_id": variant_id, "name": variant_id})
+        for index, (field, _value) in enumerate(leaves):
+            for factor in self.variant_factors:
+                if len(created) >= self.max_variants_per_parent:
+                    return created
+                tag = _factor_tag(factor)
+                variant_id = self._unique_id(f"{parent_id}_{field}_{tag}")
+                mutated_rule = _mutate_nth_leaf(parent_rule, index, factor)
+                inserted = self.repository.insert_if_absent(
+                    {
+                        "technique_id": variant_id,
+                        "name": f"{parent_name} ({field} {tag})",
+                        "description": (
+                            f"Mutation de {field} ×{factor} (skills.md §32.2ter — "
+                            f"un paramètre à la fois). Variante de {parent_name}."
+                        ),
+                        "rule_json": json.dumps(mutated_rule),
+                        "enabled": True,
+                        "origin": "learned",
+                        "parent_id": parent_id,
+                        "status": "CANDIDATE",
+                        "created_at": iso,
+                        "updated_at": iso,
+                    }
+                )
+                if inserted:
+                    created.append(
+                        {
+                            "technique_id": variant_id,
+                            "name": variant_id,
+                            "mutated_field": field,
+                            "factor": factor,
+                        }
+                    )
         return created
 
     def _unique_id(self, base: str) -> str:
@@ -167,8 +208,72 @@ class LearningLoop:
         return decision
 
 
+def _numeric_leaves(rule: dict[str, Any]) -> list[tuple[str, float]]:
+    """Return the (field, value) of each mutable numeric leaf, in rule order."""
+    leaves: list[tuple[str, float]] = []
+    _walk_leaves(rule, leaves)
+    return leaves
+
+
+def _walk_leaves(node: Any, leaves: list[tuple[str, float]]) -> None:
+    if not isinstance(node, dict):
+        return
+    for combinator in ("all", "any"):
+        children = node.get(combinator)
+        if isinstance(children, list):
+            for child in children:
+                _walk_leaves(child, leaves)
+            return
+    field = node.get("field")
+    op = node.get("op")
+    number = _leaf_number(node.get("value"))
+    if isinstance(field, str) and op in _MUTABLE_OPS and number is not None:
+        leaves.append((field, number))
+
+
+def _mutate_nth_leaf(rule: dict[str, Any], index: int, factor: float) -> dict[str, Any]:
+    """Deep-copy `rule`, scaling only the `index`-th mutable numeric leaf."""
+    copy = deepcopy(rule)
+    _apply_leaf_mutation(copy, index, factor, [0])
+    return copy
+
+
+def _apply_leaf_mutation(node: Any, index: int, factor: float, counter: list[int]) -> None:
+    if not isinstance(node, dict):
+        return
+    for combinator in ("all", "any"):
+        children = node.get(combinator)
+        if isinstance(children, list):
+            for child in children:
+                _apply_leaf_mutation(child, index, factor, counter)
+            return
+    field = node.get("field")
+    op = node.get("op")
+    number = _leaf_number(node.get("value"))
+    if isinstance(field, str) and op in _MUTABLE_OPS and number is not None:
+        if counter[0] == index:
+            node["value"] = round(number * factor, 6)
+        counter[0] += 1
+
+
+def _factor_tag(factor: float) -> str:
+    """Compact id/name tag for a mutation factor: 1.2 -> ``p20``, 0.8 -> ``m20``."""
+    pct = int(round(abs(1 - factor) * 100))
+    return f"{'p' if factor >= 1 else 'm'}{pct}"
+
+
+def _leaf_number(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
 def scale_rule(node: Any, factor: float) -> Any:
-    """Return a copy of a rule with every numeric threshold scaled by `factor`."""
+    """Return a copy of a rule with every numeric threshold scaled by `factor`.
+
+    Retained as a pure, tested helper; the learning loop no longer uses it in
+    production (variants mutate a single leaf, see `_spawn_variants`).
+    """
     if not isinstance(node, dict):
         return node
     result: dict[str, Any] = {}
@@ -209,11 +314,6 @@ def _learning_config(settings: dict[str, Any] | None) -> dict[str, Any]:
 
 def _ready(stat: dict[str, Any] | None, min_samples: int) -> bool:
     return bool(stat) and int((stat or {}).get("sample_size", 0)) >= min_samples
-
-
-def _factor_suffix(factor: float) -> str:
-    direction = "up" if factor >= 1 else "dn"
-    return f"v{direction}{int(round(abs(1 - factor) * 100))}"
 
 
 def _number(value: Any) -> float | None:

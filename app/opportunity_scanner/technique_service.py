@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable
+from contextlib import suppress
 from typing import Any
 
 from app.models import utc_now_iso
@@ -57,11 +58,13 @@ class TechniqueService:
         stats_provider: StatsProvider | None = None,
         outcomes_provider: OutcomesProvider | None = None,
         feedback_recorder: FeedbackRecorder | None = None,
+        event_store: Any | None = None,
     ) -> None:
         self.repository = repository
         self.stats_provider = stats_provider
         self.outcomes_provider = outcomes_provider
         self.feedback_recorder = feedback_recorder
+        self.event_store = event_store
 
     def list_techniques(self) -> list[dict[str, Any]]:
         stats = self._stats()
@@ -96,6 +99,8 @@ class TechniqueService:
     def update_technique(self, technique_id: str, patch: TechniquePatchRequest) -> dict[str, Any]:
         existing = self._require(technique_id)
         fields: dict[str, Any] = {}
+        rule_before = str(existing.get("rule_json") or "")
+        rule_after: str | None = None
         if patch.rule is not None or patch.opportunity_type is not None:
             current = parse_rule(existing.get("rule_json")) or {}
             rule = patch.rule if patch.rule is not None else _strip_type(current)
@@ -104,7 +109,8 @@ class TechniqueService:
                 if patch.opportunity_type is not None
                 else _opportunity_type_of(current)
             )
-            fields["rule_json"] = self._build_rule_json(rule, opportunity_type)
+            rule_after = self._build_rule_json(rule, opportunity_type)
+            fields["rule_json"] = rule_after
         if patch.name is not None:
             fields["name"] = patch.name
         if patch.description is not None:
@@ -112,9 +118,42 @@ class TechniqueService:
         if patch.enabled is not None:
             fields["enabled"] = 1 if patch.enabled else 0
         if fields:
-            fields["updated_at"] = utc_now_iso()
+            now = utc_now_iso()
+            fields["updated_at"] = now
             self.repository.update_fields(technique_id, fields)
+            # Versioning (skills.md 30bis): only a change to the RULE bumps the
+            # revision — a rename or an enabled toggle does not version. Every
+            # rule change is auditable in decision_traces so a past decision can
+            # be replayed against the rule of its epoch.
+            if rule_after is not None and rule_after != rule_before:
+                self._version_rule_change(technique_id, existing, rule_before, rule_after)
         return self.get_technique(technique_id)
+
+    def _version_rule_change(
+        self,
+        technique_id: str,
+        existing: dict[str, Any],
+        rule_before: str,
+        rule_after: str,
+    ) -> None:
+        revision_from = int(existing.get("revision") or 1)
+        revision_to = self.repository.bump_revision(technique_id, updated_at=utc_now_iso())
+        if revision_to is None:
+            revision_to = revision_from + 1
+        if self.event_store is None:
+            return
+        with suppress(Exception):
+            self.event_store.record_decision_trace(
+                decision_type="TECHNIQUE_REVISION",
+                final_decision=f"REVISION_{revision_from}_TO_{revision_to}",
+                trace={
+                    "technique_id": technique_id,
+                    "revision_from": revision_from,
+                    "revision_to": revision_to,
+                    "rule_before": parse_rule(rule_before) or {},
+                    "rule_after": parse_rule(rule_after) or {},
+                },
+            )
 
     def retire_technique(self, technique_id: str) -> dict[str, Any]:
         existing = self._require(technique_id)
@@ -186,6 +225,8 @@ class TechniqueService:
             origin=str(row.get("origin") or ""),
             parent_id=row.get("parent_id"),
             status=str(row.get("status") or ""),
+            config_version=str(row.get("config_version") or "1"),
+            revision=int(row.get("revision") or 1),
             created_at=str(row.get("created_at") or ""),
             updated_at=str(row.get("updated_at") or ""),
             stats=TechniqueStats(**raw_stats) if raw_stats else TechniqueStats(),

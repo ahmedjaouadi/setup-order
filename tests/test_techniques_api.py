@@ -23,6 +23,15 @@ from app.storage.database import Database
 BUILTIN_ID = "intraday_momentum_anomaly_v1"
 
 
+class FakeEventStore:
+    def __init__(self) -> None:
+        self.traces: list[dict[str, object]] = []
+
+    def record_decision_trace(self, **kwargs: object) -> str:
+        self.traces.append(kwargs)
+        return "trace_1"
+
+
 class TechniquesApiTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -31,10 +40,12 @@ class TechniquesApiTests(unittest.IsolatedAsyncioTestCase):
         self.repository = TechniqueRepository(self.database)
         seed_builtin_techniques(self.repository)
         self.outcomes = OutcomeRepository(self.database)
+        self.events = FakeEventStore()
         self.service = TechniqueService(
             self.repository,
             outcomes_provider=self.outcomes.outcomes_for_technique,
             feedback_recorder=self.outcomes.set_feedback,
+            event_store=self.events,
         )
         self.learning_loop = LearningLoop(self.repository, lambda: {}, settings={})
         self.request = SimpleNamespace(
@@ -96,6 +107,52 @@ class TechniquesApiTests(unittest.IsolatedAsyncioTestCase):
             self.request, BUILTIN_ID, TechniquePatchRequest(enabled=True)
         )
         self.assertTrue(reenabled["enabled"])
+
+    async def test_patch_rule_bumps_revision_and_traces_before_after(self) -> None:
+        before = await routes_techniques.get_technique(self.request, BUILTIN_ID)
+        self.assertEqual(before["revision"], 1)
+        self.assertEqual(before["config_version"], "1")
+        patched = await routes_techniques.patch_technique(
+            self.request,
+            BUILTIN_ID,
+            TechniquePatchRequest(rule={"field": "gap_pct", "op": ">=", "value": 7}),
+        )
+        self.assertEqual(patched["revision"], 2)
+        revision_traces = [
+            t for t in self.events.traces if t["decision_type"] == "TECHNIQUE_REVISION"
+        ]
+        self.assertEqual(len(revision_traces), 1)
+        trace = revision_traces[0]["trace"]
+        self.assertEqual(trace["technique_id"], BUILTIN_ID)
+        self.assertEqual(trace["revision_from"], 1)
+        self.assertEqual(trace["revision_to"], 2)
+        self.assertNotEqual(trace["rule_before"], trace["rule_after"])
+        self.assertEqual(trace["rule_after"]["value"], 7)
+
+    async def test_patch_name_only_does_not_version(self) -> None:
+        patched = await routes_techniques.patch_technique(
+            self.request, BUILTIN_ID, TechniquePatchRequest(name="Renamed only")
+        )
+        self.assertEqual(patched["name"], "Renamed only")
+        self.assertEqual(patched["revision"], 1)  # unchanged
+        self.assertEqual(
+            [t for t in self.events.traces if t["decision_type"] == "TECHNIQUE_REVISION"], []
+        )
+
+    async def test_patch_enabled_toggle_does_not_version(self) -> None:
+        await routes_techniques.patch_technique(
+            self.request, BUILTIN_ID, TechniquePatchRequest(enabled=False)
+        )
+        current = await routes_techniques.get_technique(self.request, BUILTIN_ID)
+        self.assertEqual(current["revision"], 1)
+
+    def test_double_initialize_is_idempotent(self) -> None:
+        # Re-running the schema migration must not raise (columns already added).
+        self.database.initialize()
+        self.database.initialize()
+        row = self.repository.get(BUILTIN_ID)
+        self.assertIsNotNone(row)
+        self.assertEqual(int(row["revision"]), 1)
 
     async def test_patch_unknown_returns_404(self) -> None:
         with self.assertRaises(HTTPException) as ctx:

@@ -511,6 +511,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "max_active": 20,
             "min_samples": 30,
             "variant_factors": [0.8, 1.2],
+            # One-parameter-at-a-time variants (skills.md 32.2ter): cap how many
+            # single-leaf mutations a parent may spawn per cycle (e.g. 2 leaves x
+            # 2 factors). The global 20-ACTIVE cap still applies.
+            "max_variants_per_parent": 4,
         },
     },
     "event_risk": {
