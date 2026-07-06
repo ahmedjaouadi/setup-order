@@ -12,6 +12,16 @@
 - Note: V2.4.1 Legacy Stop Cleanup est accepte. La validation V2.4 globale garde les blockers non scopes a traiter separement.
 
 ## Implante
+- Module: Etape 13 — Fiabilite du scan : suivi correct/faux visible et boucle de collecte surveillee
+- Statut: ACCEPTED
+- Fichiers: `app/opportunity_scanner/outcome_tracker.py`, `app/opportunity_scanner/outcome_repository.py`, `app/opportunities/scanner.py`, `app/background_jobs.py`, `app/storage/database.py`, `app/api/routes_techniques.py`, `app/api/routes_opportunities.py`, `app/gui/templates/opportunity_radar.html`, `app/gui/static/js/app.js`, `tests/test_scan_reliability.py`
+- API: `GET /api/techniques/stats` (par technique ET global : detections_total, pending, evaluated, expired, correct = label_1r 1, wrong = label_1r 0, indeterminate = label null, hit_rate, expectancy_r, min_samples atteint — reutilise `aggregate_stats`, les compteurs viennent d'une seule agregation SQL) ; `GET /api/opportunities/{id}/outcomes` (verdict a posteriori d'une detection : PENDING / correct / faux + mfe/mae par horizon).
+- 13.1 panne silencieuse: `stale_pending_count` + alarme `detection_outcomes_stale` (event WARNING, 1/jour) quand des outcomes PENDING restent non evalues > 3 jours apres leur echeance — le job `auto_evaluate_detection_outcomes` expose aussi `stale_pending` dans son resume.
+- 13.4 jointure: colonne `opportunity_id` ajoutee a `detection_outcomes` (migration idempotente `_ensure_column` + index, marqueur `v2_7_detection_outcome_opportunity_link`), propagee depuis le scanner (`record_matches(..., opportunity_id=...)`).
+- 13.3 UI Radar: panneau « Fiabilite du scan » — tuiles globales (corrects / faux / indetermines / en attente / hit rate) + tableau par technique ; sous `min_samples` (30), « ECHANTILLON INSUFFISANT » au lieu d'un pourcentage trompeur.
+- 13.5 score + fiabilite: colonne « Fiabilite » dans la shortlist a cote du score/qualite — hit_rate historique de la technique detectrice (« correct N/M ») quand l'echantillon le permet.
+- Tests: `python -m pytest tests/test_scan_reliability.py` (stats sur outcomes synthetiques melanges, opportunity_id propage jusqu'a l'outcome et requetable, routes stats/outcomes, detection de collecte morte + throttle de l'alarme) ; transitions PENDING->EVALUATED deja couvertes par `tests/test_detection_outcomes.py`.
+
 - Module: Etape 12 — Shortlist actionnable : prix d'entree + SL proposes
 - Statut: ACCEPTED
 - Fichiers: `app/opportunities/shortlist_service.py`, `app/gui/static/js/app.js`, `tests/test_shortlist_levels.py`

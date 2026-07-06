@@ -26,6 +26,17 @@ async def list_techniques(request: Request):
     return {"items": _service(request).list_techniques()}
 
 
+# NOTE: declared before /api/techniques/{technique_id} so "stats" is not
+# captured as a technique id.
+@router.get("/api/techniques/stats")
+async def techniques_reliability_stats(request: Request):
+    """Correct/wrong/pending counters per technique and global (etape 13.2)."""
+    tracker = getattr(request.app.state, "outcome_tracker", None)
+    if tracker is None:
+        raise HTTPException(status_code=503, detail="Outcome tracker is not available")
+    return tracker.reliability_summary()
+
+
 @router.post("/api/techniques")
 async def create_technique(request: Request, payload: TechniqueCreateRequest):
     try:

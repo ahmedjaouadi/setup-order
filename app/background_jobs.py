@@ -3,13 +3,17 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from app.models import utc_now_iso
+from app.models import EventLevel, utc_now_iso
 from app.utils.market_hours import classify_us_equity_session
 
 logger = logging.getLogger(__name__)
+
+# A PENDING outcome whose evaluation was due more than this many days ago
+# means the evaluation chain silently stopped (etape 13.1).
+STALE_OUTCOME_GRACE_DAYS = 3
 
 TERMINAL_SETUP_STATUSES = {
     "CANCELLED",
@@ -225,12 +229,18 @@ async def auto_evaluate_detection_outcomes(app: Any) -> dict[str, Any]:
         return _bars_in_window(bars_by_symbol.get(symbol.upper(), []), start, end)
 
     result = await asyncio.to_thread(tracker.evaluate_due, provider, now=now)
+    stale_count = await asyncio.to_thread(
+        _stale_pending_outcomes, tracker, STALE_OUTCOME_GRACE_DAYS
+    )
+    if stale_count > 0:
+        _record_stale_outcomes_event(app, stale_count)
     summary = {
         "ok": True,
         "generated_at": now,
         "due_count": len(due),
         "evaluated": int(result.get("evaluated") or 0),
         "expired": int(result.get("expired") or 0),
+        "stale_pending": stale_count,
     }
     app.state.detection_outcomes_auto_refresh = summary
     return summary
@@ -252,6 +262,41 @@ async def auto_run_learning_loop(app: Any) -> dict[str, Any]:
     summary = {"ok": True, "generated_at": utc_now_iso(), **result}
     app.state.learning_loop_auto_refresh = summary
     return summary
+
+
+def _stale_pending_outcomes(tracker: Any, grace_days: int) -> int:
+    cutoff = (datetime.now(UTC) - timedelta(days=grace_days)).isoformat()
+    try:
+        return int(tracker.repository.stale_pending_count(cutoff))
+    except Exception:
+        logger.debug("Stale pending outcome check failed", exc_info=True)
+        return 0
+
+
+def _record_stale_outcomes_event(app: Any, stale_count: int) -> None:
+    """Silent-outage alarm: detections exist but their evaluation never ran."""
+    engine = getattr(app.state, "engine", None)
+    event_store = getattr(engine, "event_store", None)
+    if event_store is None:
+        return
+    # One alarm per day, not one per job tick.
+    today = utc_now_iso()[:10]
+    if getattr(app.state, "detection_outcomes_stale_alerted_on", None) == today:
+        return
+    app.state.detection_outcomes_stale_alerted_on = today
+    try:
+        event_store.record(
+            EventLevel.WARNING,
+            "detection_outcomes_stale",
+            (
+                f"{stale_count} detection outcomes are still PENDING more than "
+                f"{STALE_OUTCOME_GRACE_DAYS} days after their evaluation due date: "
+                "the evaluation job is not consuming them."
+            ),
+            data={"stale_pending": stale_count, "grace_days": STALE_OUTCOME_GRACE_DAYS},
+        )
+    except Exception:
+        logger.debug("Stale outcome event could not be recorded", exc_info=True)
 
 
 async def _daily_bars(engine: Any, symbol: str) -> list[dict[str, Any]]:

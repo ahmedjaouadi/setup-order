@@ -19,8 +19,8 @@ class OutcomeRepository:
                 outcome_id, technique_id, symbol, detected_at, price_at_detection,
                 features_snapshot, r_unit_pct, horizon, evaluation_due_at,
                 price_at_horizon, forward_return_pct, mfe_pct, mae_pct, label_1r,
-                human_feedback, status, payload_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                human_feedback, status, payload_json, created_at, opportunity_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 outcome["outcome_id"],
@@ -41,6 +41,7 @@ class OutcomeRepository:
                 outcome.get("status", "PENDING"),
                 json.dumps(outcome.get("payload") or {}, sort_keys=True),
                 outcome["created_at"],
+                outcome.get("opportunity_id"),
             ),
         )
         return str(outcome["outcome_id"])
@@ -113,6 +114,67 @@ class OutcomeRepository:
         params.append(limit)
         rows = self.database.execute(query, params).fetchall()
         return [_decode(row) for row in rows]
+
+    def outcomes_for_opportunity(
+        self, opportunity_id: str, *, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        rows = self.database.execute(
+            """
+            SELECT * FROM detection_outcomes
+            WHERE opportunity_id = ?
+            ORDER BY detected_at DESC, horizon
+            LIMIT ?
+            """,
+            (opportunity_id, limit),
+        ).fetchall()
+        return [_decode(row) for row in rows]
+
+    def counts_by_technique(self) -> dict[str, dict[str, int]]:
+        """Outcome counters per technique: statuses + correct/wrong/indeterminate.
+
+        `correct`/`wrong`/`indeterminate` only count EVALUATED rows
+        (label_1r = 1 / 0 / NULL); PENDING and EXPIRED are tracked separately.
+        """
+        rows = self.database.execute("""
+            SELECT
+                technique_id,
+                COUNT(*) AS detections_total,
+                SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) AS pending,
+                SUM(CASE WHEN status = 'EVALUATED' THEN 1 ELSE 0 END) AS evaluated,
+                SUM(CASE WHEN status = 'EXPIRED' THEN 1 ELSE 0 END) AS expired,
+                SUM(CASE WHEN status = 'EVALUATED' AND label_1r = 1 THEN 1 ELSE 0 END)
+                    AS correct,
+                SUM(CASE WHEN status = 'EVALUATED' AND label_1r = 0 THEN 1 ELSE 0 END)
+                    AS wrong,
+                SUM(CASE WHEN status = 'EVALUATED' AND label_1r IS NULL THEN 1 ELSE 0 END)
+                    AS indeterminate
+            FROM detection_outcomes
+            GROUP BY technique_id
+            """).fetchall()
+        return {
+            str(row["technique_id"]): {
+                "detections_total": int(row["detections_total"] or 0),
+                "pending": int(row["pending"] or 0),
+                "evaluated": int(row["evaluated"] or 0),
+                "expired": int(row["expired"] or 0),
+                "correct": int(row["correct"] or 0),
+                "wrong": int(row["wrong"] or 0),
+                "indeterminate": int(row["indeterminate"] or 0),
+            }
+            for row in rows
+        }
+
+    def stale_pending_count(self, cutoff: str) -> int:
+        """PENDING outcomes past due since before `cutoff`: the evaluation job
+        should have consumed them — a non-zero count signals a silent outage."""
+        row = self.database.execute(
+            """
+            SELECT COUNT(*) AS stale FROM detection_outcomes
+            WHERE status = 'PENDING' AND evaluation_due_at <= ?
+            """,
+            (cutoff,),
+        ).fetchone()
+        return int(row["stale"] or 0)
 
     def evaluated_grouped_by_technique(self) -> dict[str, list[dict[str, Any]]]:
         rows = self.database.execute(

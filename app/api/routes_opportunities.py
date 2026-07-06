@@ -105,6 +105,17 @@ async def archive_opportunity(request: Request, opportunity_id: str):
     return request.app.state.opportunity_scanner.archive(opportunity_id)
 
 
+@router.get("/api/opportunities/{opportunity_id}/outcomes")
+async def opportunity_outcomes(request: Request, opportunity_id: str):
+    """A posteriori verdict of a detection (etape 13.4): PENDING / correct /
+    wrong + mfe/mae per horizon, joined by the opportunity_id stored on the
+    outcome at detection time."""
+    tracker = getattr(request.app.state, "outcome_tracker", None)
+    if tracker is None:
+        raise HTTPException(status_code=503, detail="Outcome tracker is not available")
+    return {"items": tracker.repository.outcomes_for_opportunity(opportunity_id)}
+
+
 @router.get("/api/opportunities/{opportunity_id}")
 async def get_opportunity(request: Request, opportunity_id: str):
     opportunity = request.app.state.opportunity_scanner.get(opportunity_id)

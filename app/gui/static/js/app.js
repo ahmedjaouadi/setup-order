@@ -7509,8 +7509,81 @@ async function renderRadarHubPage() {
   await Promise.all([
     renderV2ScannerPage({ afterAction: renderRadarHubPage }),
     renderDetectionTechniquesPanel(),
+    renderScanReliabilityPanel(),
     renderV2OpportunitiesPage({ afterScan: renderRadarHubPage }),
   ]);
+}
+
+async function fetchScanReliability() {
+  if (fetchScanReliability._cache && Date.now() - fetchScanReliability._at < 15000) {
+    return fetchScanReliability._cache;
+  }
+  const stats = await optionalApi("/api/techniques/stats").catch(() => null);
+  fetchScanReliability._cache = stats;
+  fetchScanReliability._at = Date.now();
+  return stats;
+}
+
+function reliabilityLabel(technique, minSamples) {
+  if (!technique) return "-";
+  if (!technique.min_samples_reached) {
+    return `<span class="status" title="${escapeHtml(`${technique.sample_size || 0} evaluations < seuil ${minSamples}`)}">ECHANTILLON INSUFFISANT</span>`;
+  }
+  const rate = technique.hit_rate == null ? "-" : `${(technique.hit_rate * 100).toFixed(0)}%`;
+  return `<span title="correct ${technique.correct || 0} / faux ${technique.wrong || 0} (expectancy ${technique.expectancy_r == null ? "-" : technique.expectancy_r}R)">${escapeHtml(rate)} (${technique.correct || 0}/${(technique.correct || 0) + (technique.wrong || 0)})</span>`;
+}
+
+async function renderScanReliabilityPanel() {
+  const tiles = document.getElementById("scan-reliability-tiles");
+  const table = document.getElementById("scan-reliability-table");
+  if (!tiles && !table) return;
+  const stats = await fetchScanReliability();
+  if (!stats || !stats.global) {
+    if (tiles) tiles.innerHTML = "";
+    return;
+  }
+  const globalStats = stats.global;
+  if (tiles) {
+    renderV2Kpis("scan-reliability-tiles", {
+      corrects: globalStats.correct,
+      faux: globalStats.wrong,
+      indetermines: globalStats.indeterminate,
+      en_attente: globalStats.pending,
+      expires: globalStats.expired,
+      hit_rate_global: globalStats.hit_rate == null ? "-" : `${(globalStats.hit_rate * 100).toFixed(0)}%`,
+    });
+  }
+  if (table) {
+    renderV2Table("scan-reliability-table", [
+      ["technique_id", "Technique"],
+      ["detections_total", "Detections"],
+      ["pending", "En attente"],
+      ["correct", "Corrects"],
+      ["wrong", "Faux"],
+      ["indeterminate", "Indet."],
+      ["reliability", "Hit rate"],
+      ["expectancy", "Expectancy"],
+    ], (stats.techniques || []).map((technique) => ({
+      ...technique,
+      reliability: reliabilityLabel(technique, stats.min_samples),
+      expectancy: technique.min_samples_reached && technique.expectancy_r != null
+        ? `${technique.expectancy_r}R`
+        : "-",
+    })));
+  }
+}
+
+function opportunityReliabilityCell(item, stats) {
+  // Etape 13.5: the score says the theoretical quality of the setup, the
+  // technique's historical hit rate says what this kind of signal actually
+  // delivered. Both are shown side by side.
+  if (!stats || !Array.isArray(stats.techniques)) return "-";
+  const signal = (item.payload && item.payload.market_context_signal) || {};
+  const ids = signal.detected_by_techniques || [];
+  if (!ids.length) return "-";
+  const byId = new Map(stats.techniques.map((technique) => [technique.technique_id, technique]));
+  const technique = ids.map((id) => byId.get(id)).find(Boolean);
+  return reliabilityLabel(technique, stats.min_samples);
 }
 
 async function renderDetectionTechniquesPanel() {
@@ -7656,7 +7729,10 @@ async function renderV2OpportunitiesPage(options = {}) {
       await afterScan();
     }, { once: true });
   }
-  const result = await api("/api/opportunities/shortlist?limit=25");
+  const [result, reliability] = await Promise.all([
+    api("/api/opportunities/shortlist?limit=25"),
+    fetchScanReliability(),
+  ]);
   const rows = result.top_opportunities || result.items || [];
   const scenarios = result.generated_scenarios || [];
   setText("v2-opportunities-count", `${rows.length} items`);
@@ -7667,6 +7743,7 @@ async function renderV2OpportunitiesPage(options = {}) {
     ["timeframe", "TF"],
     ["score", "Score"],
     ["quality", "Qualite"],
+    ["reliability", "Fiabilite"],
     ["entry_level", "Entree"],
     ["stop_level", "SL"],
     ["r_per_share", "R/share"],
@@ -7678,6 +7755,7 @@ async function renderV2OpportunitiesPage(options = {}) {
     detected_by: item.detected_by || (item.payload && item.payload.detected_by) || "-",
     reason: (item.payload && item.payload.reason) || "",
     quality: opportunityQualityCell(item),
+    reliability: opportunityReliabilityCell(item, reliability),
     entry_level: opportunityEntryCell(item),
     stop_level: opportunityStopCell(item),
     r_per_share: item.risk_per_share == null ? "-" : maybeMoney(item.risk_per_share),

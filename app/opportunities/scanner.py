@@ -361,6 +361,7 @@ class OpportunityScannerService:
                 str(opportunity.get("symbol") or ""),
                 detection_snapshot,
                 payload.get("market_context_signal", {}),
+                opportunity_id=str(opportunity.get("opportunity_id") or "") or None,
             )
         return opportunity
 
@@ -551,6 +552,8 @@ class OpportunityScannerService:
         symbol: str,
         snapshot: dict[str, Any],
         context_signal: dict[str, Any],
+        *,
+        opportunity_id: str | None = None,
     ) -> None:
         """Record a pending outcome per matched technique, RTH only.
 
@@ -563,7 +566,12 @@ class OpportunityScannerService:
         if not technique_ids:
             return
         with suppress(Exception):
-            self.outcome_tracker.record_matches(technique_ids, symbol, snapshot)
+            self.outcome_tracker.record_matches(
+                technique_ids,
+                symbol,
+                snapshot,
+                opportunity_id=opportunity_id,
+            )
 
     def _context_snapshot_from_candidate(
         self,

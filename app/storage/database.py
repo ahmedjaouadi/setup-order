@@ -795,6 +795,19 @@ class Database:
                 "revision",
                 "INTEGER NOT NULL DEFAULT 1",
             )
+            # Link a detection outcome back to the opportunity that produced it
+            # (etape 13.4): enables the shortlist / history to show the verdict
+            # of a past detection.
+            self._ensure_column(
+                conn,
+                "detection_outcomes",
+                "opportunity_id",
+                "TEXT",
+            )
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_detection_outcomes_opportunity
+                    ON detection_outcomes(opportunity_id)
+                """)
             self._migrate_setup_creation_snapshot_stop_column(conn)
             conn.execute("""
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
@@ -831,6 +844,10 @@ class Database:
             conn.execute("""
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
                 VALUES ('v2_6_detection_outcomes', CURRENT_TIMESTAMP)
+                """)
+            conn.execute("""
+                INSERT OR IGNORE INTO schema_migrations (version, applied_at)
+                VALUES ('v2_7_detection_outcome_opportunity_link', CURRENT_TIMESTAMP)
                 """)
 
     def execute(

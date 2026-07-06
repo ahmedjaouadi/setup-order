@@ -53,6 +53,7 @@ class OutcomeTracker:
         snapshot: dict[str, Any],
         *,
         now: str | None = None,
+        opportunity_id: str | None = None,
     ) -> list[str]:
         """Create one PENDING outcome per horizon. Returns the ids created."""
         detected_at = now or utc_now_iso()
@@ -87,6 +88,7 @@ class OutcomeTracker:
                     "status": "PENDING",
                     "payload": {"atr_fallback_used": atr_fallback},
                     "created_at": detected_at,
+                    "opportunity_id": opportunity_id,
                 }
             )
             created.append(outcome_id)
@@ -99,10 +101,19 @@ class OutcomeTracker:
         snapshot: dict[str, Any],
         *,
         now: str | None = None,
+        opportunity_id: str | None = None,
     ) -> list[str]:
         created: list[str] = []
         for technique_id in dict.fromkeys(technique_ids):
-            created.extend(self.record_detection(technique_id, symbol, snapshot, now=now))
+            created.extend(
+                self.record_detection(
+                    technique_id,
+                    symbol,
+                    snapshot,
+                    now=now,
+                    opportunity_id=opportunity_id,
+                )
+            )
         return created
 
     def evaluate_due(
@@ -156,6 +167,50 @@ class OutcomeTracker:
         return {
             technique_id: aggregate_stats(rows, self.min_samples)
             for technique_id, rows in grouped.items()
+        }
+
+    def reliability_summary(self) -> dict[str, Any]:
+        """Correct/wrong/pending counters per technique and global (etape 13.2).
+
+        Counters come from one SQL aggregation; hit_rate/expectancy reuse
+        ``aggregate_stats`` on the evaluated rows — nothing is recomputed in
+        SQL that the module already computes.
+        """
+        counts = self.repository.counts_by_technique()
+        stats = self.technique_stats()
+        techniques: list[dict[str, Any]] = []
+        totals = {
+            "detections_total": 0,
+            "pending": 0,
+            "evaluated": 0,
+            "expired": 0,
+            "correct": 0,
+            "wrong": 0,
+            "indeterminate": 0,
+        }
+        for technique_id in sorted(counts):
+            technique_counts = counts[technique_id]
+            for key in totals:
+                totals[key] += technique_counts[key]
+            technique_stats = stats.get(technique_id) or {}
+            sample_size = int(technique_stats.get("sample_size") or 0)
+            techniques.append(
+                {
+                    "technique_id": technique_id,
+                    **technique_counts,
+                    "hit_rate": technique_stats.get("hit_rate"),
+                    "expectancy_r": technique_stats.get("expectancy_r"),
+                    "sample_size": sample_size,
+                    "min_samples_reached": sample_size >= self.min_samples,
+                    "status_label": technique_stats.get("status_label") or "WARMUP",
+                }
+            )
+        labeled_total = totals["correct"] + totals["wrong"]
+        global_hit_rate = round(totals["correct"] / labeled_total, 4) if labeled_total else None
+        return {
+            "global": {**totals, "hit_rate": global_hit_rate},
+            "techniques": techniques,
+            "min_samples": self.min_samples,
         }
 
 
