@@ -461,6 +461,11 @@ class OpportunityScannerService:
                         "liquidity_score": _spread_score(quote),
                         "market_context_score": score,
                     },
+                    # Weighted quality score (skills.md 9.1) - observational,
+                    # shipped alongside the legacy scores, never a gate.
+                    "quality_score": context_signal.get("quality_score"),
+                    "score_grade": context_signal.get("score_grade"),
+                    "quality_breakdown": context_signal.get("score_breakdown", {}),
                 },
                 "selection": best,
                 "all_selection_rules": selections,

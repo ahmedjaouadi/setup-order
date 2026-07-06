@@ -7513,6 +7513,7 @@ async function renderV2OpportunitiesPage(options = {}) {
     ["detected_by", "Detecte par"],
     ["timeframe", "TF"],
     ["score", "Score"],
+    ["quality", "Qualite"],
     ["status", "Status"],
     ["detected_at", "Detected"],
     ["reason", "Reason"],
@@ -7520,6 +7521,7 @@ async function renderV2OpportunitiesPage(options = {}) {
     ...item,
     detected_by: item.detected_by || (item.payload && item.payload.detected_by) || "-",
     reason: (item.payload && item.payload.reason) || "",
+    quality: opportunityQualityCell(item),
     status: statusBadge(item.status),
   })));
   setText("v2-opportunities-scenarios-count", `${scenarios.length} items`);
@@ -7534,6 +7536,17 @@ async function renderV2OpportunitiesPage(options = {}) {
     status: statusBadge(item.status),
     ambiguities: (item.ambiguities || []).map((entry) => entry.field).join(", "),
   })));
+}
+
+function opportunityQualityCell(item) {
+  // Weighted quality score (skills.md 9.1): observational, next to the legacy
+  // score; components frozen in F1 keep it low by construction.
+  const scorePayload = item.payload && item.payload.score;
+  if (!scorePayload || typeof scorePayload !== "object") return "-";
+  const quality = numberOrNull(scorePayload.quality_score);
+  const grade = scorePayload.score_grade;
+  if (quality === null || !grade) return "-";
+  return `${quality} · ${escapeHtml(String(grade))}`;
 }
 
 async function renderV2ScannerPage(options = {}) {

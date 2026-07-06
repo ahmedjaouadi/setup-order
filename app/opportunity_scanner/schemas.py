@@ -30,6 +30,11 @@ class OpportunitySignal:
     can_send_order: bool = False
     discovery_score: float = 0.0
     risk_adjusted_score: float = 0.0
+    # Weighted quality score (skills.md 9.1) - additive during the observation
+    # phase, never a replacement for the automatic refusals.
+    quality_score: float = 0.0
+    score_grade: str = "NO_GO"
+    score_breakdown: dict[str, Any] = field(default_factory=dict)
     badges: list[str] = field(default_factory=list)
     source_snapshot: dict[str, Any] = field(default_factory=dict)
     detected_by: str | None = None
