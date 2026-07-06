@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,9 @@ from app.storage.database import Database
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
 
-FRESH = "2026-07-06T14:00:00+00:00"  # 10:00 ET, well within RTH
+# The staleness gate compares the snapshot timestamp to the wall clock, so a
+# hardcoded "fresh" timestamp rots as time passes: derive it from now instead.
+FRESH = (datetime.now(UTC) - timedelta(seconds=10)).isoformat()
 STALE = "2020-01-01T00:00:00+00:00"  # decades old -> always stale
 
 

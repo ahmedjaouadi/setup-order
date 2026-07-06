@@ -7,9 +7,9 @@ import subprocess
 import sys
 import threading
 import time
+import webbrowser
 from urllib.error import URLError
 from urllib.request import urlopen
-import webbrowser
 
 
 def port_is_available(host: str, port: int) -> bool:
@@ -25,9 +25,7 @@ def find_port(host: str, preferred_port: int, max_port: int) -> int:
     for port in range(preferred_port, max_port + 1):
         if port_is_available(host, port):
             return port
-    raise RuntimeError(
-        f"No available port found between {preferred_port} and {max_port}."
-    )
+    raise RuntimeError(f"No available port found between {preferred_port} and {max_port}.")
 
 
 def find_running_setup_order(host: str, preferred_port: int, max_port: int) -> int | None:

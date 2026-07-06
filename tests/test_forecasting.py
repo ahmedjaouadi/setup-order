@@ -392,15 +392,25 @@ class ForecastingTests(unittest.IsolatedAsyncioTestCase):
                 engine=FakeForecastEngine(),
             )
 
-            with patch.object(
-                service,
-                "_timesfm_availability",
-                return_value={
-                    "model": "timesfm",
-                    "status": "MISSING_DEPENDENCY",
-                    "available": False,
-                    "reason": "Missing optional package(s): timesfm",
-                },
+            # Every non-baseline provider must be unavailable for this test:
+            # patching adapters.status keeps the assertion valid even on a
+            # machine where chronos (or another provider) is truly installed.
+            with (
+                patch.object(
+                    service,
+                    "_timesfm_availability",
+                    return_value={
+                        "model": "timesfm",
+                        "status": "MISSING_DEPENDENCY",
+                        "available": False,
+                        "reason": "Missing optional package(s): timesfm",
+                    },
+                ),
+                patch.object(
+                    service.adapters,
+                    "status",
+                    return_value=("MISSING_DEPENDENCY", "unavailable in test"),
+                ),
             ):
                 result = await service.forecast_ensemble("FLNC")
             database.close()
