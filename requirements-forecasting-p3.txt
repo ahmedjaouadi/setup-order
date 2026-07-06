@@ -1,9 +1,13 @@
 # P3: experimental probabilistic/foundation benchmarks.
-# Not installed in the reference venv used to generate pins elsewhere in this repo
-# (see TODO.md) — pin these to exact versions once installed and verified.
-torch
-pandas
-gluonts
-huggingface-hub
-lag-llama @ git+https://github.com/time-series-foundation-models/lag-llama.git
-uni2ts
+# Installed and verified in a dedicated venv (.venv-p3), separate from the main
+# project venv. uni2ts and lag-llama both force gluonts<=0.14.4 and an older
+# torch/pandas than the rest of the project; installing in this exact pinned
+# form resolves cleanly, but installing unpinned ranges together can send pip
+# into a "resolution-too-deep" backtracking loop across httpx/huggingface-hub
+# versions — install in this exact set, don't loosen the pins.
+torch==2.4.1
+pandas==2.1.4
+gluonts==0.14.4
+huggingface-hub==1.22.0
+lag-llama @ git+https://github.com/time-series-foundation-models/lag-llama.git@df7531a83a19b3c6a0222d703ca9bf59ef7a6ab9
+uni2ts==2.0.0

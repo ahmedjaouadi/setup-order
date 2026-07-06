@@ -4,8 +4,9 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 
-# Virtualenvs
+# Virtualenvs (including the dedicated forecasting venvs .venv-p2/.venv-p3)
 .venv/
+.venv-*/
 venv/
 
 # Secrets / local config

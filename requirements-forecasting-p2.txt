@@ -1,6 +1,6 @@
 # P2: offline deep-learning and AutoML benchmarks.
-# Not installed in the reference venv used to generate pins elsewhere in this repo
-# (see TODO.md) — pin these to exact versions once installed and verified.
-pandas
-neuralforecast
-autogluon.timeseries
+# Installed and verified in a dedicated venv (.venv-p2) separate from the main
+# project venv, since these pull in a large, independent dependency tree.
+pandas==2.3.3
+neuralforecast==3.1.9
+autogluon.timeseries==1.5.0
