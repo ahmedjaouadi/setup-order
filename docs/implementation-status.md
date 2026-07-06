@@ -12,6 +12,14 @@
 - Note: V2.4.1 Legacy Stop Cleanup est accepte. La validation V2.4 globale garde les blockers non scopes a traiter separement.
 
 ## Implante
+- Module: Etape 12 — Shortlist actionnable : prix d'entree + SL proposes
+- Statut: ACCEPTED
+- Fichiers: `app/opportunities/shortlist_service.py`, `app/gui/static/js/app.js`, `tests/test_shortlist_levels.py`
+- Comportement: chaque ligne de la shortlist expose `suggested_entry` (= `entry.trigger_price`), `suggested_limit`, `suggested_stop` (= `trailing_stop_loss.initial_stop`), `risk_per_share` (= entree - stop), `levels_status` (`READY`/`INCOMPLETE` avec `levels_ambiguities` du mapper) et `stop_source` (`SCENARIO` | `ATR_FALLBACK`). Source des niveaux : le scenario draft joint par `source_opportunity_id` quand il existe, sinon `OpportunityToScenarioMapper.map` a la volee (fonction pure, aucune persistance).
+- Fallback: stop ATR `entree - k x atr_15m` (k = `opportunities.shortlist.atr_stop_multiplier`, defaut 1.5) marque `ATR_FALLBACK`, jamais de valeur inventee : sans ATR ni niveau => `INCOMPLETE` explicite.
+- UI: colonnes « Entree », « SL » (suffixe ATR + tooltip provenance), « R/share » sur la table shortlist du Radar ; badge `INCOMPLETE` avec tooltip des ambiguites. Aucun bouton d'envoi d'ordre depuis la shortlist : les niveaux restent consultatifs (`execution_allowed: false` inchange), l'execution passe par le circuit setup ou l'ordre manuel (etape 11).
+- Tests: `python -m pytest tests/test_shortlist_levels.py` (draft complet, mapper a la volee, fallback ATR marque, INCOMPLETE sans crash, multiplicateur configurable).
+
 - Module: Etape 11 — Passage d'ordre manuel depuis l'UI
 - Statut: ACCEPTED
 - Fichiers: `app/engine/manual_order_service.py`, `app/engine/order_manager.py`, `app/api/routes_orders.py`, `app/engine/trading_engine.py`, `app/gui/templates/orders.html`, `app/gui/static/js/app.js`, `tests/test_manual_orders.py`

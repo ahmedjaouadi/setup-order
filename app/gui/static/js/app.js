@@ -7667,6 +7667,9 @@ async function renderV2OpportunitiesPage(options = {}) {
     ["timeframe", "TF"],
     ["score", "Score"],
     ["quality", "Qualite"],
+    ["entry_level", "Entree"],
+    ["stop_level", "SL"],
+    ["r_per_share", "R/share"],
     ["status", "Status"],
     ["detected_at", "Detected"],
     ["reason", "Reason"],
@@ -7675,6 +7678,9 @@ async function renderV2OpportunitiesPage(options = {}) {
     detected_by: item.detected_by || (item.payload && item.payload.detected_by) || "-",
     reason: (item.payload && item.payload.reason) || "",
     quality: opportunityQualityCell(item),
+    entry_level: opportunityEntryCell(item),
+    stop_level: opportunityStopCell(item),
+    r_per_share: item.risk_per_share == null ? "-" : maybeMoney(item.risk_per_share),
     status: statusBadge(item.status),
   })));
   setText("v2-opportunities-scenarios-count", `${scenarios.length} items`);
@@ -7689,6 +7695,28 @@ async function renderV2OpportunitiesPage(options = {}) {
     status: statusBadge(item.status),
     ambiguities: (item.ambiguities || []).map((entry) => entry.field).join(", "),
   })));
+}
+
+function opportunityEntryCell(item) {
+  // Consultative levels (etape 12): never an order button here, the
+  // execution stays on the setup circuit or the manual order form.
+  if (item.levels_status === "INCOMPLETE") {
+    const ambiguities = (item.levels_ambiguities || [])
+      .map((entry) => entry && (entry.reason || entry.field))
+      .filter(Boolean)
+      .join(" | ");
+    return `<span class="status" title="${escapeHtml(ambiguities || "Niveaux non derivables")}">INCOMPLETE</span>`;
+  }
+  return maybeMoney(item.suggested_entry);
+}
+
+function opportunityStopCell(item) {
+  if (item.suggested_stop == null) return "-";
+  const value = maybeMoney(item.suggested_stop);
+  if (item.stop_source === "ATR_FALLBACK") {
+    return `<span title="Stop ATR de repli (pas un niveau structurel)">${escapeHtml(value)} (ATR)</span>`;
+  }
+  return value;
 }
 
 function opportunityQualityCell(item) {
