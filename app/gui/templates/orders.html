@@ -42,6 +42,51 @@
 <section class="panel">
   <div class="panel-heading">
     <div>
+      <h2>Nouvel ordre manuel</h2>
+      <p class="panel-subtitle">Memes protections que les ordres de setup : guards systeme, limites de risque, stop obligatoire a l'achat.</p>
+    </div>
+  </div>
+  <form id="manual-order-form" class="manual-order-form" autocomplete="off">
+    <label>Symbole
+      <input type="text" id="manual-symbol" maxlength="12" required placeholder="LUNR" />
+    </label>
+    <label>Side
+      <select id="manual-side">
+        <option value="BUY">BUY</option>
+        <option value="SELL">SELL</option>
+      </select>
+    </label>
+    <label>Qty
+      <input type="number" id="manual-quantity" min="1" step="1" required />
+    </label>
+    <label>Type
+      <select id="manual-order-type">
+        <option value="LMT">LMT</option>
+        <option value="MKT">MKT</option>
+        <option value="STP">STP</option>
+        <option value="STP_LMT">STP LMT</option>
+      </select>
+    </label>
+    <label>Limite
+      <input type="number" id="manual-limit" min="0.01" step="0.01" placeholder="-" />
+    </label>
+    <label>Trigger
+      <input type="number" id="manual-trigger" min="0.01" step="0.01" placeholder="-" />
+    </label>
+    <label>Stop (SL)
+      <input type="number" id="manual-stop" min="0.01" step="0.01" placeholder="obligatoire en BUY" />
+    </label>
+    <div class="manual-order-buttons">
+      <button type="button" id="manual-preview-button">Calculer le risque</button>
+      <button type="submit" id="manual-submit-button" disabled>Transmettre</button>
+    </div>
+  </form>
+  <div id="manual-order-risk" class="manual-order-risk" hidden></div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
       <h2>Positions</h2>
       <p class="panel-subtitle">Positions confirmees par le broker quand TWS est connecte ; etat local sinon.</p>
     </div>

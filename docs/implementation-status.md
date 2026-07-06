@@ -12,6 +12,16 @@
 - Note: V2.4.1 Legacy Stop Cleanup est accepte. La validation V2.4 globale garde les blockers non scopes a traiter separement.
 
 ## Implante
+- Module: Etape 11 — Passage d'ordre manuel depuis l'UI
+- Statut: ACCEPTED
+- Fichiers: `app/engine/manual_order_service.py`, `app/engine/order_manager.py`, `app/api/routes_orders.py`, `app/engine/trading_engine.py`, `app/gui/templates/orders.html`, `app/gui/static/js/app.js`, `tests/test_manual_orders.py`
+- API: `POST /api/orders/manual/preview` (calcul serveur du risque : entree pire cas, R/share, risque $, % du compte via net_liquidation, cost gate) et `POST /api/orders/manual` (payload Pydantic : symbol, side BUY/SELL, quantity, order_type MKT/LMT/STP/STP_LMT, limit/trigger selon type, stop_loss).
+- Pipeline: un BUY manuel passe par fenetres horaires (`execution_window_block`), `trade_guards.evaluate_entry` (halt, circuit breakers, PDT, cooldown, exposition), limites de risque (`RiskLimits` : risque/trade, taille position, exposition totale), cost gate 24bis, puis `order_manager.place_entry_order` => bracket entree + stop de protection. Stop obligatoire pour un BUY (400 sinon) ; `allow_unprotected` honore uniquement sur le connecteur simule. Un SELL manuel est reduce-only (qty <= position) et passe par les gates halt/marche ferme.
+- Ordres: `setup_id = man_<id>` pour identifier la ligne sur la page Ordres & Positions ; `OrderManager._entry_order_prices` porte maintenant les champs corrects pour MKT/LMT/STP/STP_LMT ; `place_manual_order` couvre le SELL manuel et le BUY non protege simule.
+- Trace: chaque soumission (acceptee ou refusee) ecrit `decision_traces` avec `decision_type="MANUAL_ORDER"`, payload complet, risque calcule et verdict (`GO:MANUAL_ORDER_SUBMITTED` ou `{status}:{reason_code}`), plus events `manual_order_rejected`/`manual_order_transmitted`.
+- UI: formulaire « Nouvel ordre manuel » sur la page Ordres & Positions ; bouton « Calculer le risque » (affichage $ et % du compte AVANT confirmation, transmission desactivee tant que le preview n'est pas OK) ; confirmation, doublee si `runtime.account_mode`/`broker_account_mode` est live.
+- Tests: `python -m pytest tests/test_manual_orders.py` (BUY sans stop => 400 ; halt => 422 trace ; hors fenetre => refus ; risque > limite => refus ; ordre valide simule => bracket visible ; preview == calcul serveur ; SELL reduce-only).
+
 - Module: Etape 10 — Ordres & Positions = miroir temps reel de TWS (10.1 + 10.2)
 - Statut: ACCEPTED
 - Fichiers: `app/engine/trading_engine.py`, `app/engine/stop_modification_service.py`, `app/engine/order_manager.py`, `app/engine/trade_guards.py`, `app/broker/tws_connector.py`, `app/api/routes_positions.py`, `app/storage/repositories.py`, `app/gui/templates/orders.html`, `app/gui/static/js/app.js`, `tests/test_orders_positions_broker_truth.py`, `tests/test_stop_modification.py`

@@ -20,6 +20,7 @@ from app.engine.broker_reality import (
     normalize_broker_order_status,
 )
 from app.engine.entry_order_executor import EntryOrderExecutor
+from app.engine.manual_order_service import ManualOrderService
 from app.engine.opportunity_alert_service import OpportunityAlertService
 from app.engine.order_manager import OrderManager
 from app.engine.position_action_executor import PositionActionExecutor
@@ -213,6 +214,17 @@ class TradingEngine:
             settings=settings.raw,
             lifecycle_service=self.setup_lifecycle,
             trade_guards=self.trade_guards,
+        )
+        self.manual_order_service = ManualOrderService(
+            repository,
+            self.event_store,
+            self.order_manager,
+            self.trade_guards,
+            self.risk_engine.limits,
+            settings.raw,
+            broker=self.broker,
+            market_snapshot_provider=lambda symbol: self.market_data.latest(symbol),
+            account_summary_reader=self._fetch_broker_account_snapshot,
         )
         self._monitor_task: asyncio.Task | None = None
         self._snapshot_cache: dict[str, Any] | None = None

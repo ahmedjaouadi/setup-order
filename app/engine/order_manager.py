@@ -92,21 +92,11 @@ class OrderManager:
         entry = setup["config"].get("entry", {})
         order_type = str(entry.get("order_type", self.default_entry_order_type))
         limit_offset = float(entry.get("limit_offset", self.default_entry_limit_offset))
-        trigger_price = (
-            risk_decision.trigger_price
-            if risk_decision.trigger_price is not None
-            else risk_decision.entry_price
+        trigger_price, limit_price, stop_price = self._entry_order_prices(
+            order_type,
+            risk_decision,
+            limit_offset,
         )
-        limit_price = None
-        if order_type == OrderType.STP_LMT.value:
-            limit_price = round(
-                (
-                    risk_decision.entry_price
-                    if risk_decision.trigger_price is not None
-                    else trigger_price + limit_offset
-                ),
-                2,
-            )
         order = OrderRecord(
             id=new_id("ord"),
             setup_id=setup["setup_id"],
@@ -117,7 +107,7 @@ class OrderManager:
             status=OrderStatus.CREATED.value,
             trigger_price=trigger_price,
             limit_price=limit_price,
-            stop_price=None,
+            stop_price=stop_price,
             oca_group=f"bracket:{setup['setup_id']}",
         )
         broker_result = await self.broker.submit_order(
@@ -209,6 +199,112 @@ class OrderManager:
                 "stop_broker_order_id": stop_order.broker_order_id,
                 "stop_loss": risk_decision.stop_loss,
                 "protection_status": "BRACKET_ORDER_SUBMITTED",
+            },
+        )
+        return order
+
+    @staticmethod
+    def _entry_order_prices(
+        order_type: str,
+        risk_decision: RiskDecision,
+        limit_offset: float,
+    ) -> tuple[float | None, float | None, float | None]:
+        """(trigger_price, limit_price, stop_price) of a BUY entry order.
+
+        The TWS connector reads limit_price for LMT, stop_price for STP and
+        trigger_price + limit_price for STP_LMT; the record must carry the
+        fields the broker actually consumes for its order type.
+        """
+        trigger_price = (
+            risk_decision.trigger_price
+            if risk_decision.trigger_price is not None
+            else risk_decision.entry_price
+        )
+        if order_type == OrderType.LMT.value:
+            return None, round(risk_decision.entry_price, 2), None
+        if order_type == OrderType.STP.value:
+            return trigger_price, None, trigger_price
+        if order_type == OrderType.STP_LMT.value:
+            limit_price = round(
+                (
+                    risk_decision.entry_price
+                    if risk_decision.trigger_price is not None
+                    else trigger_price + limit_offset
+                ),
+                2,
+            )
+            return trigger_price, limit_price, None
+        return trigger_price, None, None
+
+    async def place_manual_order(
+        self,
+        *,
+        setup_id: str,
+        symbol: str,
+        side: str,
+        quantity: int,
+        order_type: str,
+        limit_price: float | None = None,
+        trigger_price: float | None = None,
+    ) -> OrderRecord:
+        """Single manual order without bracket (etape 11).
+
+        Used for the reduce-only manual SELL and for the simulated-only
+        unprotected BUY. Submits through the same broker path and event trail
+        as setup orders; the ManualOrderService is responsible for the guard
+        checks (halt, market closed, reduce-only quantity, protection rules).
+        """
+        order = OrderRecord(
+            id=new_id("ord"),
+            setup_id=setup_id,
+            symbol=symbol.upper(),
+            side=side,
+            order_type=order_type,
+            quantity=quantity,
+            status=OrderStatus.CREATED.value,
+            trigger_price=trigger_price,
+            limit_price=limit_price,
+            stop_price=(
+                trigger_price
+                if order_type in {OrderType.STP.value, OrderType.STP_LMT.value}
+                else None
+            ),
+        )
+        broker_result = await self.broker.submit_order(
+            order_record_to_broker_request(order, transmit=True)
+        )
+        order.status = broker_result.status
+        order.broker_order_id = broker_result.broker_order_id
+        order.broker_perm_id = broker_result.broker_perm_id
+        order.updated_at = utc_now_iso()
+        self.repository.upsert_order(order)
+        if not broker_result.accepted or order.status in {
+            OrderStatus.REJECTED.value,
+            OrderStatus.ERROR.value,
+        }:
+            self.event_store.record(
+                EventLevel.ERROR,
+                "manual_order_broker_rejected",
+                broker_result.reason or "Manual order rejected by broker",
+                setup_id=setup_id,
+                symbol=order.symbol,
+                data={"order_id": order.id, "status": order.status, "side": side},
+            )
+            return order
+        self.event_store.record(
+            EventLevel.ORDER,
+            "manual_order_transmitted",
+            broker_result.reason or "Manual order transmitted",
+            setup_id=setup_id,
+            symbol=order.symbol,
+            data={
+                "order_id": order.id,
+                "broker_order_id": order.broker_order_id,
+                "side": side,
+                "quantity": order.quantity,
+                "order_type": order.order_type,
+                "limit_price": order.limit_price,
+                "trigger_price": order.trigger_price,
             },
         )
         return order

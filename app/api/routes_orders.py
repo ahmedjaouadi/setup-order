@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field
 
 from app.engine.broker_reality import REPORT_STATE_KEY, orders_broker_truth_overlay
 from app.models import EventLevel
@@ -9,6 +12,17 @@ from app.models import EventLevel
 router = APIRouter()
 
 DELETABLE_ORDER_STATUSES = {"REJECTED", "CANCELLED", "FILLED", "ERROR"}
+
+
+class ManualOrderPayload(BaseModel):
+    symbol: str = Field(min_length=1, max_length=12, pattern=r"^[A-Za-z.\-]+$")
+    side: Literal["BUY", "SELL"]
+    quantity: int = Field(gt=0)
+    order_type: Literal["MKT", "LMT", "STP", "STP_LMT"]
+    limit_price: float | None = Field(default=None, gt=0)
+    trigger_price: float | None = Field(default=None, gt=0)
+    stop_loss: float | None = Field(default=None, gt=0)
+    allow_unprotected: bool = False
 
 
 @router.get("/orders", response_class=HTMLResponse)
@@ -26,6 +40,23 @@ async def list_orders(request: Request):
     orders = repository.list_orders_with_protection()
     report = repository.get_bot_state(REPORT_STATE_KEY, {})
     return {"items": orders_broker_truth_overlay(orders, report)}
+
+
+@router.post("/api/orders/manual/preview")
+async def manual_order_preview(request: Request, payload: ManualOrderPayload):
+    """Server-side risk preview shown to the user before confirmation."""
+    return await request.app.state.engine.manual_order_service.preview(payload.model_dump())
+
+
+@router.post("/api/orders/manual")
+async def manual_order(request: Request, payload: ManualOrderPayload):
+    result = await request.app.state.engine.manual_order_service.submit(payload.model_dump())
+    if result.get("validation_error"):
+        raise HTTPException(status_code=400, detail=result["validation_error"])
+    if not result.get("ok"):
+        raise HTTPException(status_code=422, detail=result.get("block"))
+    await request.app.state.engine._broadcast_snapshot()
+    return result
 
 
 @router.post("/api/orders/{order_id}/cancel")

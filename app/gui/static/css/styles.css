@@ -4025,3 +4025,45 @@ button.link-like {
   cursor: pointer;
   color: var(--ink);
 }
+
+/* --- Ordres & Positions: manual order form (etape 11) --- */
+.manual-order-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+  padding: 4px 0 8px;
+}
+
+.manual-order-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.manual-order-form input,
+.manual-order-form select {
+  min-width: 90px;
+  max-width: 130px;
+}
+
+.manual-order-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.manual-order-risk {
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+  font-size: 0.85rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+}
+
+.manual-order-risk .risk-blocked {
+  color: #b3261e;
+  font-weight: 700;
+}

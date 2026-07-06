@@ -679,6 +679,7 @@ function formatErrorDetail(detail) {
   }
   if (detail.errors) return normalizeDetailMessages(detail.errors).join(", ");
   if (detail.detail) return formatErrorDetail(detail.detail);
+  if (detail.message) return String(detail.message);
   return JSON.stringify(detail);
 }
 
@@ -2590,6 +2591,90 @@ function renderExecutions(executions) {
       <td>${escapeHtml(execution.order_id || execution.broker_perm_id || "-")}</td>
     </tr>
   `).join("") || emptyRow(6, "Aucune execution aujourd'hui");
+}
+
+function manualOrderPayload() {
+  const numberOrNull = (id) => {
+    const raw = document.getElementById(id)?.value;
+    if (raw === undefined || raw === null || String(raw).trim() === "") return null;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  };
+  return {
+    symbol: (document.getElementById("manual-symbol")?.value || "").trim().toUpperCase(),
+    side: document.getElementById("manual-side")?.value || "BUY",
+    quantity: Number(document.getElementById("manual-quantity")?.value || 0),
+    order_type: document.getElementById("manual-order-type")?.value || "LMT",
+    limit_price: numberOrNull("manual-limit"),
+    trigger_price: numberOrNull("manual-trigger"),
+    stop_loss: numberOrNull("manual-stop"),
+  };
+}
+
+function renderManualOrderRisk(result) {
+  const container = document.getElementById("manual-order-risk");
+  if (!container) return;
+  container.hidden = false;
+  const refusal = result.validation_error || result.block;
+  if (refusal) {
+    container.innerHTML = `<span class="risk-blocked">${escapeHtml(refusal.message || refusal.reason_code || "Refuse")}</span>`;
+    return;
+  }
+  const risk = result.risk || {};
+  const parts = [];
+  if (risk.reference_entry_price != null) parts.push(`<span><strong>Entree (pire cas):</strong> ${money(risk.reference_entry_price)}</span>`);
+  if (risk.risk_per_share != null) parts.push(`<span><strong>R/share:</strong> ${money(risk.risk_per_share)}</span>`);
+  if (risk.risk_usd != null) parts.push(`<span><strong>Risque:</strong> $${money(risk.risk_usd)}</span>`);
+  if (risk.risk_pct_of_account != null) parts.push(`<span><strong>% compte:</strong> ${maybePercent(risk.risk_pct_of_account)}</span>`);
+  if (risk.position_amount_usd != null) parts.push(`<span><strong>Taille position:</strong> $${money(risk.position_amount_usd)}</span>`);
+  const costGate = risk.cost_gate || {};
+  if (costGate.cost_to_risk_ratio != null) {
+    parts.push(`<span><strong>Couts/risque:</strong> ${maybePercent(costGate.cost_to_risk_ratio * 100)}${costGate.gate && costGate.gate !== "OK" ? ` (${escapeHtml(costGate.gate)})` : ""}</span>`);
+  }
+  container.innerHTML = parts.join("") || "<span>Risque non calculable (ordre SELL ou donnees manquantes).</span>";
+}
+
+function wireManualOrderForm() {
+  const form = document.getElementById("manual-order-form");
+  if (!form || form.dataset.wired) return;
+  form.dataset.wired = "1";
+  const previewButton = document.getElementById("manual-preview-button");
+  const submitButton = document.getElementById("manual-submit-button");
+  const invalidatePreview = () => {
+    if (submitButton) submitButton.disabled = true;
+  };
+  form.addEventListener("input", invalidatePreview);
+  previewButton?.addEventListener("click", async () => {
+    try {
+      const result = await api("/api/orders/manual/preview", {
+        method: "POST",
+        body: manualOrderPayload(),
+      });
+      renderManualOrderRisk(result);
+      if (submitButton) submitButton.disabled = !result.ok;
+    } catch (error) {
+      renderManualOrderRisk({ block: { message: error.message } });
+    }
+  });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = manualOrderPayload();
+    const runtime = (latestSnapshot && latestSnapshot.runtime) || {};
+    const mode = runtime.mode || runtime.broker_account_mode || "paper";
+    const summary = `${payload.side} ${payload.quantity} ${payload.symbol} (${payload.order_type})`;
+    if (!window.confirm(`Transmettre l'ordre ${summary} ?`)) return;
+    if (mode === "live" && !window.confirm(`COMPTE REEL (${mode}) — confirmer une 2e fois ${summary} ?`)) return;
+    try {
+      const result = await api("/api/orders/manual", { method: "POST", body: payload });
+      toast(`Ordre manuel transmis (${result.order_id || result.setup_id})`);
+      renderManualOrderRisk(result);
+      if (submitButton) submitButton.disabled = true;
+      await refresh();
+    } catch (error) {
+      renderManualOrderRisk({ block: { message: error.message } });
+      toast(compactToastMessage(error.message));
+    }
+  });
 }
 
 function orderIsBrokerActive(order) {
@@ -8048,6 +8133,7 @@ async function init() {
   wireTwsAuditForm();
   wireSetupForm();
   wireActionButtons();
+  wireManualOrderForm();
   wireSetupConfigEditor();
   wireSetupForecastPanel();
   wireSetupDetailJsonButton();
