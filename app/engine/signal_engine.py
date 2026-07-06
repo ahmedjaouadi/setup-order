@@ -2,12 +2,21 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from math import floor
 from typing import Any
 
 from app.engine.entry_decision import attach_entry_decision
 from app.engine.session_policy import apply_entry_session_policy
 from app.engine.setup_lifecycle_service import LIFECYCLE_MANAGED_STATUSES
-from app.models import MarketSnapshot, SetupSignal, SetupStatus, to_jsonable
+from app.engine.trade_guards import (
+    REASON_RISK_TOO_HIGH,
+    STATUS_NO_GO,
+    GuardVerdict,
+    TradeGuardsService,
+    blocked_signal_from_verdict,
+)
+from app.engine.transaction_costs import COST_GATE_NO_GO, evaluate_cost_gate
+from app.models import MarketSnapshot, SetupSignal, SetupStatus, SignalAction, to_jsonable
 from app.settings import DEFAULT_CONFIG
 from app.setups.setup_factory import SetupFactory
 from app.storage.repositories import TradingRepository
@@ -44,10 +53,12 @@ class SignalEngine:
         repository: TradingRepository,
         settings: dict[str, Any] | None = None,
         lifecycle_service: Any | None = None,
+        trade_guards: TradeGuardsService | None = None,
     ) -> None:
         self.repository = repository
         self.settings = settings if isinstance(settings, dict) else DEFAULT_CONFIG
         self.lifecycle_service = lifecycle_service
+        self.trade_guards = trade_guards
 
     def evaluate_snapshot(
         self,
@@ -69,6 +80,7 @@ class SignalEngine:
                 continue
             signal = strategy.evaluate(snapshot, current_status)
             signal = apply_entry_session_policy(signal, snapshot, self.settings)
+            signal = self._apply_trade_guard_gates(setup, signal, snapshot)
             metadata = attach_entry_decision(
                 setup=setup,
                 current_status=current_status,
@@ -121,6 +133,79 @@ class SignalEngine:
             "status_reason": result.get("status_reason", ""),
             "last_revalidated_at": result.get("last_revalidated_at"),
         }
+
+    def _apply_trade_guard_gates(
+        self,
+        setup: dict[str, Any],
+        signal: SetupSignal,
+        snapshot: MarketSnapshot,
+    ) -> SetupSignal:
+        """System gates from docs/skills.md section 29, applied before the
+        setup-level entry decision (system gates come first)."""
+        if signal.action != SignalAction.ENTRY_READY:
+            return signal
+        if self.trade_guards is not None:
+            verdict = self.trade_guards.evaluate_entry(snapshot.symbol, setup=setup)
+            if verdict is not None:
+                return blocked_signal_from_verdict(signal, verdict)
+        cost_verdict = self._cost_gate_verdict(setup, signal, snapshot)
+        if cost_verdict is not None:
+            return blocked_signal_from_verdict(signal, cost_verdict)
+        return signal
+
+    def _cost_gate_verdict(
+        self,
+        setup: dict[str, Any],
+        signal: SetupSignal,
+        snapshot: MarketSnapshot,
+    ) -> GuardVerdict | None:
+        """Transaction-cost gate (docs/skills.md section 24bis)."""
+        entry_price = _number_or_none(signal.entry_price)
+        stop_loss = _number_or_none(signal.stop_loss)
+        if entry_price is None or stop_loss is None:
+            return None
+        risk_per_share = abs(entry_price - stop_loss)
+        if risk_per_share <= 0:
+            return None
+        config_raw = setup.get("config")
+        config: dict[str, Any] = config_raw if isinstance(config_raw, dict) else {}
+        risk_raw = config.get("risk")
+        setup_risk: dict[str, Any] = risk_raw if isinstance(risk_raw, dict) else {}
+        default_risk = (
+            self.settings.get("risk", {}).get("max_risk_per_trade_usd", 15)
+            if isinstance(self.settings.get("risk"), dict)
+            else 15
+        )
+        max_risk = _number_or_none(setup_risk.get("max_risk_usd")) or _number_or_none(default_risk)
+        if max_risk is None or max_risk <= 0:
+            return None
+        quantity = floor(max_risk / risk_per_share)
+        if quantity <= 0:
+            return None
+        gate = evaluate_cost_gate(
+            quantity=quantity,
+            spread=snapshot.spread,
+            max_risk_usd=max_risk,
+            settings=self.settings,
+        )
+        metadata = signal.metadata if isinstance(signal.metadata, dict) else {}
+        analysis = metadata.get("analysis")
+        if isinstance(analysis, dict):
+            analysis["transaction_costs"] = gate
+        if gate["gate"] != COST_GATE_NO_GO:
+            return None
+        return GuardVerdict(
+            status=STATUS_NO_GO,
+            reason_code=REASON_RISK_TOO_HIGH,
+            decision_status="COST_TO_RISK_TOO_HIGH",
+            title="Entree refusee - couts trop eleves",
+            message=(
+                "Les couts estimes (commissions, slippage, spread) representent "
+                f"{gate['cost_to_risk_ratio']:.0%} du risque du trade "
+                f"(max {gate['max_cost_to_risk_ratio']:.0%})."
+            ),
+            context={"transaction_costs": gate},
+        )
 
     def _apply_runtime_entry_guards(self, setup: dict[str, Any], signal: SetupSignal) -> None:
         metadata = signal.metadata if isinstance(signal.metadata, dict) else {}
@@ -222,3 +307,12 @@ class SignalEngine:
         analysis["next_action"] = next_action
         analysis["blocking_conditions"] = blocking
         analysis["entry_decision"] = decision
+
+
+def _number_or_none(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

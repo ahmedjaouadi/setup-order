@@ -53,6 +53,46 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_total_exposure_usd": 1000,
         "allow_short": False,
     },
+    # System gates from docs/skills.md v2.0, applied before any setup gate
+    # (section 29): circuit breakers (34.3), exposure limits (34.4),
+    # halt/PDT (25ter) and transaction costs (24bis).
+    "trade_guards": {
+        "enabled": True,
+        "halt": {
+            "enabled": True,
+            "resume_cooldown_minutes": 5,
+        },
+        "circuit_breakers": {
+            "enabled": True,
+            "max_daily_loss_R": 3.0,
+            "max_consecutive_losses": 3,
+            "max_trades_per_day": 5,
+            "cooldown_after_stop_minutes": 30,
+        },
+        "pdt": {
+            "enabled": False,
+            "max_day_trades_per_5_days": 3,
+        },
+        "exposure": {
+            "enabled": True,
+            "block_if_position_on_same_symbol": True,
+            "max_open_positions": 3,
+            "max_total_open_risk_R": 2.0,
+            "max_positions_same_sector": 2,
+            "correlated_groups": [],
+        },
+        "transaction_costs": {
+            "enabled": True,
+            "commission_per_order_usd": 1.0,
+            "commission_per_share_usd": 0.005,
+            "regulatory_fees_per_order_usd": 0.05,
+            "expected_slippage_per_share_usd": 0.01,
+            "warn_cost_to_risk_ratio": 0.15,
+            "max_cost_to_risk_ratio": 0.30,
+            "simulated_fill_min_slippage_usd": 0.01,
+            "simulated_fill_spread_fraction": 0.5,
+        },
+    },
     "trailing_stop_loss": {
         "enabled_by_default": True,
         "required_for_all_new_setups": True,
@@ -554,6 +594,18 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "wait_after_open_minutes": 30,
         "wait_closed_bars_after_open": 2,
         "wait_bars_timeframe": "15m",
+        # Hourly entry windows (docs/skills.md section 25bis), New York time.
+        "trading_windows": {
+            "enabled": True,
+            "no_entry_before": "10:00",
+            "lunch": {
+                "start": "11:30",
+                "end": "14:00",
+                "mode": "REINFORCED",
+                "min_volume_ratio": 1.5,
+            },
+            "no_new_entry_after": "15:30",
+        },
         "require_rth_volume_confirmation": True,
         "require_rth_spread_check": True,
         "require_rth_risk_recalculation": True,

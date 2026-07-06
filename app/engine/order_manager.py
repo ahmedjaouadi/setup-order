@@ -45,6 +45,7 @@ class OrderManager:
         default_entry_order_type: str = "STP_LMT",
         default_stop_order_type: str = "STP",
         default_entry_limit_offset: float = 0.05,
+        settings: dict | None = None,
     ) -> None:
         self.repository = repository
         self.event_store = event_store
@@ -57,6 +58,7 @@ class OrderManager:
             event_store=event_store,
             broker_provider=lambda: self.broker,
             stop_order_placer=self,
+            settings=settings,
         )
 
     async def place_entry_order(

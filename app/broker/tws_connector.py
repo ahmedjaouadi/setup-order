@@ -10,7 +10,10 @@ import time
 from abc import ABC, abstractmethod
 from contextlib import suppress
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ib_async import IB, Order
 
 from app.broker.broker_errors import BrokerDisconnectedError
 from app.broker.ib_models import (
@@ -560,7 +563,7 @@ class IbAsyncTwsConnector(BrokerConnector):
         )
         self.last_error = ""
         self._status = ConnectionStatus.DISCONNECTED
-        self._ib = None
+        self._ib: IB | None = None
         self._live_quotes: LiveQuoteRegistry | None = None
         self._account_pnl_account: str | None = None
         self._historical_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -1465,6 +1468,13 @@ class IbAsyncTwsConnector(BrokerConnector):
             self._historical_cache_ttl_seconds(bar_size, cache_profile=cache_profile),
         ):
             return self._cached_historical_payload(cache_key, "HIT")
+        if self._ib is None:
+            return {
+                "available": False,
+                "source": self.connector_name,
+                "symbol": symbol,
+                "message": self.last_error or "TWS/Gateway is disconnected.",
+            }
 
         started = self._record_tws_request_sent(
             "reqHistoricalDataAsync",
@@ -1821,6 +1831,8 @@ class IbAsyncTwsConnector(BrokerConnector):
         return Stock(normalized_symbol, self.stock_exchange, "USD")
 
     async def _qualify_contract(self, contract) -> None:
+        if self._ib is None:
+            raise BrokerDisconnectedError(self.last_error or "TWS/Gateway is disconnected")
         started = self._record_tws_request_sent(
             "qualifyContractsAsync",
             _contract_detail(contract),
@@ -1862,16 +1874,23 @@ class IbAsyncTwsConnector(BrokerConnector):
         with suppress(Exception):
             self._ib.cancelPnL(self._account_pnl_account)
 
-    def _build_order(self, request: BrokerOrderRequest):
+    def _build_order(self, request: BrokerOrderRequest) -> Order:
         from ib_async import LimitOrder, MarketOrder, StopLimitOrder, StopOrder
 
+        order: Order
         if request.order_type == "MKT":
             order = MarketOrder(request.side, request.quantity)
         elif request.order_type == "LMT":
+            if request.limit_price is None:
+                raise ValueError("LMT order requires a limit_price")
             order = LimitOrder(request.side, request.quantity, request.limit_price)
         elif request.order_type == "STP":
+            if request.stop_price is None:
+                raise ValueError("STP order requires a stop_price")
             order = StopOrder(request.side, request.quantity, request.stop_price)
         elif request.order_type == "STP_LMT":
+            if request.limit_price is None or request.trigger_price is None:
+                raise ValueError("STP_LMT order requires a limit_price and trigger_price")
             order = StopLimitOrder(
                 request.side,
                 request.quantity,
@@ -2336,7 +2355,8 @@ def _atr_1h_diagnostics_payload(
 def _last_successful_atr_1h(cached: dict[str, Any] | None) -> dict[str, Any]:
     if not cached:
         return {}
-    snapshot = cached.get("snapshot") if isinstance(cached.get("snapshot"), dict) else {}
+    raw_snapshot = cached.get("snapshot")
+    snapshot: dict[str, Any] = raw_snapshot if isinstance(raw_snapshot, dict) else {}
     value = _number_or_none(snapshot.get("atr_1h"))
     if value is None:
         return {}

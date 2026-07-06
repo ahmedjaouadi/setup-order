@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 from app.broker.tws_connector import BrokerConnector, SimulatedBrokerConnector
+from app.engine.transaction_costs import simulated_fill_price, transaction_cost_settings
 from app.models import EventLevel, OrderRecord, OrderStatus, PositionRecord, SetupStatus
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
@@ -26,11 +27,13 @@ class FillExecutor:
         event_store: EventStore,
         broker_provider: Callable[[], BrokerConnector],
         stop_order_placer: StopOrderPlacer,
+        settings: dict[str, Any] | None = None,
     ) -> None:
         self.repository = repository
         self.event_store = event_store
         self.broker_provider = broker_provider
         self.stop_order_placer = stop_order_placer
+        self.settings = settings if isinstance(settings, dict) else {}
 
     async def simulate_fill_order(
         self,
@@ -44,6 +47,15 @@ class FillExecutor:
         broker = self.broker_provider()
         if not isinstance(broker, SimulatedBrokerConnector):
             return None
+
+        # Paper fills must never be perfect (docs/skills.md 24bis.2):
+        # apply the simulated slippage when a cost model is configured.
+        if transaction_cost_settings(self.settings):
+            fill_price = simulated_fill_price(
+                trigger_price=fill_price,
+                spread=None,
+                settings=self.settings,
+            )
 
         broker_order_id = order.get("broker_order_id")
         if not broker_order_id:

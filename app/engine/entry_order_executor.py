@@ -15,6 +15,8 @@ from app.engine.order_manager import (
 )
 from app.engine.risk_engine import RiskEngine
 from app.engine.session_policy import execution_window_block, signal_blocked_by_session_policy
+from app.engine.trade_guards import TradeGuardsService
+from app.engine.transaction_costs import COST_GATE_NO_GO, COST_GATE_WARNING, evaluate_cost_gate
 from app.models import EventLevel, SetupStatus, SignalAction
 from app.setups.setup_roles import setup_is_management_only, setup_role_from_config
 from app.storage.event_store import EventStore
@@ -31,6 +33,7 @@ class EntryOrderExecutor:
         settings: dict[str, Any] | None = None,
         current_time_provider: Callable[[], datetime] | None = None,
         lifecycle_service: Any | None = None,
+        trade_guards: TradeGuardsService | None = None,
     ) -> None:
         self.repository = repository
         self.event_store = event_store
@@ -39,6 +42,7 @@ class EntryOrderExecutor:
         self.settings = settings if isinstance(settings, dict) else {}
         self.current_time_provider = current_time_provider or (lambda: datetime.now(UTC))
         self.lifecycle_service = lifecycle_service
+        self.trade_guards = trade_guards
 
     async def execute_entry_ready(
         self,
@@ -84,6 +88,23 @@ class EntryOrderExecutor:
                 data=runtime_window_block,
             )
             return True
+
+        if self.trade_guards is not None:
+            guard_verdict = self.trade_guards.evaluate_entry(
+                setup["symbol"],
+                setup=setup,
+                now=self.current_time_provider(),
+            )
+            if guard_verdict is not None:
+                self.event_store.record(
+                    EventLevel.RISK,
+                    "entry_blocked_by_trade_guards",
+                    f"{guard_verdict.decision_status}: {guard_verdict.message}",
+                    setup_id=setup["setup_id"],
+                    symbol=setup["symbol"],
+                    data=guard_verdict.as_payload(),
+                )
+                return True
 
         setup_role = setup_role_from_config(setup.get("config", {}))
         if setup_is_management_only(setup_role):
@@ -185,6 +206,36 @@ class EntryOrderExecutor:
             )
             return True
 
+        cost_gate = evaluate_cost_gate(
+            quantity=int(decision.quantity or 0),
+            spread=_spread_hint(signal),
+            max_risk_usd=float(decision.risk_amount_usd or 0.0),
+            settings=self.settings,
+        )
+        if cost_gate["gate"] == COST_GATE_NO_GO:
+            self.event_store.record(
+                EventLevel.RISK,
+                "entry_rejected_by_transaction_costs",
+                (
+                    "Estimated costs are "
+                    f"{cost_gate['cost_to_risk_ratio']:.0%} of the trade risk "
+                    f"(max {cost_gate['max_cost_to_risk_ratio']:.0%})"
+                ),
+                setup_id=setup["setup_id"],
+                symbol=setup["symbol"],
+                data=cost_gate,
+            )
+            return True
+        if cost_gate["gate"] == COST_GATE_WARNING:
+            self.event_store.record(
+                EventLevel.WARNING,
+                "entry_transaction_costs_warning",
+                ("Estimated costs are " f"{cost_gate['cost_to_risk_ratio']:.0%} of the trade risk"),
+                setup_id=setup["setup_id"],
+                symbol=setup["symbol"],
+                data=cost_gate,
+            )
+
         broker_blocking_reasons = broker_reality_blocking_reasons(
             self.repository,
             self.settings,
@@ -239,6 +290,10 @@ class EntryOrderExecutor:
                 setup_id=setup["setup_id"],
                 symbol=setup["symbol"],
             )
+        else:
+            if self.trade_guards is not None:
+                # Feed the daily circuit breakers (skills.md 34.3).
+                self.trade_guards.record_entry_submitted(setup["symbol"])
         return True
 
     def _lifecycle_allows_transmission(
@@ -355,6 +410,22 @@ def _trailing_stop_order_ready(config: dict[str, Any]) -> bool:
     if ready is None:
         ready = broker_order.get("trailing_stop_order_ready")
     return ready is True
+
+
+def _spread_hint(signal: Any) -> float | None:
+    """Best-effort spread extracted from the signal analysis metadata."""
+    metadata = getattr(signal, "metadata", None)
+    if not isinstance(metadata, dict):
+        return None
+    analysis = metadata.get("analysis")
+    if not isinstance(analysis, dict):
+        return None
+    costs = analysis.get("transaction_costs")
+    if isinstance(costs, dict):
+        value = _number_or_none(costs.get("spread_used"))
+        if value is not None:
+            return value
+    return _number_or_none(analysis.get("spread"))
 
 
 def _number_or_none(value: Any) -> float | None:

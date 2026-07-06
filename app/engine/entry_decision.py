@@ -166,6 +166,61 @@ DISPLAY_BY_STATUS: dict[str, tuple[str, str, str]] = {
         "Le prix n'a pas encore atteint le trigger d'entree.",
         "WAITING",
     ),
+    "CIRCUIT_BREAKER_ACTIVE": (
+        "Circuit breaker journalier actif",
+        "Le kill switch journalier est declenche. Aucune nouvelle entree avant la prochaine session.",
+        "BLOCKED",
+    ),
+    "COOLDOWN_AFTER_STOP": (
+        "Cooldown apres stop",
+        "Un stop vient d'etre touche sur ce titre. Pas de re-entree immediate.",
+        "WAITING",
+    ),
+    "PDT_LIMIT_REACHED": (
+        "Limite PDT atteinte",
+        "La limite de day trades sur 5 jours ouvres est atteinte.",
+        "BLOCKED",
+    ),
+    "HALT_ACTIVE": (
+        "Titre halte (LULD)",
+        "Le titre est halte. Aucun ordre envoye ou modifie tant que le halt est actif.",
+        "BLOCKED",
+    ),
+    "HALT_RESUME_COOLDOWN": (
+        "Reprise apres halt - revalidation requise",
+        "Le titre vient de reprendre apres un halt. Revalidation avant toute decision.",
+        "WAITING",
+    ),
+    "EXPOSURE_LIMIT": (
+        "Limite d'exposition atteinte",
+        "Les limites d'exposition ou de risque ouvert du portefeuille sont atteintes.",
+        "BLOCKED",
+    ),
+    "CONFLICT_WITH_OPEN_POSITION": (
+        "Conflit avec une position ouverte",
+        "Une position ouverte sur ce titre ou un titre correle bloque cette entree.",
+        "BLOCKED",
+    ),
+    "COST_TO_RISK_TOO_HIGH": (
+        "Entree refusee - couts trop eleves",
+        "Les couts estimes (commissions, slippage, spread) representent une part trop elevee du risque.",
+        "BLOCKED",
+    ),
+    "ENTRY_BEFORE_TRADING_WINDOW": (
+        "Entree bloquee - fenetre d'ouverture",
+        "Pas d'entree avant la fin de la fenetre d'ouverture (10:00 New York par defaut).",
+        "WAITING",
+    ),
+    "LUNCH_WINDOW_RESTRICTED": (
+        "Entree bloquee - lunch chop",
+        "Pendant le lunch (11:30-14:00 New York), une entree exige des conditions renforcees.",
+        "WAITING",
+    ),
+    "ENTRY_AFTER_CUTOFF": (
+        "Entree bloquee - trop tard dans la session",
+        "Aucune nouvelle entree apres le cutoff (15:30 New York par defaut).",
+        "WAITING",
+    ),
     "DISABLED": (
         "Setup desactive",
         "Le setup n'autorise pas d'entree tant qu'il est desactive.",

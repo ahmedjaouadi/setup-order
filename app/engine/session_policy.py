@@ -6,11 +6,12 @@ from datetime import date, datetime, time
 from typing import Any
 
 from app.models import MarketSnapshot, SetupSignal, SignalAction
-from app.utils.market_hours import current_us_equity_session_context
+from app.utils.market_hours import US_EQUITY_TIMEZONE, current_us_equity_session_context
 
 SESSION_BLOCKING_REASON = "BLOCKED_OUTSIDE_REGULAR_MARKET_HOURS"
 WAIT_AFTER_OPEN_REASON = "WAIT_AFTER_OPEN_WINDOW_ACTIVE"
 SESSION_UNKNOWN_REASON = "MARKET_SESSION_UNKNOWN"
+TRADING_WINDOW_REASON = "BLOCKED_OUTSIDE_TRADING_WINDOW"
 
 PREMARKET_BLOCKING_STATUSES = frozenset(
     {
@@ -18,6 +19,9 @@ PREMARKET_BLOCKING_STATUSES = frozenset(
         "AFTER_HOURS_TRIGGER_DETECTED",
         "RTH_CONFIRMATION_REQUIRED",
         "WAITING_AFTER_OPEN_BARS",
+        "ENTRY_BEFORE_TRADING_WINDOW",
+        "LUNCH_WINDOW_RESTRICTED",
+        "ENTRY_AFTER_CUTOFF",
     }
 )
 
@@ -163,6 +167,25 @@ def apply_entry_session_policy(
             readiness_label="WAITING",
         )
 
+    window_block = _trading_window_state(
+        policy,
+        current_time,
+        volume_ratio=_snapshot_volume_ratio(snapshot),
+    )
+    if window_block is not None:
+        analysis["session_policy"]["trading_window"] = window_block["context"]
+        return _blocked_signal(
+            signal,
+            metadata,
+            status=window_block["status"],
+            reason=f"{window_block['status']}: {window_block['message']}",
+            next_action=window_block["next_action"],
+            title=window_block["title"],
+            message=window_block["message"],
+            blocking=[TRADING_WINDOW_REASON],
+            readiness_label="WAITING",
+        )
+
     return signal
 
 
@@ -176,7 +199,11 @@ def signal_blocked_by_session_policy(signal: SetupSignal) -> bool:
     blocking = _string_list(analysis.get("blocking_conditions"))
     if decision_status in PREMARKET_BLOCKING_STATUSES:
         return True
-    return SESSION_BLOCKING_REASON in blocking or WAIT_AFTER_OPEN_REASON in blocking
+    return (
+        SESSION_BLOCKING_REASON in blocking
+        or WAIT_AFTER_OPEN_REASON in blocking
+        or TRADING_WINDOW_REASON in blocking
+    )
 
 
 def execution_window_block(
@@ -285,6 +312,25 @@ def execution_window_block(
         )
         return payload
 
+    window_block = _trading_window_state(
+        policy,
+        context.current_time,
+        volume_ratio=None,
+        runtime_check=True,
+    )
+    if window_block is not None:
+        payload["session_policy"]["trading_window"] = window_block["context"]
+        payload.update(
+            {
+                "decision_status": window_block["status"],
+                "next_action": window_block["next_action"],
+                "display_title": window_block["title"],
+                "display_message": window_block["message"],
+                "blocking_conditions": [TRADING_WINDOW_REASON],
+            }
+        )
+        return payload
+
     return None
 
 
@@ -381,6 +427,141 @@ def _after_open_wait_state(
             "closed_bars_after_open": closed_bars_after_open,
         },
     }
+
+
+def _trading_window_state(
+    policy: dict[str, Any],
+    current_time: Any,
+    *,
+    volume_ratio: float | None,
+    runtime_check: bool = False,
+) -> dict[str, Any] | None:
+    """Hourly entry windows from docs/skills.md section 25bis.
+
+    - no entry before ``no_entry_before`` (default 10:00 New York)
+    - reinforced conditions during the lunch chop (11:30-14:00): the RVOL
+      must confirm (>= min_volume_ratio) or the entry is refused
+    - no new entry after ``no_new_entry_after`` (default 15:30)
+
+    ``runtime_check`` marks the execution-time call where no snapshot (and
+    therefore no RVOL) is available; the reinforced lunch rule is enforced at
+    signal level, so only hard cutoffs apply there.
+    """
+
+    windows = _mapping(policy.get("trading_windows"))
+    if not windows or windows.get("enabled", True) is False:
+        return None
+    clock = _ny_wall_clock(current_time)
+    if clock is None:
+        return None
+
+    context: dict[str, Any] = {
+        "enabled": True,
+        "current_time_ny": clock.isoformat(),
+        "volume_ratio": volume_ratio,
+    }
+
+    open_from = _parse_clock(windows.get("no_entry_before"))
+    if open_from is not None and clock < open_from:
+        context["window"] = "BEFORE_OPEN_WINDOW"
+        return {
+            "status": "ENTRY_BEFORE_TRADING_WINDOW",
+            "next_action": "WAIT_TRADING_WINDOW",
+            "title": "Entree bloquee - fenetre d'ouverture",
+            "message": (
+                "L'ouverture concentre volatilite et faux signaux. Pas "
+                f"d'entree avant {open_from.strftime('%H:%M')} (heure de New York)."
+            ),
+            "context": context,
+        }
+
+    cutoff = _parse_clock(windows.get("no_new_entry_after"))
+    if cutoff is not None and clock >= cutoff:
+        context["window"] = "AFTER_ENTRY_CUTOFF"
+        return {
+            "status": "ENTRY_AFTER_CUTOFF",
+            "next_action": "WAIT_NEXT_SESSION",
+            "title": "Entree bloquee - trop tard dans la session",
+            "message": (
+                f"Aucune nouvelle entree apres {cutoff.strftime('%H:%M')} "
+                "(heure de New York): temps insuffisant pour que le trade travaille."
+            ),
+            "context": context,
+        }
+
+    lunch = _mapping(windows.get("lunch"))
+    lunch_start = _parse_clock(lunch.get("start") or "11:30")
+    lunch_end = _parse_clock(lunch.get("end") or "14:00")
+    mode = str(lunch.get("mode") or "REINFORCED").strip().upper()
+    if (
+        lunch_start is not None
+        and lunch_end is not None
+        and lunch_start <= clock < lunch_end
+        and mode != "ALLOW"
+    ):
+        context["window"] = "LUNCH_CHOP"
+        context["lunch_mode"] = mode
+        if mode == "BLOCK":
+            return {
+                "status": "LUNCH_WINDOW_RESTRICTED",
+                "next_action": "WAIT_TRADING_WINDOW",
+                "title": "Entree bloquee - lunch chop",
+                "message": (
+                    "Fenetre 11:30-14:00 (New York): volume faible et "
+                    "breakouts peu fiables. Entrees desactivees."
+                ),
+                "context": context,
+            }
+        # REINFORCED: the entry needs an abnormal participation (RVOL).
+        if runtime_check:
+            return None
+        min_ratio = _number(lunch.get("min_volume_ratio"), 1.5) or 1.5
+        context["min_volume_ratio"] = min_ratio
+        if volume_ratio is None or volume_ratio < min_ratio:
+            observed = "indisponible" if volume_ratio is None else f"{volume_ratio:.2f}"
+            return {
+                "status": "LUNCH_WINDOW_RESTRICTED",
+                "next_action": "WAIT_TRADING_WINDOW",
+                "title": "Entree bloquee - lunch chop sans volume",
+                "message": (
+                    "Pendant le lunch (11:30-14:00 New York) une entree exige "
+                    f"un RVOL >= {min_ratio:g}. RVOL observe: {observed}."
+                ),
+                "context": context,
+            }
+    return None
+
+
+def _snapshot_volume_ratio(snapshot: MarketSnapshot) -> float | None:
+    for attribute in (
+        "volume_ratio",
+        "volume_ratio_closed_bar",
+        "volume_ratio_live",
+        "volume_ratio_15m",
+    ):
+        value = _number(getattr(snapshot, attribute, None))
+        if value is not None:
+            return value
+    return None
+
+
+def _ny_wall_clock(value: Any) -> time | None:
+    parsed = _parse_moment(value)
+    if parsed is None:
+        return None
+    moment = parsed.value
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(US_EQUITY_TIMEZONE)
+    return moment.timetz().replace(tzinfo=None)
+
+
+def _parse_clock(value: Any) -> time | None:
+    if value in (None, ""):
+        return None
+    try:
+        return time.fromisoformat(str(value).strip())
+    except ValueError:
+        return None
 
 
 def _minutes_since_open(snapshot: MarketSnapshot) -> float | None:

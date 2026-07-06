@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Mapping
 from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -23,7 +24,7 @@ from app.engine.opportunity_alert_service import OpportunityAlertService
 from app.engine.order_manager import OrderManager
 from app.engine.position_action_executor import PositionActionExecutor
 from app.engine.position_manager import PositionManager
-from app.engine.reconciliation import ReconciliationEngine
+from app.engine.reconciliation import ReconciliationEngine, ReconciliationResult
 from app.engine.risk_engine import RiskEngine, RiskLimits
 from app.engine.setup_diagnostics import market_snapshot_payload
 from app.engine.setup_engine import SetupEngine
@@ -42,6 +43,7 @@ from app.engine.stock_market_monitor import (
     stock_quote_fields_text,
     stock_quote_message,
 )
+from app.engine.trade_guards import TradeGuardsService
 from app.market_data.market_data_service import MarketDataService
 from app.models import (
     BotStatus,
@@ -142,8 +144,14 @@ class TradingEngine:
             default_entry_limit_offset=float(
                 settings.raw.get("setup_defaults", {}).get("entry", {}).get("limit_offset", 0.05)
             ),
+            settings=settings.raw,
         )
-        self.position_manager = PositionManager(repository, self.event_store)
+        self.trade_guards = TradeGuardsService(repository, settings.raw)
+        self.position_manager = PositionManager(
+            repository,
+            self.event_store,
+            on_position_closed=self.trade_guards.record_position_closed,
+        )
         self.reconciliation = ReconciliationEngine(
             repository,
             self.event_store,
@@ -163,6 +171,7 @@ class TradingEngine:
             repository,
             settings.raw,
             lifecycle_service=self.setup_lifecycle,
+            trade_guards=self.trade_guards,
         )
         market_config = settings.raw.get("market", {})
         self.opportunity_alert_service = OpportunityAlertService(
@@ -193,6 +202,7 @@ class TradingEngine:
             self.order_manager,
             settings=settings.raw,
             lifecycle_service=self.setup_lifecycle,
+            trade_guards=self.trade_guards,
         )
         self._monitor_task: asyncio.Task | None = None
         self._snapshot_cache: dict[str, Any] | None = None
@@ -752,7 +762,7 @@ class TradingEngine:
         if mark_completed:
             self._mark_reconciliation_completed(result)
 
-    def _mark_reconciliation_completed(self, result: dict[str, Any]) -> None:
+    def _mark_reconciliation_completed(self, result: Mapping[str, Any]) -> None:
         self._health.update(
             {
                 "last_reconciliation_at": self._utc_now_iso(),
@@ -822,7 +832,7 @@ class TradingEngine:
     @staticmethod
     def _broker_reality_int(report: dict[str, Any], key: str) -> int | None:
         value = report.get(key) if isinstance(report, dict) else None
-        if value in (None, ""):
+        if value is None or value == "":
             return None
         try:
             return int(value)
@@ -1219,7 +1229,7 @@ class TradingEngine:
         rows: list[dict[str, Any]] = []
         for order in local_orders:
             row = dict(order)
-            broker_order = next(
+            matched_broker_order = next(
                 (
                     broker_by_key[key]
                     for key in self._local_order_keys(order)
@@ -1227,15 +1237,15 @@ class TradingEngine:
                 ),
                 None,
             )
-            if broker_order is not None:
-                row["status"] = self._broker_order_status(broker_order)
-                broker_status = self._broker_reality_order_status(broker_order)
+            if matched_broker_order is not None:
+                row["status"] = self._broker_order_status(matched_broker_order)
+                broker_status = self._broker_reality_order_status(matched_broker_order)
                 row["broker_order_status"] = broker_status
                 row["broker_live_status"] = broker_status
-                row["broker_transmit"] = bool(broker_order.transmit)
-                if not row.get("broker_perm_id") and broker_order.broker_perm_id:
-                    row["broker_perm_id"] = broker_order.broker_perm_id
-                matched_broker_keys.update(self._broker_order_keys(broker_order))
+                row["broker_transmit"] = bool(matched_broker_order.transmit)
+                if not row.get("broker_perm_id") and matched_broker_order.broker_perm_id:
+                    row["broker_perm_id"] = matched_broker_order.broker_perm_id
+                matched_broker_keys.update(self._broker_order_keys(matched_broker_order))
             elif str(row.get("status") or "") in {"CREATED", "SUBMITTED"}:
                 row["broker_order_status"] = "NO_BROKER_ORDER"
                 row["broker_live_status"] = "NO_BROKER_ORDER"
@@ -1316,11 +1326,11 @@ class TradingEngine:
             symbol = str(order.get("symbol") or "").upper()
             if symbol and stop_price is not None:
                 stops[symbol] = stop_price
-        for order in broker_orders:
-            if str(order.side or "").upper() != "SELL":
+        for broker_order in broker_orders:
+            if str(broker_order.side or "").upper() != "SELL":
                 continue
-            stop_price = self._money(order.stop_price)
-            symbol = str(order.symbol or "").upper()
+            stop_price = self._money(broker_order.stop_price)
+            symbol = str(broker_order.symbol or "").upper()
             if symbol and stop_price is not None:
                 stops[symbol] = stop_price
         return stops
@@ -1763,7 +1773,7 @@ class TradingEngine:
         await self._broadcast_snapshot()
         return await self.snapshot()
 
-    async def force_sync(self) -> dict[str, int]:
+    async def force_sync(self) -> ReconciliationResult:
         self.invalidate_snapshot_cache()
         result = await self.reconciliation.run()
         self._mark_reconciliation_completed(result)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypedDict
 
 from app.broker.ib_models import BrokerOrderRequest, BrokerPosition
 from app.broker.tws_connector import BrokerConnector
@@ -9,6 +9,26 @@ from app.models import ConnectionStatus, EventLevel, OrderStatus, PositionRecord
 from app.setups.setup_roles import setup_is_management_only, setup_role_from_config
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
+
+
+class ReconciliationResult(TypedDict):
+    broker_positions: int
+    broker_open_orders: int
+    broker_executions: int
+    local_positions: int
+    local_orders: int
+    local_orders_updated: int
+    local_orders_cancelled: int
+    local_orders_filled: int
+    local_orders_rejected: int
+    local_orders_reactivated: int
+    missing_broker_orders: int
+    adopted_positions: int
+    manual_review_required: int
+    broker_reality_rows: int
+    reconciliation_mismatches: int
+    auto_execution_blocked: bool
+    broker_tracker_status: str
 
 
 class ReconciliationEngine:
@@ -24,7 +44,7 @@ class ReconciliationEngine:
         self.broker = broker
         self.settings = settings if isinstance(settings, dict) else {}
 
-    async def run(self) -> dict[str, Any]:
+    async def run(self) -> ReconciliationResult:
         broker_connected = await self.broker.status() == ConnectionStatus.CONNECTED
         local_setups = self.repository.list_setups()
         local_orders = self.repository.list_orders()
@@ -70,7 +90,7 @@ class ReconciliationEngine:
         broker_order_statuses = (
             await _broker_order_statuses(self.broker) if broker_connected else {}
         )
-        result = {
+        result: ReconciliationResult = {
             "broker_positions": len(broker_positions),
             "broker_open_orders": len(broker_orders),
             "broker_executions": len(broker_executions),
@@ -105,7 +125,7 @@ class ReconciliationEngine:
                 EventLevel.SYNC,
                 "reconciliation_completed",
                 "Reconciliation skipped because broker is disconnected",
-                data=result,
+                data=dict(result),
             )
             return result
         if order_query_error is None and position_query_error is None:
@@ -262,7 +282,7 @@ class ReconciliationEngine:
             EventLevel.SYNC,
             "reconciliation_completed",
             "Reconciliation completed",
-            data=result,
+            data=dict(result),
         )
         return result
 
@@ -277,7 +297,7 @@ class ReconciliationEngine:
         broker_account_summary: dict[str, Any],
         broker_executions: list[Any],
         broker_connected: bool,
-        result: dict[str, Any],
+        result: ReconciliationResult,
         order_query_error: str | None = None,
         position_query_error: str | None = None,
         account_query_error: str | None = None,
@@ -308,7 +328,7 @@ class ReconciliationEngine:
         broker_positions: list[BrokerPosition],
         broker_orders: list[BrokerOrderRequest],
         broker_order_statuses: dict[str, str],
-        result: dict[str, int],
+        result: ReconciliationResult,
     ) -> None:
         positions_by_symbol = {
             position.symbol.upper(): position
@@ -350,7 +370,7 @@ class ReconciliationEngine:
         self,
         order: dict[str, Any],
         status: str,
-        result: dict[str, int],
+        result: ReconciliationResult,
         *,
         source: str,
         missing_from_open_orders: bool = False,
