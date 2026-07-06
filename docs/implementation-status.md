@@ -1,7 +1,7 @@
 # Implementation Status
 
 ## Derniere mise a jour
-2026-07-02
+2026-07-06
 
 ## Phase actuelle
 - Phase: V2.4 Architecture Stabilization
@@ -96,6 +96,22 @@
 - Tables: `decision_traces`
 - Tests: `tests/test_v2_priority_modules.py`
 
+- Module: Detection etape 6 — conventions skills.md (28bis/32.2bis/32.2ter/30bis/2.5)
+- Fichiers: `app/opportunity_scanner/context_tags.py`, `app/opportunity_scanner/data_quality_gate.py`, `app/decision_codes.py`, `app/opportunities/scanner.py`, `app/opportunity_scanner/outcome_tracker.py`, `app/opportunity_scanner/learning_loop.py`, `app/opportunity_scanner/technique_repository.py`, `app/opportunity_scanner/technique_service.py`, `app/storage/database.py`
+- Comportement: chaque outcome embarque `context_tags` (time_bucket NY, rvol_bucket, spread_bucket, day_of_week, colonnes reservees market_regime/had_catalyst) dans `features_snapshot`; gate qualite AVANT toute evaluation de technique — snapshot stale/incoherent/bid>ask/sans prix -> `PAUSED` (REJECTED, aucun outcome); les outcomes ne sont enregistres qu'apres le filtre liquidite; refus qualifies traces en `SCANNER_GATE` `{status}:{reason_code}` via `app/decision_codes.py` (partage avec trade_guards, zero couplage detection->order manager); les variantes du learning loop ne mutent qu'UN seuil numerique a la fois (`mutated_field`+`factor` dans la trace `VARIANT_SPAWNED`, plafond `learning.max_variants_per_parent`); `detection_techniques` porte `config_version`/`revision`, tout PATCH de `rule_json` incremente `revision` et trace `TECHNIQUE_REVISION` avec before/after.
+- Securite: `execution_allowed=false` partout, aucun import order manager dans la detection, aucun eval/exec, kill-switch `learning.enabled=false` = zero mutation, tests statiques dans `tests/test_techniques_security.py`.
+- Tests: `python -m unittest tests.test_context_tags tests.test_scanner_data_quality_gate tests.test_detection_outcomes tests.test_learning_loop tests.test_techniques_api tests.test_techniques_security`
+
+- Module: Detection etape 7 — features F1 + techniques seed + filtre spread
+- Fichiers: `app/opportunity_scanner/feature_math.py`, `app/opportunities/scanner.py`, `app/features/store.py`, `app/broker/tws_connector.py`, `app/opportunity_scanner/rule_interpreter.py`, `app/opportunity_scanner/technique_seed.py`, `app/main.py`
+- Comportement: snapshot scanner enrichi de `rvol` (canonique, fallback relative_volume/volume_ratio/volume_ratio_15m), `atr_pct`, `vwap`/`dist_vwap_pct` (VWAP session sur barres 15m RTH, None si barres/volume indisponibles), `time_bucket`, `price_above_ema20`, `price_above_sma50` (daily, `historical_sma_50` ajoute au FeatureStore); whitelist `ALIAS_GROUPS` etendue en consequence; operateur `in` (liste de chaines) ajoute a l'interpreteur — seule extension du langage de regles; nouvelles techniques seed `GAP_AND_GO_FULL` (skills.md 16) et `MOMENTUM_RVOL_CONFIRMED` (skills.md 6.2bis+10) avec penalite lunch declarative `any(time_bucket in [...], rvol >= 1.5)`; migration one-shot au demarrage (`technique_builtin_spread_filter_migration_v1` dans bot_state) ajoutant `spread_pct <= 0.5` aux builtins existants en base, revision +1 et trace `TECHNIQUE_REVISION` — independante du kill-switch learning.
+- Tests: `python -m unittest tests.test_feature_math tests.test_rule_interpreter tests.test_technique_seed tests.test_opportunity_detection`
+
+- Module: Detection etape 8 — scoring pondere skills.md 9.1
+- Fichiers: `app/opportunity_scanner/scoring.py`, `app/opportunity_scanner/service.py`, `app/opportunity_scanner/schemas.py`, `app/gui/static/js/app.js`
+- Comportement: `compute_quality_score` a 7 composants pondere (/100) avec `score_grade` (>=80 EXCELLENT / 65-79 ACCEPTABLE / 50-64 WEAK / <50 NO_GO) et `score_breakdown.unavailable` listant les sous-criteres non calculables en F1 (structure_quality, market_context, fundamental_context a 0); expose dans l'API et le panneau Radar comme champ additionnel; `discovery_score`/`risk_adjusted_score` conserves — `_status` bascule sur `quality_score` dans un second temps apres observation; le score ne remplace jamais les refus automatiques (gate qualite, filtre liquidite).
+- Tests: `python -m unittest tests.test_scoring_v2`
+
 - Module: Daily Reports
 - Fichiers: `app/reports/*`, `app/api/routes_reports.py`
 - API: `/api/reports/daily/generate`, `/latest`, `/{date}`
@@ -114,6 +130,10 @@
 - Module: GUI workflow Detecter -> Analyser -> Armer
 - Ce qui marche: page `/opportunities` affiche shortlist, bloquees, expirees et scenarios generes; Market Context expose les badges et champs d'opportunite.
 - Limites: les pages detail opportunite/scenario dediees restent a construire; les detecteurs historiques multi-timeframe avances ne sont pas encore tous separes.
+
+- Module: Detection — F2/F3 et ML (gated)
+- Ce qui marche: le tag `market_regime` et la colonne `had_catalyst` sont reserves dans les context_tags; le scoring liste ses sous-criteres indisponibles pour rester comparable.
+- Limites: lots F2 (niveaux, compression, etat sequentiel) et F3 (spy/qqq vs vwap, vix, market_regime) et meta-labeling ML non demarres — declencheur inchange: >= 300 outcomes evalues sur >= 3 techniques distinctes. `detection_outcomes` demarre a 0 ligne: la collecte RTH continue est le chemin critique.
 
 ## Prevu prochainement
 - Module: Calibration paper-trading du Opportunity Scanner, pages detail opportunite/scenario, bootstrap Forecast Stack automatique par symbole et classifieur de session RTH/PRE/POST
