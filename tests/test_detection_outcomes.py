@@ -99,6 +99,38 @@ class RecordDetectionTests(unittest.TestCase):
         created = self.tracker.record_detection("tech_a", "AAPL", {"atr": 3}, now=FRIDAY)
         self.assertEqual(created, [])
 
+    def test_stored_snapshot_carries_full_context_tags(self) -> None:
+        # skills.md 32.2bis: every outcome must travel with its context tags so
+        # the learning engine can slice by time bucket / rvol / spread later.
+        self.tracker.record_detection(
+            "tech_a",
+            "AAPL",
+            {"price": 100, "atr": 3, "rvol": 1.5, "spread_pct": 0.05},
+            now=FRIDAY,
+        )
+        rows = self.repository.outcomes_for_technique("tech_a")
+        self.assertTrue(rows)
+        for row in rows:
+            tags = row["features_snapshot"]["context_tags"]
+            self.assertEqual(
+                set(tags),
+                {
+                    "time_bucket",
+                    "rvol_bucket",
+                    "spread_bucket",
+                    "day_of_week",
+                    "market_regime",
+                    "had_catalyst",
+                },
+            )
+            # FRIDAY is 10:00 ET on a Friday with rvol 1.5 and a tight spread.
+            self.assertEqual(tags["time_bucket"], "MORNING")
+            self.assertEqual(tags["rvol_bucket"], "1.2-2.0")
+            self.assertEqual(tags["spread_bucket"], "tight")
+            self.assertEqual(tags["day_of_week"], "FRI")
+            # The original snapshot fields are preserved alongside the tags.
+            self.assertEqual(row["features_snapshot"]["price"], 100)
+
 
 class EvaluateDueTests(unittest.TestCase):
     def setUp(self) -> None:

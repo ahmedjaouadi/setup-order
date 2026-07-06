@@ -6,6 +6,7 @@ from datetime import UTC
 from typing import Any
 
 from app.models import utc_now_iso
+from app.opportunity_scanner.context_tags import build_context_tags
 from app.opportunity_scanner.outcome_repository import OutcomeRepository
 from app.utils.id_generator import new_id
 from app.utils.market_hours import (
@@ -59,6 +60,13 @@ class OutcomeTracker:
         if price is None or price <= 0:
             return []
         r_unit_pct, atr_fallback = _resolve_r_unit(snapshot, price)
+        # Context tags (skills.md 32.2bis) travel inside the stored snapshot so
+        # the learning engine can slice outcomes by time bucket, rvol, spread,
+        # etc. without re-collecting.
+        features_snapshot = {
+            **snapshot,
+            "context_tags": build_context_tags(snapshot, detected_at),
+        }
         created: list[str] = []
         for horizon, sessions in HORIZONS.items():
             due = _due_at(detected_at, sessions)
@@ -72,7 +80,7 @@ class OutcomeTracker:
                     "symbol": symbol,
                     "detected_at": detected_at,
                     "price_at_detection": price,
-                    "features_snapshot": snapshot,
+                    "features_snapshot": features_snapshot,
                     "r_unit_pct": r_unit_pct,
                     "horizon": horizon,
                     "evaluation_due_at": due,

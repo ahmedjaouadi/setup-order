@@ -5,6 +5,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.decision_codes import (
+    REASON_MISSING_MARKET_DATA,
+    REASON_PRICE_TOO_EXTENDED,
+    REASON_SPREAD_TOO_WIDE,
+    REASON_VOLUME_INSUFFICIENT,
+    STATUS_NO_GO,
+    STATUS_PAUSED,
+)
 from app.models import utc_now_iso
 from app.opportunities.opportunity_expiration_policy import OpportunityExpirationPolicy
 from app.opportunities.opportunity_explainer import OpportunityExplainer
@@ -12,6 +20,11 @@ from app.opportunities.opportunity_lifecycle_service import OpportunityLifecycle
 from app.opportunities.scenario_generator import ScenarioGenerator
 from app.opportunities.shortlist_service import OpportunityShortlistService
 from app.opportunity_scanner import MarketContextOpportunityScanner
+from app.opportunity_scanner.data_quality_gate import (
+    DEFAULT_STALENESS_MAX_SECONDS,
+    STATUS_OK,
+    evaluate_snapshot_quality,
+)
 from app.opportunity_scanner.outcome_repository import OutcomeRepository
 from app.opportunity_scanner.outcome_tracker import OutcomeTracker
 from app.opportunity_scanner.technique_repository import TechniqueRepository
@@ -313,16 +326,34 @@ class OpportunityScannerService:
             opportunity = self._opportunity_from_setup(setup, score, quote=quote)
         else:
             opportunity = self._opportunity_from_market(candidate, config)
-        filters = self._liquidity_filter(candidate, config)
         payload = opportunity.setdefault("payload", {})
         payload["universe_sources"] = candidate.get("sources", [])
-        payload["liquidity_filter"] = filters
         payload["market_snapshot"] = quote
+        detection_snapshot = payload.pop("_detection_snapshot", None)
+        # A data-quality failure (raised in _opportunity_from_market) is terminal:
+        # the candidate is already REJECTED and gate-traced, so we neither run the
+        # liquidity filter again nor record an outcome on suspect data (skills.md
+        # 28bis). This also keeps the gate trace to exactly one per scan.
+        data_quality = payload.get("data_quality")
+        if isinstance(data_quality, dict) and data_quality.get("status") == STATUS_PAUSED:
+            return opportunity
+        filters = self._liquidity_filter(candidate, config)
+        payload["liquidity_filter"] = filters
         if filters["blocked"]:
             opportunity["status"] = "REJECTED"
             opportunity["score"] = min(float(opportunity.get("score") or 0), 39.0)
             payload["reason"] = "Rejected by liquidity/data filters."
-            self._trace_rejection(opportunity, filters)
+            self._trace_liquidity_rejection(opportunity, filters)
+        elif isinstance(detection_snapshot, dict):
+            # Outcomes are only recorded once the candidate has cleared BOTH
+            # the data-quality gate (in _opportunity_from_market) and the
+            # liquidity filter: never learn from a rejected/suspect candidate
+            # (skills.md 28bis).
+            self._record_detection_outcomes(
+                str(opportunity.get("symbol") or ""),
+                detection_snapshot,
+                payload.get("market_context_signal", {}),
+            )
         return opportunity
 
     def _opportunity_from_setup(
@@ -371,8 +402,10 @@ class OpportunityScannerService:
         raw_quote = candidate.get("quote")
         quote: dict[str, Any] = raw_quote if isinstance(raw_quote, dict) else {}
         context_snapshot = self._context_snapshot_from_candidate(candidate, quote)
+        quality = self._data_quality_verdict(context_snapshot)
+        if quality["status"] != STATUS_OK:
+            return self._data_quality_rejected(symbol, quote, context_snapshot, quality, config)
         context_signal = self.context_scanner.evaluate(context_snapshot)
-        self._record_detection_outcomes(symbol, context_snapshot, context_signal)
         scanners = _as_dict(config.get("scanners"))
         selections = [
             self._selection_context(scanner_name, quote, None, scanner_config)
@@ -428,6 +461,75 @@ class OpportunityScannerService:
                 "detected_by": context_signal.get("detected_by"),
                 "executable": False,
                 "reason": "Scanner opportunity; generate a setup candidate before any setup can be armed.",
+                # Carried to _opportunity_from_candidate, which records detection
+                # outcomes only once the liquidity filter has also passed. Popped
+                # there so it never leaks into the persisted payload.
+                "_detection_snapshot": context_snapshot,
+            },
+        }
+
+    def _staleness_max_seconds(self) -> float:
+        raw = self.settings.get("opportunity_scanner", {})
+        data_quality = raw.get("data_quality", {}) if isinstance(raw, dict) else {}
+        value = (
+            _number(data_quality.get("staleness_max_seconds"))
+            if isinstance(data_quality, dict)
+            else None
+        )
+        if value is not None and value > 0:
+            return value
+        return float(DEFAULT_STALENESS_MAX_SECONDS)
+
+    def _data_quality_verdict(self, snapshot: dict[str, Any]) -> dict[str, Any]:
+        """Verdict of the data-quality gate on a scanner snapshot (skills.md 28bis)."""
+        return evaluate_snapshot_quality(
+            snapshot,
+            staleness_max_seconds=self._staleness_max_seconds(),
+        )
+
+    def _data_quality_rejected(
+        self,
+        symbol: str,
+        quote: dict[str, Any],
+        snapshot: dict[str, Any],
+        quality: dict[str, Any],
+        config: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Build a REJECTED opportunity for a snapshot that failed the gate.
+
+        No technique is evaluated and no detection outcome is recorded: learning
+        must never start from a suspect price. The refusal is traced as a
+        qualified SCANNER_GATE decision (status + reason_code, skills.md 2.5).
+        """
+        reason_code = str(quality.get("reason_code") or REASON_MISSING_MARKET_DATA)
+        issues = list(quality.get("issues") or [])
+        opportunity_id = f"opp_{symbol}_DATA_QUALITY_scanner"
+        self._trace_scanner_gate(
+            symbol=symbol,
+            opportunity_id=opportunity_id,
+            status=STATUS_PAUSED,
+            reason_code=reason_code,
+            issues=issues,
+            snapshot=snapshot,
+        )
+        return {
+            "opportunity_id": opportunity_id,
+            "symbol": symbol,
+            "opportunity_type": "DATA_QUALITY_PAUSED",
+            "timeframe": str(_first_value(quote.get("timeframe"), "15m")),
+            "status": "REJECTED",
+            "score": 0.0,
+            "detected_at": utc_now_iso(),
+            "payload": {
+                "setup_id": None,
+                "can_send_order": False,
+                "executable": False,
+                "reason": "Paused by the data-quality gate; no detection on suspect data.",
+                "data_quality": {
+                    "status": STATUS_PAUSED,
+                    "reason_code": reason_code,
+                    "issues": issues,
+                },
             },
         }
 
@@ -643,23 +745,52 @@ class OpportunityScannerService:
             },
         }
 
-    def _trace_rejection(self, opportunity: dict[str, Any], filters: dict[str, Any]) -> None:
-        self.event_store.record_decision_trace(
-            decision_type="OPPORTUNITY_REJECTED",
-            final_decision="BLOCKED_BY_LIQUIDITY",
+    def _trace_liquidity_rejection(
+        self, opportunity: dict[str, Any], filters: dict[str, Any]
+    ) -> None:
+        """Trace a liquidity refusal as a qualified SCANNER_GATE (skills.md 2.5)."""
+        issues = list(filters.get("issues", []))
+        self._trace_scanner_gate(
             symbol=str(opportunity.get("symbol") or ""),
             opportunity_id=str(opportunity.get("opportunity_id") or ""),
-            trace={
-                "input_snapshot": opportunity.get("payload", {}).get("market_snapshot", {}),
-                "rules_evaluated": [
-                    {
-                        "rule_id": issue.upper(),
-                        "result": "FAILED",
-                        "actual": filters,
-                    }
-                    for issue in filters.get("issues", [])
-                ],
-            },
+            status=STATUS_NO_GO,
+            reason_code=_liquidity_reason_code(issues),
+            issues=issues,
+            snapshot=opportunity.get("payload", {}).get("market_snapshot", {}),
+            filters=filters,
+        )
+
+    def _trace_scanner_gate(
+        self,
+        *,
+        symbol: str,
+        opportunity_id: str,
+        status: str,
+        reason_code: str,
+        issues: list[str],
+        snapshot: dict[str, Any],
+        filters: dict[str, Any] | None = None,
+    ) -> None:
+        """Record a qualified scanner refusal (status + reason_code, skills.md 2.5).
+
+        A silent non-match of a technique is never traced (one scan touches
+        dozens of symbols every 30s); only *qualified* refusals — the data
+        quality gate and the liquidity filter — leave an audit trail.
+        """
+        trace: dict[str, Any] = {
+            "status": status,
+            "reason_code": reason_code,
+            "issues": issues,
+            "input_snapshot": snapshot if isinstance(snapshot, dict) else {},
+        }
+        if filters is not None:
+            trace["liquidity_filter"] = filters
+        self.event_store.record_decision_trace(
+            decision_type="SCANNER_GATE",
+            final_decision=f"{status}:{reason_code}",
+            symbol=symbol,
+            opportunity_id=opportunity_id,
+            trace=trace,
         )
 
     def _watchlist_symbols(self, universe_config: dict[str, Any]) -> list[str]:
@@ -779,6 +910,24 @@ def _spread_score(quote: dict[str, Any]) -> float:
 
 def _bounded_score(score: float) -> float:
     return round(min(100.0, max(0.0, score)), 2)
+
+
+# Maps the first liquidity-filter issue to a canonical reason code (skills.md 2.5).
+_LIQUIDITY_REASON_BY_ISSUE: dict[str, str] = {
+    "spread_too_wide": REASON_SPREAD_TOO_WIDE,
+    "volume_below_minimum": REASON_VOLUME_INSUFFICIENT,
+    "volume_ratio_below_minimum": REASON_VOLUME_INSUFFICIENT,
+    "missing_quote": REASON_MISSING_MARKET_DATA,
+    "price_out_of_range": REASON_PRICE_TOO_EXTENDED,
+}
+
+
+def _liquidity_reason_code(issues: list[str]) -> str:
+    for issue in issues:
+        reason = _LIQUIDITY_REASON_BY_ISSUE.get(issue)
+        if reason is not None:
+            return reason
+    return REASON_VOLUME_INSUFFICIENT
 
 
 def _setup_type_for_context_signal(

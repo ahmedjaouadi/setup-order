@@ -478,6 +478,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "max_spread_pct": 0.35,
             "allow_missing_quote_for_setup": True,
         },
+        # Data-quality gate before any technique evaluation (docs/skills.md
+        # section 28bis): a snapshot older than staleness_max_seconds is PAUSED
+        # (STALE_DATA) and no detection outcome is recorded on it. Default is
+        # 2x a 15m timeframe (1800s).
+        "data_quality": {
+            "staleness_max_seconds": 1800,
+        },
         "context_thresholds": {
             "detected": 70,
             "watchlist": 40,
