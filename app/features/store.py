@@ -5,6 +5,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.models import utc_now_iso
+
+# Single source of truth for ATR-as-percent-of-price (skills.md 7.1): the
+# scanner snapshot and the feature store must never disagree on this number.
+from app.opportunity_scanner.feature_math import atr_pct as _atr_pct
 from app.storage.repositories import TradingRepository
 from app.utils.id_generator import new_id
 
@@ -194,6 +198,7 @@ class FeatureStore:
             "relative_volume_live": _number(quote.get("volume_ratio_live")),
             "atr_15m": _number(quote.get("atr_15m")),
             "atr_1h": _number(quote.get("atr_1h")),
+            "atr_pct": _atr_pct(quote),
             "ema_20": _number(quote.get("ema_20")),
             "ema_50": _number(quote.get("ema_50")),
             "previous_high": _number(quote.get("previous_high")),
@@ -231,6 +236,7 @@ class FeatureStore:
             "realized_volatility_20": _stddev(returns[-20:]) if returns else None,
             "historical_ema_20": _ema(closes, 20),
             "historical_ema_50": _ema(closes, 50),
+            "historical_sma_50": _sma(closes, 50),
             "average_volume_20": (
                 round(sum(volumes[-20:]) / len(volumes[-20:]), 4) if volumes else None
             ),
@@ -278,6 +284,15 @@ def _window_return(closes: list[float], window: int) -> float | None:
     if len(closes) <= window or closes[-window - 1] <= 0:
         return None
     return round(((closes[-1] - closes[-window - 1]) / closes[-window - 1]) * 100, 4)
+
+
+def _sma(values: list[float], period: int) -> float | None:
+    # Simple average of the last `period` closes; None below `period` bars
+    # (skills.md 4.1 — a 50-day SMA on 30 bars is not an SMA 50).
+    if len(values) < period:
+        return None
+    window = values[-period:]
+    return round(sum(window) / period, 4)
 
 
 def _ema(values: list[float], period: int) -> float | None:

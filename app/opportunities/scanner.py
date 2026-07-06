@@ -20,10 +20,18 @@ from app.opportunities.opportunity_lifecycle_service import OpportunityLifecycle
 from app.opportunities.scenario_generator import ScenarioGenerator
 from app.opportunities.shortlist_service import OpportunityShortlistService
 from app.opportunity_scanner import MarketContextOpportunityScanner
+from app.opportunity_scanner.context_tags import snapshot_time_bucket
 from app.opportunity_scanner.data_quality_gate import (
     DEFAULT_STALENESS_MAX_SECONDS,
     STATUS_OK,
     evaluate_snapshot_quality,
+)
+from app.opportunity_scanner.feature_math import (
+    atr_pct,
+    dist_vwap_pct,
+    price_above,
+    rth_session_bars,
+    session_vwap,
 )
 from app.opportunity_scanner.outcome_repository import OutcomeRepository
 from app.opportunity_scanner.outcome_tracker import OutcomeTracker
@@ -564,7 +572,7 @@ class OpportunityScannerService:
         metadata_status = (
             "SECTOR_OK" if sector and sector.upper() != "UNKNOWN" else "SECTOR_UNKNOWN"
         )
-        return {
+        snapshot = {
             **quote,
             "symbol": candidate.get("symbol"),
             "sector": sector or "UNKNOWN",
@@ -593,6 +601,44 @@ class OpportunityScannerService:
             "event_risk": quote.get("event_risk") or "OK",
             "setup_status": quote.get("setup_status") or "",
             "universe_sources": candidate.get("sources", []),
+        }
+        snapshot.update(self._f1_features(quote, snapshot))
+        return snapshot
+
+    @staticmethod
+    def _f1_features(quote: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
+        """F1 feature lot injected into the scanner snapshot (skills.md 4.1/5.1/6.2bis/7.1/25bis).
+
+        Every feature degrades to ``None`` when an ingredient is missing: the
+        rule interpreter treats an absent field as a non-match, never an error.
+        ``rvol`` is the canonical relative-volume field (SAME_TIME_OF_DAY);
+        the session VWAP is recomputed on each scan from the RTH 15m bars the
+        quote already carries (no incremental state). The daily-trend booleans
+        read the daily enrichment keys (``historical_ema_20``/``historical_sma_50``,
+        produced by ``FeatureStore._features_from_bars`` on daily bars); until a
+        daily feed populates them on the scanner quote they stay ``None``.
+        """
+        price = _number(_first_value(quote.get("price"), quote.get("last"), quote.get("close")))
+        vwap = session_vwap(rth_session_bars(quote.get("historical_bars")))
+        return {
+            "rvol": _first_value(
+                quote.get("rvol"),
+                quote.get("relative_volume"),
+                quote.get("volume_ratio"),
+                quote.get("volume_ratio_15m"),
+            ),
+            "atr_pct": atr_pct(quote),
+            "vwap": vwap,
+            "dist_vwap_pct": dist_vwap_pct(price, vwap),
+            "time_bucket": snapshot_time_bucket(snapshot),
+            "price_above_ema20": price_above(
+                price,
+                _first_value(quote.get("historical_ema_20"), quote.get("daily_ema_20")),
+            ),
+            "price_above_sma50": price_above(
+                price,
+                _first_value(quote.get("historical_sma_50"), quote.get("daily_sma_50")),
+            ),
         }
 
     def _selection_context(

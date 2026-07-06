@@ -22,6 +22,10 @@ NEW_MODULES = [
     "app/opportunity_scanner/outcome_repository.py",
     "app/opportunity_scanner/outcome_tracker.py",
     "app/opportunity_scanner/learning_loop.py",
+    "app/opportunity_scanner/context_tags.py",
+    "app/opportunity_scanner/data_quality_gate.py",
+    "app/opportunity_scanner/feature_math.py",
+    "app/decision_codes.py",
     "app/api/routes_techniques.py",
 ]
 

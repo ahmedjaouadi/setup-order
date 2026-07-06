@@ -64,7 +64,8 @@ class TechniquesApiTests(unittest.IsolatedAsyncioTestCase):
     async def test_list_returns_seeded_builtins(self) -> None:
         result = await routes_techniques.list_techniques(self.request)
         items = result["items"]
-        self.assertEqual(len(items), 7)
+        # 7 legacy builtins + 2 F1 techniques (TODO 7.6).
+        self.assertEqual(len(items), 9)
         self.assertTrue(all(item["origin"] == "builtin" for item in items))
         # Response carries a human-readable rule summary for the UI.
         self.assertTrue(all(item["rule_summary"] for item in items))
@@ -81,7 +82,7 @@ class TechniquesApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(created["opportunity_type"], "GAP_AND_HOLD")
         self.assertEqual(created["rule"]["opportunity_type"], "GAP_AND_HOLD")
         listed = await routes_techniques.list_techniques(self.request)
-        self.assertEqual(len(listed["items"]), 8)
+        self.assertEqual(len(listed["items"]), 10)
 
     async def test_create_with_field_outside_whitelist_returns_400(self) -> None:
         payload = TechniqueCreateRequest(

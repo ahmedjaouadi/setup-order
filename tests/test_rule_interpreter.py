@@ -55,6 +55,38 @@ class OperatorTruthTableTests(unittest.TestCase):
         rule_not_a_list = {"field": "gap_pct", "op": "between", "value": "2,4"}
         self.assertFalse(evaluate_rule(rule_not_a_list, {"gap_pct": 2}))
 
+    def test_in_membership(self) -> None:
+        rule = {
+            "field": "time_bucket",
+            "op": "in",
+            "value": ["OPEN", "MORNING", "AFTERNOON", "POWER_HOUR"],
+        }
+        self.assertTrue(evaluate_rule(rule, {"time_bucket": "OPEN"}))
+        self.assertTrue(evaluate_rule(rule, {"time_bucket": "POWER_HOUR"}))
+        self.assertFalse(evaluate_rule(rule, {"time_bucket": "LUNCH"}))
+        self.assertFalse(evaluate_rule(rule, {"time_bucket": "OFF_HOURS"}))
+
+    def test_in_is_case_sensitive(self) -> None:
+        rule = {"field": "time_bucket", "op": "in", "value": ["OPEN"]}
+        self.assertFalse(evaluate_rule(rule, {"time_bucket": "open"}))
+
+    def test_in_empty_list_never_matches(self) -> None:
+        rule = {"field": "time_bucket", "op": "in", "value": []}
+        self.assertFalse(evaluate_rule(rule, {"time_bucket": "OPEN"}))
+
+    def test_in_non_list_value_never_matches(self) -> None:
+        rule = {"field": "time_bucket", "op": "in", "value": "OPEN"}
+        self.assertFalse(evaluate_rule(rule, {"time_bucket": "OPEN"}))
+
+    def test_in_missing_field_never_matches(self) -> None:
+        rule = {"field": "time_bucket", "op": "in", "value": ["OPEN"]}
+        self.assertFalse(evaluate_rule(rule, {}))
+        self.assertFalse(evaluate_rule(rule, {"time_bucket": None}))
+
+    def test_in_boolean_actual_never_matches(self) -> None:
+        rule = {"field": "price_above_ema20", "op": "in", "value": ["True"]}
+        self.assertFalse(evaluate_rule(rule, {"price_above_ema20": True}))
+
 
 class CombinatorTests(unittest.TestCase):
     def test_all_requires_every_condition(self) -> None:
@@ -140,6 +172,49 @@ class RobustnessTests(unittest.TestCase):
         self.assertTrue(evaluate_rule(rule_json, {"gap_pct": 5}))
 
 
+class F1FieldTruthTableTests(unittest.TestCase):
+    """Truth table for the F1 whitelist entries (TODO 7.8)."""
+
+    def test_rvol_canonical_field_and_aliases(self) -> None:
+        rule = {"field": "rvol", "op": ">=", "value": 1.5}
+        self.assertTrue(evaluate_rule(rule, {"rvol": 1.5}))
+        self.assertFalse(evaluate_rule(rule, {"rvol": 1.49}))
+        # Legacy aliases stay resolvable so migrated data keeps matching.
+        self.assertTrue(evaluate_rule(rule, {"relative_volume": 1.6}))
+        self.assertTrue(evaluate_rule(rule, {"volume_ratio": 1.6}))
+        self.assertTrue(evaluate_rule(rule, {"volume_ratio_15m": 1.6}))
+        # Canonical field wins over aliases.
+        self.assertFalse(evaluate_rule(rule, {"rvol": 1.0, "volume_ratio": 9.9}))
+
+    def test_atr_pct(self) -> None:
+        rule = {"field": "atr_pct", "op": "between", "value": [0.5, 5]}
+        self.assertTrue(evaluate_rule(rule, {"atr_pct": 2.0}))
+        self.assertFalse(evaluate_rule(rule, {"atr_pct": 6.0}))
+        self.assertFalse(evaluate_rule(rule, {}))
+
+    def test_dist_vwap_pct_signed(self) -> None:
+        rule = {"field": "dist_vwap_pct", "op": ">=", "value": 0}
+        self.assertTrue(evaluate_rule(rule, {"dist_vwap_pct": 0}))
+        self.assertTrue(evaluate_rule(rule, {"dist_vwap_pct": 1.2}))
+        self.assertFalse(evaluate_rule(rule, {"dist_vwap_pct": -0.1}))
+        self.assertFalse(evaluate_rule(rule, {}))
+
+    def test_time_bucket_equality(self) -> None:
+        rule = {"field": "time_bucket", "op": "==", "value": "LUNCH"}
+        self.assertTrue(evaluate_rule(rule, {"time_bucket": "LUNCH"}))
+        self.assertFalse(evaluate_rule(rule, {"time_bucket": "OPEN"}))
+        self.assertFalse(evaluate_rule(rule, {}))
+
+    def test_daily_trend_booleans(self) -> None:
+        for field in ("price_above_ema20", "price_above_sma50"):
+            rule = {"field": field, "op": "==", "value": True}
+            self.assertTrue(evaluate_rule(rule, {field: True}))
+            self.assertFalse(evaluate_rule(rule, {field: False}))
+            # Missing daily enrichment -> None -> non-match, never an error.
+            self.assertFalse(evaluate_rule(rule, {field: None}))
+            self.assertFalse(evaluate_rule(rule, {}))
+
+
 class ValidateRuleStructureTests(unittest.TestCase):
     def test_valid_rule_has_no_errors(self) -> None:
         rule = {
@@ -162,6 +237,28 @@ class ValidateRuleStructureTests(unittest.TestCase):
     def test_between_without_two_bounds_is_reported(self) -> None:
         errors = validate_rule_structure({"field": "gap_pct", "op": "between", "value": [1]})
         self.assertTrue(errors)
+
+    def test_in_without_list_value_is_reported(self) -> None:
+        errors = validate_rule_structure({"field": "time_bucket", "op": "in", "value": "OPEN"})
+        self.assertTrue(errors)
+        errors_empty = validate_rule_structure({"field": "time_bucket", "op": "in", "value": []})
+        self.assertTrue(errors_empty)
+
+    def test_in_with_list_value_is_valid(self) -> None:
+        rule = {"field": "time_bucket", "op": "in", "value": ["OPEN", "MORNING"]}
+        self.assertEqual(validate_rule_structure(rule), [])
+
+    def test_f1_fields_are_whitelisted(self) -> None:
+        for field in (
+            "rvol",
+            "atr_pct",
+            "dist_vwap_pct",
+            "time_bucket",
+            "price_above_ema20",
+            "price_above_sma50",
+        ):
+            rule = {"field": field, "op": "==", "value": 1}
+            self.assertEqual(validate_rule_structure(rule), [], field)
 
     def test_nested_invalid_condition_is_reported(self) -> None:
         rule = {

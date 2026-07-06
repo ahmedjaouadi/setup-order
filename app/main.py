@@ -59,7 +59,10 @@ from app.opportunity_scanner.learning_loop import LearningLoop
 from app.opportunity_scanner.outcome_repository import OutcomeRepository
 from app.opportunity_scanner.outcome_tracker import OutcomeTracker
 from app.opportunity_scanner.technique_repository import TechniqueRepository
-from app.opportunity_scanner.technique_seed import seed_builtin_techniques
+from app.opportunity_scanner.technique_seed import (
+    apply_builtin_spread_filter_migration,
+    seed_builtin_techniques,
+)
 from app.opportunity_scanner.technique_service import TechniqueService
 from app.portfolio_risk import PortfolioRiskService
 from app.reports import DailyReportService
@@ -220,6 +223,14 @@ def create_app() -> FastAPI:
         broadcaster=websocket.websocket_manager,
         data_quality_service=app.state.data_quality,
         feature_store=app.state.feature_store,
+    )
+    # One-shot, traced migration (TODO 7.7): builtin rules in base gain the
+    # spread_pct <= 0.5 liquidity condition, with revision bump + trace. Runs
+    # after the engine so refusals are auditable through its event store.
+    apply_builtin_spread_filter_migration(
+        TechniqueRepository(database),
+        repository,
+        app.state.engine.event_store,
     )
     app.state.forecast = ForecastService(
         settings=settings.raw,
