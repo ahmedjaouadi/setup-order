@@ -389,7 +389,11 @@ class TradingEngine:
             local_orders,
             broker_open_orders,
         )
-        positions = self._merge_position_snapshots(local_positions, broker_positions)
+        positions = self._merge_position_snapshots(
+            local_positions,
+            broker_positions,
+            await self._broker_is_connected(),
+        )
         display_orders = self._orders_with_broker_overlay(
             local_orders,
             broker_open_orders,
@@ -1198,12 +1202,28 @@ class TradingEngine:
     def _merge_position_snapshots(
         local_positions: list[dict[str, Any]],
         broker_positions: list[dict[str, Any]],
+        broker_connected: bool,
     ) -> list[dict[str, Any]]:
-        by_symbol: dict[str, dict[str, Any]] = {}
+        local_by_symbol: dict[str, dict[str, Any]] = {}
         for position in local_positions:
             symbol = str(position.get("symbol") or "").upper()
             if symbol:
-                by_symbol[symbol] = dict(position)
+                local_by_symbol[symbol] = dict(position)
+        if broker_connected:
+            # Broker is the source of truth once connected: a local row whose
+            # symbol the broker no longer reports (e.g. closed via TWS without
+            # local reconciliation) must not linger in the Positions table.
+            by_symbol: dict[str, dict[str, Any]] = {}
+            for position in broker_positions:
+                symbol = str(position.get("symbol") or "").upper()
+                if not symbol:
+                    continue
+                merged = {**local_by_symbol.get(symbol, {}), **dict(position)}
+                if merged.get("current_stop") is None:
+                    merged["current_stop"] = local_by_symbol.get(symbol, {}).get("current_stop")
+                by_symbol[symbol] = merged
+            return [by_symbol[symbol] for symbol in sorted(by_symbol)]
+        by_symbol = dict(local_by_symbol)
         for position in broker_positions:
             symbol = str(position.get("symbol") or "").upper()
             if not symbol:
