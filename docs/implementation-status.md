@@ -12,6 +12,15 @@
 - Note: V2.4.1 Legacy Stop Cleanup est accepte. La validation V2.4 globale garde les blockers non scopes a traiter separement.
 
 ## Implante
+- Module: Etape 10 — Ordres & Positions = miroir temps reel de TWS (10.1 + 10.2)
+- Statut: ACCEPTED
+- Fichiers: `app/engine/trading_engine.py`, `app/engine/stop_modification_service.py`, `app/engine/order_manager.py`, `app/engine/trade_guards.py`, `app/broker/tws_connector.py`, `app/api/routes_positions.py`, `app/storage/repositories.py`, `app/gui/templates/orders.html`, `app/gui/static/js/app.js`, `tests/test_orders_positions_broker_truth.py`, `tests/test_stop_modification.py`
+- Comportement: broker connecte => les tableaux Positions et Ordres refletent la verite TWS (`_merge_position_snapshots` et `_orders_with_broker_overlay` avec autorite broker); les intentions locales sans ordre broker sont marquees `NO_BROKER_ORDER`/`LOCAL_ONLY`; broker deconnecte => fallback local. La page fusionne les anciens tableaux Ordres (16 colonnes) et Broker Reality en une vue unique par titre avec ligne depliable pour le detail, plus un tableau `Executions du jour` alimente par `recent_executions` du connecteur.
+- Actions: modification de stop via `POST /api/positions/{symbol}/move-stop` et `PATCH /api/positions/{symbol}/stop` -> `StopModificationService` (broker d'abord via `modify_stop_order`, etat local seulement apres acceptation); cancel branche sur l'ID broker reel pour les lignes TWS non matchees (prefixe `broker_`); attach SL conserve; `Test fill` reste derriere `connector === "simulated"`.
+- Securite: `never_lower_stop` refuse cote serveur toute baisse de stop; `TradeGuardsService.evaluate_stop_modification` (halt actif, marche ferme) bloque la modification avant tout envoi broker; chaque modification/refus est trace dans les events (`stop_modified`, `stop_modification_rejected` avec reason_code).
+- Latence: `BROKER_RUNTIME_SNAPSHOT_TTL_SECONDS=5` aligne sur le heartbeat 5 s + push WebSocket a chaque heartbeat => la page suit TWS avec <= 5 s de latence percue; l'age de synchro broker est affiche dans le bandeau.
+- Tests: `python -m pytest tests/test_stop_modification.py tests/test_orders_positions_broker_truth.py tests/test_trade_guards.py`
+
 - Module: V2.4.1 Legacy Stop Cleanup
 - Statut: ACCEPTED
 - Fichiers: `app/setups/creation_snapshot_service.py`, `app/storage/database.py`, `app/storage/repositories.py`, `app/gui/static/js/app.js`, `app/scoring/service.py`, `app/forecasting/forecast_service.py`, `app/model_lab/service.py`, `tests/test_v241_legacy_stop_cleanup.py`

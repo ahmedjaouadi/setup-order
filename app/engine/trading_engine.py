@@ -43,6 +43,7 @@ from app.engine.stock_market_monitor import (
     stock_quote_fields_text,
     stock_quote_message,
 )
+from app.engine.stop_modification_service import StopModificationService
 from app.engine.trade_guards import TradeGuardsService
 from app.market_data.market_data_service import MarketDataService
 from app.models import (
@@ -71,7 +72,9 @@ logger = logging.getLogger(__name__)
 HEARTBEAT_INTERVAL_SECONDS = 5
 HEARTBEAT_STALE_SECONDS = HEARTBEAT_INTERVAL_SECONDS * 3
 ACCOUNT_SNAPSHOT_TTL_SECONDS = 30
-BROKER_RUNTIME_SNAPSHOT_TTL_SECONDS = 10
+# Kept at (or under) the heartbeat cadence so the Ordres & Positions page
+# tracks TWS with <= 5s of perceived latency (etape 10.2).
+BROKER_RUNTIME_SNAPSHOT_TTL_SECONDS = 5
 EQUITY_SNAPSHOT_INTERVAL_SECONDS = 120
 # Full dashboard snapshots are expensive (broker RPCs + DB aggregation) and the
 # GUI requests one on every page navigation. A short server-side cache makes
@@ -195,6 +198,13 @@ class TradingEngine:
             self.position_manager,
             self.state_machine,
         )
+        self.stop_modification_service = StopModificationService(
+            repository,
+            self.event_store,
+            self.broker,
+            self.position_manager,
+            trade_guards=self.trade_guards,
+        )
         self.entry_order_executor = EntryOrderExecutor(
             repository,
             self.event_store,
@@ -212,6 +222,8 @@ class TradingEngine:
         self._account_summary_cached_at: float = 0.0
         self._broker_positions_cache: list[dict[str, Any]] | None = None
         self._broker_positions_cached_at: float = 0.0
+        self._broker_executions_cache: list[dict[str, Any]] | None = None
+        self._broker_executions_cached_at: float = 0.0
         self._broker_open_orders_cache: list[BrokerOrderRequest] | None = None
         self._broker_open_orders_cached_at: float = 0.0
         self._health: dict[str, Any] = {
@@ -556,6 +568,7 @@ class TradingEngine:
             "setups": setups,
             "positions": positions,
             "orders": orders[:25],
+            "executions": await self._broker_executions_snapshot(),
             "events": events[:20],
             "market": [to_jsonable(item) for item in self.market_data.all_latest()],
         }
@@ -1137,6 +1150,38 @@ class TradingEngine:
             return await status_reader() == ConnectionStatus.CONNECTED
         except Exception:
             return False
+
+    async def _broker_executions_snapshot(self) -> list[dict[str, Any]]:
+        cached = self._broker_executions_cache
+        cache_age = time.monotonic() - self._broker_executions_cached_at
+        if cached is not None and cache_age < BROKER_RUNTIME_SNAPSHOT_TTL_SECONDS:
+            return [dict(item) for item in cached]
+        if not await self._broker_is_connected():
+            return [dict(item) for item in cached or []]
+        reader = getattr(self.broker, "recent_executions", None)
+        if not callable(reader):
+            return []
+        try:
+            executions = await reader()
+        except Exception as exc:
+            self._health["last_broker_error"] = str(exc)
+            return [dict(item) for item in cached or []]
+        rows = [
+            {
+                "execution_id": execution.execution_id,
+                "symbol": str(execution.symbol or "").upper(),
+                "side": str(execution.side or "").upper(),
+                "quantity": execution.quantity,
+                "price": execution.price,
+                "order_id": execution.order_id,
+                "broker_perm_id": execution.broker_perm_id,
+                "timestamp": execution.timestamp,
+            }
+            for execution in executions or []
+        ]
+        self._broker_executions_cache = rows
+        self._broker_executions_cached_at = time.monotonic()
+        return [dict(item) for item in rows]
 
     def _broker_position_rows(
         self,
@@ -2216,9 +2261,9 @@ class TradingEngine:
         return {"ok": True, "position": to_jsonable(position)}
 
     async def move_stop(self, symbol: str, new_stop: float) -> dict[str, Any]:
-        moved = self.position_action_executor.move_stop(symbol, new_stop)
+        result = await self.stop_modification_service.modify_stop(symbol, new_stop)
         await self._broadcast_snapshot()
-        return {"ok": moved}
+        return result
 
     async def _broadcast_snapshot(self) -> None:
         await self.broadcaster.broadcast({"type": "snapshot", "payload": await self.snapshot()})

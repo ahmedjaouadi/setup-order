@@ -271,6 +271,23 @@ class BrokerConnector(ABC):
     async def cancel_order(self, broker_order_id: str) -> BrokerOrderResult:
         raise NotImplementedError
 
+    async def modify_stop_order(
+        self,
+        broker_order_id: str,
+        new_stop: float,
+    ) -> BrokerOrderResult:
+        """Modify the stop level of a working stop order at the broker.
+
+        Default implementation rejects: connectors that support in-place order
+        modification override this.
+        """
+        return BrokerOrderResult(
+            accepted=False,
+            status=OrderStatus.REJECTED.value,
+            broker_order_id=str(broker_order_id),
+            reason=f"Stop modification is not supported by the {self.connector_name} broker.",
+        )
+
     @abstractmethod
     async def open_orders(self) -> list[BrokerOrderRequest]:
         raise NotImplementedError
@@ -385,6 +402,32 @@ class SimulatedBrokerConnector(BrokerConnector):
             status=OrderStatus.REJECTED.value,
             broker_order_id=broker_order_id,
             reason="Order not found",
+        )
+
+    async def modify_stop_order(
+        self,
+        broker_order_id: str,
+        new_stop: float,
+    ) -> BrokerOrderResult:
+        if self._status != ConnectionStatus.CONNECTED:
+            raise BrokerDisconnectedError("Simulated broker is disconnected")
+        order = self._orders.get(broker_order_id)
+        if order is None:
+            return BrokerOrderResult(
+                accepted=False,
+                status=OrderStatus.REJECTED.value,
+                broker_order_id=broker_order_id,
+                reason="Order not found",
+            )
+        order.stop_price = new_stop
+        if order.order_type == "STP_LMT":
+            order.trigger_price = new_stop
+        return BrokerOrderResult(
+            accepted=True,
+            status=OrderStatus.SUBMITTED.value,
+            broker_order_id=broker_order_id,
+            broker_perm_id=order.broker_perm_id,
+            reason="Stop modified by simulated broker",
         )
 
     async def open_orders(self) -> list[BrokerOrderRequest]:
@@ -865,6 +908,69 @@ class IbAsyncTwsConnector(BrokerConnector):
                     broker_order_id=str(broker_order_id),
                     reason="Cancel sent to TWS",
                 )
+        return BrokerOrderResult(
+            accepted=False,
+            status=OrderStatus.REJECTED.value,
+            broker_order_id=str(broker_order_id),
+            reason="Order not found in TWS session",
+        )
+
+    async def modify_stop_order(
+        self,
+        broker_order_id: str,
+        new_stop: float,
+    ) -> BrokerOrderResult:
+        if await self.status() != ConnectionStatus.CONNECTED or self._ib is None:
+            raise BrokerDisconnectedError(self.last_error or "TWS/Gateway is disconnected")
+        for trade in self._ib.trades():
+            if str(getattr(trade.order, "orderId", "")) != str(broker_order_id):
+                continue
+            order = trade.order
+            order_type = str(getattr(order, "orderType", "") or "").upper()
+            if order_type not in {"STP", "STP LMT", "STP_LMT", "TRAIL"}:
+                return BrokerOrderResult(
+                    accepted=False,
+                    status=OrderStatus.REJECTED.value,
+                    broker_order_id=str(broker_order_id),
+                    reason=f"Order {broker_order_id} is not a stop order ({order_type})",
+                )
+            started = self._record_tws_request_sent(
+                "modifyOrder",
+                f"orderId={broker_order_id} new_stop={new_stop}",
+            )
+            try:
+                # TWS modifies an order in place when placeOrder is re-sent
+                # with the same orderId; auxPrice carries the stop trigger.
+                order.auxPrice = new_stop
+                trade = self._ib.placeOrder(trade.contract, order)
+                await self._sleep(0.2)
+            except Exception as exc:
+                self._record_tws_request_result(started, "ERROR", _error_text(exc))
+                return BrokerOrderResult(
+                    accepted=False,
+                    status=OrderStatus.REJECTED.value,
+                    broker_order_id=str(broker_order_id),
+                    reason=str(exc),
+                )
+            status = str(getattr(trade.orderStatus, "status", "") or "Submitted")
+            result_status = _tws_order_status_to_order_status(status)
+            accepted = result_status not in {
+                OrderStatus.CANCELLED.value,
+                OrderStatus.REJECTED.value,
+                OrderStatus.ERROR.value,
+            }
+            self._record_tws_request_result(
+                started,
+                "OK" if accepted else "ERROR",
+                extra={"order_status": status, "new_stop": new_stop},
+            )
+            return BrokerOrderResult(
+                accepted=accepted,
+                status=result_status,
+                broker_order_id=str(broker_order_id),
+                broker_perm_id=str(getattr(order, "permId", "") or "") or None,
+                reason=f"Stop modification sent to TWS: {status}",
+            )
         return BrokerOrderResult(
             accepted=False,
             status=OrderStatus.REJECTED.value,

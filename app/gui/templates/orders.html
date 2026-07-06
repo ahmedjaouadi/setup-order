@@ -3,8 +3,9 @@
 <section class="page-header">
   <div>
     <h1>Ordres &amp; Positions</h1>
-    <p class="subtitle">Vue regroupee du trading en cours : execution, risque, stops et historique local.</p>
+    <p class="subtitle">Miroir temps reel de TWS : positions, ordres actifs, executions du jour et actions sur chaque titre.</p>
   </div>
+  <span class="status" id="broker-reality-blocked">UNKNOWN</span>
 </section>
 
 <section class="trading-book-summary" aria-label="Resume trading book">
@@ -32,100 +33,88 @@
     <span>Mismatches</span>
     <strong id="broker-reality-mismatch-count">0</strong>
   </article>
+  <article class="trading-book-stat">
+    <span>Sync broker</span>
+    <strong id="trading-book-sync-age">-</strong>
+  </article>
 </section>
 
-<section class="content-grid trading-book-grid">
-  <div class="panel">
-    <div class="panel-heading">
-      <div>
-        <h2>Positions</h2>
-        <p class="panel-subtitle">Surveille le risque restant, le stop courant et le lien avec le setup d'origine.</p>
-      </div>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Symbole</th>
-            <th>Qty</th>
-            <th>Prix moyen</th>
-            <th>Prix courant</th>
-            <th>PnL</th>
-            <th>Stop</th>
-            <th>Risque restant</th>
-            <th>Setup</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="positions-table"></tbody>
-      </table>
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Positions</h2>
+      <p class="panel-subtitle">Positions confirmees par le broker quand TWS est connecte ; etat local sinon.</p>
     </div>
   </div>
-
-  <div class="panel">
-    <div class="panel-heading">
-      <div>
-        <h2>Ordres</h2>
-        <p class="panel-subtitle">Historique local complet et execution TWS ou simulee. Le compteur en haut ne compte que les ordres actifs.</p>
-        <p class="panel-subtitle">Actifs visibles: <strong id="orders-active-count">0</strong> | Historique visible: <strong id="orders-history-count">0</strong></p>
-      </div>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Symbole</th>
-            <th>Setup</th>
-            <th>Action</th>
-            <th>Type</th>
-            <th>Stop</th>
-            <th>Protection</th>
-            <th>Parent ID</th>
-            <th>Stop Order ID</th>
-            <th>Bracket</th>
-            <th>Qty</th>
-            <th>Statut</th>
-            <th>Broker</th>
-            <th>Diagnostic</th>
-            <th>Broker ID</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="orders-table"></tbody>
-      </table>
-    </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Symbole</th>
+          <th>Qty</th>
+          <th>Prix moyen</th>
+          <th>Prix courant</th>
+          <th>PnL</th>
+          <th>Stop</th>
+          <th>Risque restant</th>
+          <th>Setup</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="positions-table"></tbody>
+    </table>
   </div>
 </section>
 
 <section class="panel">
   <div class="panel-heading">
     <div>
-      <h2>Broker Reality</h2>
-      <p class="panel-subtitle">Etat confirme par TWS: ordres transmis, stops reels, positions, P&L et ecarts de reconciliation.</p>
+      <h2>Ordres</h2>
+      <p class="panel-subtitle">Etat TWS en premier : une ligne marquee LOCAL n'a pas d'ordre correspondant chez le broker.</p>
+      <p class="panel-subtitle">Actifs: <strong id="orders-active-count">0</strong> | Historique: <strong id="orders-history-count">0</strong></p>
     </div>
-    <span class="status" id="broker-reality-blocked">UNKNOWN</span>
   </div>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
-          <th>Symbol</th>
-          <th>Position Qty</th>
-          <th>Avg Price</th>
-          <th>Current Price</th>
-          <th>Daily P&L</th>
-          <th>Unrealized P&L</th>
-          <th>Entry Order</th>
-          <th>Stop Order</th>
-          <th>Trailing Stop</th>
-          <th>Protection</th>
-          <th>Broker Status</th>
-          <th>Last Sync</th>
-          <th>Action Required</th>
+          <th></th>
+          <th>Symbole</th>
+          <th>Side</th>
+          <th>Type</th>
+          <th>Qty</th>
+          <th>Prix</th>
+          <th>Stop</th>
+          <th>Broker</th>
+          <th>Setup</th>
+          <th>Actions</th>
         </tr>
       </thead>
-      <tbody id="broker-reality-table"></tbody>
+      <tbody id="orders-table"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Executions du jour</h2>
+      <p class="panel-subtitle">Fills confirmes par TWS pendant la session courante.</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Heure</th>
+          <th>Symbole</th>
+          <th>Side</th>
+          <th>Qty</th>
+          <th>Prix</th>
+          <th>Ordre</th>
+        </tr>
+      </thead>
+      <tbody id="executions-table"></tbody>
     </table>
   </div>
 </section>

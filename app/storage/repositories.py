@@ -690,6 +690,27 @@ class TradingRepository:
             (status, utc_now_iso(), order_id),
         )
 
+    def update_order_stop_price(self, order_id: str, stop_price: float) -> None:
+        self.database.execute(
+            "UPDATE orders SET stop_price = ?, updated_at = ? WHERE id = ?",
+            (stop_price, utc_now_iso(), order_id),
+        )
+
+    def active_stop_order_for_symbol(self, symbol: str) -> dict[str, Any] | None:
+        row = self.database.execute(
+            """
+            SELECT * FROM orders
+            WHERE symbol = ?
+              AND side = 'SELL'
+              AND status IN ('CREATED', 'SUBMITTED')
+              AND stop_price IS NOT NULL
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (symbol.upper(),),
+        ).fetchone()
+        return _row_to_dict(row) if row else None
+
     def delete_order(self, order_id: str) -> None:
         self.database.execute(
             "DELETE FROM orders WHERE id = ?",

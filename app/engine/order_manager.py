@@ -377,6 +377,10 @@ class OrderManager:
     async def cancel_order(self, order_id: str) -> bool:
         order = self.repository.get_order(order_id)
         if not order or not order.get("broker_order_id"):
+            # Rows built from unmatched TWS orders carry a synthetic
+            # "broker_<id>" id: cancel those directly at the broker.
+            if order is None and order_id.startswith("broker_"):
+                return await self._cancel_broker_only_order(order_id.removeprefix("broker_"))
             return False
         result = await self.broker.cancel_order(order["broker_order_id"])
         if result.accepted:
@@ -394,6 +398,19 @@ class OrderManager:
             reconciled = await self._mark_cancelled_if_absent_from_broker(order)
             if reconciled:
                 return True
+        return result.accepted
+
+    async def _cancel_broker_only_order(self, broker_order_id: str) -> bool:
+        if not broker_order_id:
+            return False
+        result = await self.broker.cancel_order(broker_order_id)
+        if result.accepted:
+            self.event_store.record(
+                EventLevel.ORDER,
+                "order_cancelled",
+                "Broker-only order cancelled at TWS",
+                data={"broker_order_id": broker_order_id},
+            )
         return result.accepted
 
     async def simulate_fill_order(

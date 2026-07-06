@@ -60,7 +60,11 @@ from app.decision_codes import STATUS_PAUSED as STATUS_PAUSED
 from app.decision_codes import STATUS_WAIT as STATUS_WAIT
 from app.models import MarketSnapshot, SetupSignal, SignalAction, utc_now_iso
 from app.storage.repositories import TradingRepository
-from app.utils.market_hours import US_EQUITY_TIMEZONE, coerce_datetime
+from app.utils.market_hours import (
+    US_EQUITY_TIMEZONE,
+    classify_us_equity_session,
+    coerce_datetime,
+)
 
 CIRCUIT_BREAKER_STATE_KEY = "trade_guards_circuit_breakers"
 HALT_STATE_KEY_PREFIX = "halt_state_"
@@ -613,6 +617,40 @@ class TradeGuardsService:
         if verdict is not None:
             return verdict
         return self._exposure_verdict(symbol, setup)
+
+    def evaluate_stop_modification(
+        self,
+        symbol: str,
+        *,
+        now: datetime | None = None,
+    ) -> GuardVerdict | None:
+        """System gates for modifying a working protective stop.
+
+        Modifying an order is not a new entry: exposure, PDT and circuit
+        breakers do not apply (raising a stop only reduces risk). What does
+        apply: no order may be sent or modified while the symbol is halted
+        (section 25ter.1), and nothing is sent while the market is fully
+        closed (weekend / overnight) since TWS would not work the change.
+        """
+        if not self.enabled():
+            return None
+        verdict = self._halt_verdict(symbol, now)
+        if verdict is not None:
+            return verdict
+        session = classify_us_equity_session(now or datetime.now(UTC))
+        if session == "CLOSED":
+            return GuardVerdict(
+                status=STATUS_WAIT,
+                reason_code=REASON_OUTSIDE_TRADING_WINDOW,
+                decision_status="MARKET_CLOSED",
+                title="Marche ferme",
+                message=(
+                    f"Le marche est ferme ({session}). La modification du stop "
+                    f"sur {symbol.upper()} sera possible a la reouverture."
+                ),
+                context={"symbol": symbol.upper(), "session": session},
+            )
+        return None
 
 
 def blocked_signal_from_verdict(

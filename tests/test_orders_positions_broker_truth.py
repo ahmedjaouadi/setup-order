@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
 
 from app.api import routes_orders, routes_positions
+from app.broker.ib_models import BrokerExecution
 from app.engine.broker_reality import (
     orders_broker_truth_overlay,
     positions_broker_truth_overlay,
 )
 from app.engine.trading_engine import TradingEngine
+from app.models import ConnectionStatus
+from app.settings import DEFAULT_CONFIG, Settings
+from app.storage.database import Database
+from app.storage.repositories import TradingRepository
 
 
 def connected_report(rows: list[dict]) -> dict:
@@ -213,6 +221,89 @@ class OrdersPositionsApiSourceTests(unittest.IsolatedAsyncioTestCase):
         result = await routes_positions.list_positions(request)
 
         self.assertEqual(result["items"][0]["source"], "LOCAL_ONLY")
+
+
+class ExecutionsBroker:
+    """Minimal broker exposing today's fills like the TWS connector does."""
+
+    connector_name = "paper"
+    account_mode = "paper"
+    display_name = "Executions broker"
+
+    def __init__(self) -> None:
+        self.connected = True
+
+    async def status(self) -> ConnectionStatus:
+        return ConnectionStatus.CONNECTED if self.connected else ConnectionStatus.DISCONNECTED
+
+    async def positions(self) -> list:
+        return []
+
+    async def open_orders(self) -> list:
+        return []
+
+    async def account_summary(self) -> dict:
+        return {"available": True, "source": "paper"}
+
+    async def recent_executions(self) -> list[BrokerExecution]:
+        return [
+            BrokerExecution(
+                execution_id="exec-1",
+                symbol="lunr",
+                side="buy",
+                quantity=6,
+                price=20.15,
+                order_id="41",
+                broker_perm_id="900001",
+                timestamp="2026-07-06T14:31:02+00:00",
+            )
+        ]
+
+    def drain_audit_entries(self) -> list:
+        return []
+
+
+class BrokerExecutionsSnapshotTests(unittest.IsolatedAsyncioTestCase):
+    """The Ordres & Positions page shows today's TWS fills (etape 10.2)."""
+
+    async def asyncSetUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        config = deepcopy(DEFAULT_CONFIG)
+        config["storage"]["database_file"] = str(root / "state.sqlite")
+        config["storage"]["setups_folder"] = str(root / "setups")
+        config["storage"]["logs_folder"] = str(root / "logs")
+        self.settings = Settings.from_dict(config)
+        self.database = Database(self.settings.database_file)
+        self.database.initialize()
+        self.repository = TradingRepository(self.database)
+
+    async def asyncTearDown(self) -> None:
+        self.database.close()
+        self.tmp.cleanup()
+
+    async def test_todays_fills_are_exposed_normalized(self) -> None:
+        engine = TradingEngine(self.settings, self.repository, broker=ExecutionsBroker())
+
+        rows = await engine._broker_executions_snapshot()
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["symbol"], "LUNR")
+        self.assertEqual(rows[0]["side"], "BUY")
+        self.assertEqual(rows[0]["quantity"], 6)
+        self.assertEqual(rows[0]["price"], 20.15)
+        self.assertEqual(rows[0]["order_id"], "41")
+
+    async def test_disconnected_broker_returns_last_known_fills(self) -> None:
+        broker = ExecutionsBroker()
+        engine = TradingEngine(self.settings, self.repository, broker=broker)
+        await engine._broker_executions_snapshot()
+
+        broker.connected = False
+        engine._broker_executions_cached_at = 0.0  # force TTL expiry
+        rows = await engine._broker_executions_snapshot()
+
+        self.assertEqual([row["symbol"] for row in rows], ["LUNR"])
 
 
 if __name__ == "__main__":

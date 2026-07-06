@@ -919,6 +919,7 @@ function renderSnapshot(snapshot) {
   renderBrokerReality(snapshot.broker_reality || {});
   renderOrders(snapshot.orders || []);
   renderPositions(snapshot.positions || []);
+  renderExecutions(snapshot.executions || []);
   renderEvents("dashboard-events", snapshot.events || []);
   renderSettings(snapshot);
   if (page === "dashboard") renderDashboardPremium(snapshot);
@@ -2380,6 +2381,10 @@ function renderBrokerReality(report) {
   }
   setStatus("top-broker-tracker", `BROKER ${status}`);
   setText("top-sync-age", syncAgeChipLabel(report.broker_sync_age_seconds));
+  setText(
+    "trading-book-sync-age",
+    report.broker_sync_age_seconds == null ? "-" : formatAge(report.broker_sync_age_seconds),
+  );
   setStatus("top-auto-execution", `AUTO ${report.auto_execution_blocked ? "BLOCKED" : "ALLOWED"}`);
   setStatus("top-emergency-risk", `RISK ${report.critical_count ? "CRITICAL" : "OK"}`);
   setStatus("dashboard-broker-tracker", status);
@@ -2503,33 +2508,88 @@ function renderOrders(orders) {
   const activeOrders = orders.filter((order) => orderIsBrokerActive(order));
   setText("orders-active-count", activeOrders.length);
   setText("orders-history-count", Math.max(orders.length - activeOrders.length, 0));
-  tbody.innerHTML = orders.map((order) => `
+  const sorted = [...orders].sort((a, b) => {
+    const activeDelta = Number(orderIsBrokerActive(b)) - Number(orderIsBrokerActive(a));
+    if (activeDelta !== 0) return activeDelta;
+    return String(b.updated_at || "").localeCompare(String(a.updated_at || ""));
+  });
+  tbody.innerHTML = sorted.map((order) => {
+    const detailId = `order-detail-${cssSafeId(order.id)}`;
+    return `
     <tr>
-      <td>${escapeHtml(order.id)}</td>
+      <td>
+        <button type="button" class="link-like" data-action="toggle-order-detail" data-target="${detailId}" title="Voir le detail">+</button>
+      </td>
       <td>${escapeHtml(order.symbol)}</td>
-      <td>${escapeHtml(order.setup_id)}</td>
       <td>${escapeHtml(order.side)}</td>
       <td>${escapeHtml(order.order_type)}</td>
-      <td>${escapeHtml(describeOrderStop(order))}</td>
-      <td>${escapeHtml(describeProtectionStatus(order.protection_status))}</td>
-      <td>${escapeHtml(order.parent_id || "")}</td>
-      <td>${escapeHtml(order.stop_order_id || "")}</td>
-      <td>${order.bracket_order ? "YES" : "NO"}</td>
       <td>${escapeHtml(order.quantity)}</td>
-      <td>${statusBadge(order.status)}</td>
-      <td>${statusBadge(order.broker_order_status || "UNKNOWN")}</td>
-      <td>${escapeHtml(describeOrderDiagnostic(order))}</td>
-      <td>${escapeHtml(order.broker_order_id || "")}</td>
+      <td>${escapeHtml(describeOrderPrice(order))}</td>
+      <td>${escapeHtml(describeOrderStop(order))}</td>
+      <td>${orderSourceBadge(order)}</td>
+      <td>${escapeHtml(order.setup_id)}</td>
       <td>
         <div class="row-actions">
           ${allowInternalFill && order.status === "SUBMITTED" ? `<button type="button" data-action="fill" data-order="${escapeHtml(order.id)}">Test fill</button>` : ""}
           ${canAttachMissingStop(order) ? `<button type="button" data-action="attach-stop" data-order="${escapeHtml(order.id)}" data-symbol="${escapeHtml(order.symbol)}">Attach SL</button>` : ""}
-          ${order.status === "SUBMITTED" ? `<button class="danger-small" type="button" data-action="cancel-order" data-order="${escapeHtml(order.id)}">Cancel</button>` : ""}
+          ${orderIsBrokerActive(order) || order.status === "SUBMITTED" ? `<button class="danger-small" type="button" data-action="cancel-order" data-order="${escapeHtml(order.id)}">Cancel</button>` : ""}
           ${canDeleteOrder(order) ? `<button class="danger-small" type="button" data-action="delete-order" data-order="${escapeHtml(order.id)}" data-symbol="${escapeHtml(order.symbol)}">Suppr</button>` : ""}
         </div>
       </td>
     </tr>
-  `).join("") || emptyRow(16, "Aucun ordre");
+    <tr id="${detailId}" class="order-detail-row" hidden>
+      <td colspan="10">
+        <div class="order-detail">
+          <span><strong>ID local:</strong> ${escapeHtml(order.id)}</span>
+          <span><strong>Broker ID:</strong> ${escapeHtml(order.broker_order_id || "-")}</span>
+          <span><strong>Perm ID:</strong> ${escapeHtml(order.broker_perm_id || "-")}</span>
+          <span><strong>Parent:</strong> ${escapeHtml(order.parent_id || "-")}</span>
+          <span><strong>Stop lie:</strong> ${escapeHtml(order.stop_order_id || "-")}</span>
+          <span><strong>Bracket:</strong> ${order.bracket_order ? "OUI" : "NON"}</span>
+          <span><strong>Statut local:</strong> ${statusBadge(order.status)}</span>
+          <span><strong>Protection:</strong> ${escapeHtml(describeProtectionStatus(order.protection_status))}</span>
+          <span><strong>Diagnostic:</strong> ${escapeHtml(describeOrderDiagnostic(order))}</span>
+        </div>
+      </td>
+    </tr>
+  `;
+  }).join("") || emptyRow(10, "Aucun ordre");
+}
+
+function cssSafeId(value) {
+  return String(value || "").replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+function describeOrderPrice(order) {
+  const parts = [];
+  if (order.trigger_price != null) parts.push(`T ${maybeMoney(order.trigger_price)}`);
+  if (order.limit_price != null) parts.push(`L ${maybeMoney(order.limit_price)}`);
+  if (!parts.length) return order.order_type === "MKT" ? "MKT" : "-";
+  return parts.join(" / ");
+}
+
+function orderSourceBadge(order) {
+  const brokerStatus = order.broker_order_status || order.broker_live_status || "";
+  if (brokerStatus === "NO_BROKER_ORDER") {
+    return statusBadge("LOCAL_ONLY");
+  }
+  return statusBadge(brokerStatus || order.status || "UNKNOWN");
+}
+
+function renderExecutions(executions) {
+  const tbody = document.getElementById("executions-table");
+  if (!tbody) return;
+  const rows = Array.isArray(executions) ? executions : [];
+  tbody.innerHTML = rows.map((execution) => `
+    <tr>
+      <td>${escapeHtml(formatTime(execution.timestamp))}</td>
+      <td>${escapeHtml(execution.symbol)}</td>
+      <td>${escapeHtml(execution.side)}</td>
+      <td>${escapeHtml(execution.quantity)}</td>
+      <td>${money(execution.price)}</td>
+      <td>${escapeHtml(execution.order_id || execution.broker_perm_id || "-")}</td>
+    </tr>
+  `).join("") || emptyRow(6, "Aucune execution aujourd'hui");
 }
 
 function orderIsBrokerActive(order) {
@@ -3170,6 +3230,14 @@ function wireActionButtons() {
         });
         toast("Setup supprime");
         await refresh();
+      }
+      if (action === "toggle-order-detail") {
+        const detailRow = document.getElementById(button.dataset.target || "");
+        if (detailRow) {
+          detailRow.hidden = !detailRow.hidden;
+          button.textContent = detailRow.hidden ? "+" : "-";
+        }
+        return;
       }
       if (action === "cancel-order") {
         await api(`/api/orders/${encodeURIComponent(button.dataset.order)}/cancel`, {

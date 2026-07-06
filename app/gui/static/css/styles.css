@@ -3997,3 +3997,31 @@ body[data-page="dashboard"] .dashboard-status-strip.reveal { animation-delay: 0.
   body[data-page="dashboard"] .equity-line,
   body[data-page="dashboard"] .donut-seg { animation: none !important; opacity: 1; transform: none; stroke-dashoffset: 0 !important; }
 }
+
+/* --- Ordres & Positions: unified broker-truth order table --- */
+.order-detail-row td {
+  background: rgba(246, 249, 252, 0.7);
+  padding: 10px 14px;
+}
+
+.order-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  font-size: 0.85rem;
+}
+
+.order-detail span {
+  white-space: nowrap;
+}
+
+button.link-like {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  min-width: 26px;
+  min-height: 26px;
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--ink);
+}
