@@ -13,6 +13,7 @@ from app.broker.ib_models import BrokerOrderRequest, BrokerPosition
 from app.broker.tws_connector import BrokerConnector, create_broker_connector
 from app.engine.action_executor import ActionExecutor
 from app.engine.broker_reality import (
+    ENGINE_SAFETY_STATE_KEY,
     REPORT_STATE_KEY,
     broker_tracker_config,
     execution_safety_config,
@@ -72,6 +73,10 @@ class NullBroadcaster:
 logger = logging.getLogger(__name__)
 HEARTBEAT_INTERVAL_SECONDS = 5
 HEARTBEAT_STALE_SECONDS = HEARTBEAT_INTERVAL_SECONDS * 3
+# Consecutive pre-entry revalidation failures before the engine escalates to a
+# real auto-execution block. A single transient failure stays cosmetic; a
+# persistent one means the validation layer is down, so we fail safe.
+REVALIDATE_FAILURE_BLOCK_THRESHOLD = 3
 ACCOUNT_SNAPSHOT_TTL_SECONDS = 30
 # Kept at (or under) the heartbeat cadence so the Ordres & Positions page
 # tracks TWS with <= 5s of perceived latency (etape 10.2).
@@ -274,6 +279,8 @@ class TradingEngine:
             "last_checked_setups": 0,
             "last_processed_setups": 0,
             "last_error": "",
+            "revalidate_consecutive_failures": 0,
+            "last_revalidate_error": "",
         }
         self.stock_market_monitor = StockMarketMonitor(
             settings=settings,
@@ -562,6 +569,7 @@ class TradingEngine:
                 "local_order_orphans": len(local_order_orphans),
                 "broker_tracker_status": broker_reality.get("broker_tracker_status"),
                 "broker_sync_age_seconds": broker_reality.get("broker_sync_age_seconds"),
+                "broker_stale_after_seconds": broker_reality.get("stale_after_seconds"),
                 "auto_execution_blocked": broker_reality.get("auto_execution_blocked"),
                 "account": account,
             },
@@ -652,6 +660,14 @@ class TradingEngine:
         broker_check_at = self._utc_now_iso()
         heartbeat_started_at = self._utc_now_iso()
         broker_error = str(getattr(self.broker, "last_error", "") or "")
+        # last_heartbeat_at is the LOOP-LIVENESS stamp: posted here, right after
+        # the lightweight reqCurrentTime probe (_broker_health_check) returned,
+        # and deliberately NOT refreshed again after the heavy reconciliation
+        # below. This keeps the heartbeat age a measure of the loop being alive,
+        # not of reconciliation latency -- otherwise a slow-but-not-dead
+        # reconciliation (20-25s) would flap the heartbeat red under the 20s
+        # threshold. Reconciliation health is tracked separately via
+        # broker_last_sync_at / last_reconciliation_error.
         self._health.update(
             {
                 "last_heartbeat_at": heartbeat_started_at,
@@ -682,7 +698,10 @@ class TradingEngine:
             await self._poll_active_stock_quotes_with_timeout(current_status, broker_status)
         # Dashboard/monitoring refresh: revalidate pre-entry setups so a stale
         # setup never stays displayed as WAITING_ACTIVATION (throttled).
-        self.setup_lifecycle.revalidate_all()
+        # revalidate_all is the pre-entry validation layer, so unlike a cosmetic
+        # stock-poll/broadcast failure a repeated failure here is safety-relevant
+        # and escalates to a real auto-execution block (fail-safe).
+        self._run_revalidate_all()
         self._drain_broker_audit()
         broker_diagnostics = self._broker_diagnostics()
         checked_setups = len(
@@ -703,7 +722,9 @@ class TradingEngine:
         heartbeat_at = self._utc_now_iso()
         self._health.update(
             {
-                "last_heartbeat_at": heartbeat_at,
+                # NB: last_heartbeat_at is intentionally NOT refreshed here (it was
+                # posted early, after the light probe). Only the completion stamp
+                # advances, so reconciliation duration cannot age the heartbeat.
                 "last_heartbeat_completed_at": heartbeat_at,
                 "heartbeat_in_progress": False,
                 "last_broker_check_at": broker_check_at,
@@ -715,6 +736,135 @@ class TradingEngine:
                 "last_checked_setups": checked_setups,
                 "last_error": "",
             }
+        )
+        self._log_broker_state_diagnostics(
+            broker_status=broker_status,
+            broker_error=broker_error,
+        )
+
+    def _run_revalidate_all(self) -> None:
+        """Run pre-entry revalidation, escalating persistent failures to a block.
+
+        A transient failure is tolerated (cosmetic). Once failures reach
+        REVALIDATE_FAILURE_BLOCK_THRESHOLD in a row, the validation layer is
+        considered down and auto-execution is blocked via the engine_safety
+        gate. Events are emitted only on transitions (first failure, crossing
+        the threshold, recovery) to avoid flooding the events table.
+        """
+        previous = int(self._health.get("revalidate_consecutive_failures") or 0)
+        try:
+            self.setup_lifecycle.revalidate_all()
+        except Exception as exc:
+            failures = previous + 1
+            self._health["revalidate_consecutive_failures"] = failures
+            self._health["last_revalidate_error"] = str(exc)
+            logger.exception("Pre-entry revalidation failed (%s consecutive)", failures)
+            if failures in (1, REVALIDATE_FAILURE_BLOCK_THRESHOLD):
+                blocking = failures >= REVALIDATE_FAILURE_BLOCK_THRESHOLD
+                self.event_store.record(
+                    EventLevel.CRITICAL if blocking else EventLevel.WARNING,
+                    "revalidate_all_failed",
+                    "Pre-entry revalidation failed "
+                    f"({failures} consecutive)"
+                    + (" - auto execution blocked" if blocking else ""),
+                    data={"error": str(exc), "consecutive_failures": failures},
+                )
+            self._persist_engine_safety_block(failures)
+            return
+        if previous:
+            self._health["revalidate_consecutive_failures"] = 0
+            self._health["last_revalidate_error"] = ""
+            if previous >= REVALIDATE_FAILURE_BLOCK_THRESHOLD:
+                self.event_store.record(
+                    EventLevel.INFO,
+                    "revalidate_all_recovered",
+                    "Pre-entry revalidation recovered; auto execution unblocked",
+                    data={"previous_consecutive_failures": previous},
+                )
+            self._persist_engine_safety_block(0)
+
+    def _persist_engine_safety_block(self, revalidate_failures: int) -> None:
+        reasons: list[str] = []
+        if revalidate_failures >= REVALIDATE_FAILURE_BLOCK_THRESHOLD:
+            reasons.append("PRE_ENTRY_REVALIDATION_FAILING")
+        self.repository.set_bot_state(
+            ENGINE_SAFETY_STATE_KEY,
+            {
+                "blocking_reasons": reasons,
+                "auto_execution_blocked": bool(reasons),
+                "revalidate_consecutive_failures": revalidate_failures,
+                "updated_at": self._utc_now_iso(),
+            },
+        )
+
+    def _log_broker_state_diagnostics(
+        self,
+        *,
+        broker_status: ConnectionStatus,
+        broker_error: str,
+    ) -> None:
+        """Emit, on every tick, the facts that decide HEARTBEAT / BROKER / SYNC.
+
+        This is the single log that tells apart a genuine data stop (the broker
+        report ages because reconciliation cannot reach TWS) from a measurement
+        artefact (thresholds/clocks disagree while data is still flowing). It
+        pairs the age of the *last real message received from TWS*
+        (``last_tws_response_at``) with the socket state, the broker-report age
+        and the precise stale reason.
+        """
+        diagnostics = self._broker_diagnostics()
+        report = self.repository.get_bot_state(REPORT_STATE_KEY, {})
+        report = report if isinstance(report, dict) else {}
+        tracker = broker_tracker_config(self.settings.raw)
+        report_sync_at = report.get("broker_last_sync_at")
+        report_age = self._age_seconds(report_sync_at)
+        last_response_at = diagnostics.get("last_tws_response_at")
+        last_response_age = self._age_seconds(last_response_at)
+        recon_at = self._health.get("last_reconciliation_at")
+        recon_error = str(self._health.get("last_reconciliation_error") or "")
+        socket_alive = broker_status == ConnectionStatus.CONNECTED
+        stale = (
+            tracker["enabled"]
+            and socket_alive
+            and report_age is not None
+            and report_age > tracker["stale_after_seconds"]
+        )
+        # The telling case: socket alive + broker report stale means the flow
+        # really stopped feeding reconciliation (not a threshold artefact).
+        reason = (
+            "DISCONNECTED"
+            if not socket_alive
+            else "RECONCILIATION_ERROR"
+            if recon_error
+            else "STALE_REPORT"
+            if stale
+            else "OK"
+        )
+        revalidate_failures = int(self._health.get("revalidate_consecutive_failures") or 0)
+        if reason == "OK" and revalidate_failures:
+            reason = "REVALIDATION_FAILING"
+        log = logger.debug if reason == "OK" else logger.warning
+        log(
+            "broker_state_diagnostics reason=%s socket=%s "
+            "last_broker_response_at=%s last_broker_response_age=%ss "
+            "report_sync_at=%s report_age=%ss stale_after=%ss stale=%s "
+            "reconciliation_at=%s reconciliation_age=%ss reconciliation_error=%r "
+            "revalidate_consecutive_failures=%s "
+            "heartbeat_age=%ss broker_error=%r",
+            reason,
+            broker_status.value,
+            last_response_at,
+            last_response_age,
+            report_sync_at,
+            report_age,
+            tracker["stale_after_seconds"],
+            stale,
+            recon_at,
+            self._age_seconds(recon_at),
+            recon_error,
+            revalidate_failures,
+            self._age_seconds(self._health.get("last_heartbeat_at")),
+            broker_error,
         )
 
     def _health_payload(self, active_setup_count: int) -> dict[str, Any]:

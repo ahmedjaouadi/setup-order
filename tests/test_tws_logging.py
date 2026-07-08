@@ -1272,7 +1272,12 @@ class StockProcessLoggingTests(unittest.IsolatedAsyncioTestCase):
         self.engine._heartbeat.assert_awaited_once_with(poll_stocks=False)
         self.engine._broadcast_snapshot.assert_awaited_once()
 
-    async def test_heartbeat_timestamp_is_recorded_after_stock_poll(self) -> None:
+    async def test_heartbeat_timestamp_is_posted_after_light_probe_not_at_end(self) -> None:
+        # last_heartbeat_at is the LOOP-LIVENESS stamp: posted right after the
+        # lightweight broker probe and deliberately NOT refreshed at the end of
+        # the cycle, so reconciliation/poll latency (or a crash mid-cycle)
+        # cannot silently age it. Only last_heartbeat_completed_at advances at
+        # the end.
         class SlowQuoteBroker:
             connector_name = "paper"
             account_mode = "paper"
@@ -1326,7 +1331,7 @@ class StockProcessLoggingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             self.engine._health["last_heartbeat_at"],
-            "2026-06-04T10:00:30+00:00",
+            "2026-06-04T10:00:01+00:00",
         )
         self.assertEqual(
             self.engine._health["last_heartbeat_started_at"],

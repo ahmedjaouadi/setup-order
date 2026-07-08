@@ -173,7 +173,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "tws_stock_quote_timeout_seconds": 4,
         "tws_stock_poll_total_timeout_seconds": 120,
         "tws_historical_timeout_seconds": 15,
-        "heartbeat_stale_seconds": 180,
+        # Coherent with the 5s monitor loop and broker_tracker.stale_after_seconds;
+        # see config.yaml for the rationale. Was 180 (18x the broker window),
+        # which let the engine pill read LIVE while the broker chip read STALE.
+        "heartbeat_stale_seconds": 20,
         "tws_stock_poll_max_concurrency": 5,
         "opportunity_near_ready_threshold": 0.96,
         "opportunity_alert_cooldown_seconds": 300,

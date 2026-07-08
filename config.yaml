@@ -114,7 +114,11 @@ market:
   tws_stock_quote_timeout_seconds: 4
   tws_stock_poll_total_timeout_seconds: 120
   tws_historical_timeout_seconds: 15
-  heartbeat_stale_seconds: 180
+  # Coherent with the 5s monitor loop (~4x) and the broker_tracker window
+  # below: the heartbeat must go STALE in the same order of magnitude as the
+  # broker report (stale_after_seconds), never 18x later, otherwise the engine
+  # pill shows LIVE while the broker chip already shows STALE.
+  heartbeat_stale_seconds: 20
   event_deduplication:
     enabled: true
     repeated_hold_cooldown_seconds: 300

@@ -965,12 +965,16 @@ function setStatus(id, value) {
 }
 
 function renderEngineHealth(health) {
-  const heartbeatAge = secondsSince(health.last_heartbeat_at) ?? health.heartbeat_age_seconds;
+  // Prefer the server-computed age so the heartbeat shares the same clock as
+  // the broker-sync age (broker_sync_age_seconds is also server-side). Falling
+  // back to secondsSince() uses the browser clock and reintroduces skew, so it
+  // is only a last resort when the server omits the value.
+  const heartbeatAge = health.heartbeat_age_seconds ?? secondsSince(health.last_heartbeat_at);
   const tickAge = secondsSince(health.last_market_tick_at) ?? health.market_tick_age_seconds;
   const analysisAge = secondsSince(health.last_market_analysis_at)
     ?? health.market_analysis_age_seconds;
   const stockPollAge = secondsSince(health.last_stock_poll_at) ?? health.stock_poll_age_seconds;
-  const staleAfter = Number(health.heartbeat_stale_seconds || 45);
+  const staleAfter = Number(health.heartbeat_stale_seconds || 20);
   let status = health.status || "STARTING";
   let label = health.label || "CHECKING";
   const brokerStatus = health.broker_status || "";
@@ -978,8 +982,14 @@ function renderEngineHealth(health) {
     status = "BROKER_DOWN";
     label = brokerStatus === "ERROR" ? "BROKER ERROR" : "TWS OFFLINE";
   } else if (health.last_error) {
+    // A caught exception anywhere in the monitor tick (stock poll, revalidate,
+    // snapshot broadcast) lands in health.last_error. It is a real engine error
+    // but NOT a heartbeat/liveness failure, so label it as an engine error
+    // instead of impersonating a dead connection. This is why State A could show
+    // "HEARTBEAT ERROR" while the broker was OK and fresh. The broker-reality
+    // gate (AUTO BLOCKED / RISK CRITICAL) is driven separately and stays armed.
     status = "ERROR";
-    label = "HEARTBEAT ERROR";
+    label = "ENGINE ERROR";
   } else if (heartbeatAge === null || heartbeatAge === undefined) {
     status = "STARTING";
     label = "CHECKING";
@@ -1002,8 +1012,43 @@ function renderEngineHealth(health) {
     pill.title = [
       `Heartbeat: ${heartbeatAge == null ? "-" : formatAge(heartbeatAge)}`,
       `Broker: ${brokerStatus || "-"}`,
+      health.last_error ? `Erreur: ${String(health.last_error).slice(0, 160)}` : null,
+      health.last_reconciliation_error
+        ? `Reconciliation: ${String(health.last_reconciliation_error).slice(0, 160)}`
+        : null,
       `TWS audit: ${health.tws_audit_enabled ? "ON" : "OFF"}`,
-    ].join(" | ");
+    ].filter(Boolean).join(" | ");
+  }
+
+  // Dedicated reconciliation / revalidation voyant: signals the ROOT CAUSE at
+  // the source (reconciliation failing, revalidation escalated) BEFORE the
+  // broker report ages past stale_after and BROKER STALE lights up. Hidden when
+  // healthy to keep the rail uncluttered. Threshold 3 mirrors the server-side
+  // REVALIDATE_FAILURE_BLOCK_THRESHOLD.
+  const reconPill = document.getElementById("top-reconciliation");
+  if (reconPill) {
+    const reconError = health.last_reconciliation_error;
+    const revalFailures = Number(health.revalidate_consecutive_failures || 0);
+    reconPill.className = "pill";
+    if (revalFailures >= 3) {
+      reconPill.hidden = false;
+      reconPill.textContent = "REVALIDATION DOWN";
+      reconPill.classList.add("danger");
+      reconPill.title = `Revalidation pre-entree en echec (${revalFailures}x) - auto execution bloquee. ${health.last_revalidate_error || ""}`.trim();
+    } else if (reconError) {
+      reconPill.hidden = false;
+      reconPill.textContent = "RECON ERROR";
+      reconPill.classList.add("danger");
+      reconPill.title = `Reconciliation broker en echec: ${String(reconError).slice(0, 200)}`;
+    } else if (revalFailures > 0) {
+      reconPill.hidden = false;
+      reconPill.textContent = `REVALIDATION ${revalFailures}x`;
+      reconPill.classList.add("warn");
+      reconPill.title = health.last_revalidate_error || "Revalidation pre-entree en echec transitoire";
+    } else {
+      reconPill.hidden = true;
+      reconPill.textContent = "";
+    }
   }
 
   const detail = document.getElementById("dashboard-engine-health");
@@ -1124,7 +1169,7 @@ function renderMetrics(metrics) {
   );
   setText("metric-loss-remaining-status", statusLabel(metrics.remaining_risk_status || "-"));
   setStatus("top-broker-tracker", `BROKER ${metrics.broker_tracker_status || "UNKNOWN"}`);
-  setText("top-sync-age", syncAgeChipLabel(metrics.broker_sync_age_seconds));
+  setText("top-sync-age", syncAgeChipLabel(metrics.broker_sync_age_seconds, metrics.broker_stale_after_seconds));
   setStatus("top-auto-execution", `AUTO ${metrics.auto_execution_blocked ? "BLOCKED" : "ALLOWED"}`);
   setStatus("top-emergency-risk", `RISK ${(metrics.unprotected_positions || metrics.unprotected_orders) ? "CRITICAL" : "OK"}`);
   setStatus("dashboard-broker-tracker", metrics.broker_tracker_status || "UNKNOWN");
@@ -1484,12 +1529,17 @@ function toneForAge(age) {
   return "danger";
 }
 
-function syncAgeChipLabel(age) {
+function syncAgeChipLabel(age, staleAfter) {
   if (age === null || age === undefined || age === "") return "SYNC -";
   const value = Number(age);
   if (!Number.isFinite(value)) return `SYNC ${formatAge(age)}`;
-  if (value > 90) return `SYNC STALE ${formatAge(value)}`;
-  if (value > 45) return `SYNC WARN ${formatAge(value)}`;
+  // Align with the server's broker stale_after_seconds so the SYNC chip and the
+  // BROKER chip tell the same story: SYNC turns STALE exactly when the broker
+  // tracker turns STALE (age > stale_after), and WARNs as it approaches. The
+  // previous fixed 45/90s thresholds contradicted the 10s broker window.
+  const stale = Number(staleAfter) > 0 ? Number(staleAfter) : 10;
+  if (value > stale) return `SYNC STALE ${formatAge(value)}`;
+  if (value > stale / 2) return `SYNC WARN ${formatAge(value)}`;
   return `SYNC ${formatAge(value)}`;
 }
 
@@ -2392,7 +2442,7 @@ function renderBrokerReality(report) {
     blockedTarget.setAttribute("style", statusBadgeStyle(report.auto_execution_blocked ? "RECONCILIATION_MISMATCH" : status));
   }
   setStatus("top-broker-tracker", `BROKER ${status}`);
-  setText("top-sync-age", syncAgeChipLabel(report.broker_sync_age_seconds));
+  setText("top-sync-age", syncAgeChipLabel(report.broker_sync_age_seconds, report.stale_after_seconds));
   setText(
     "trading-book-sync-age",
     report.broker_sync_age_seconds == null ? "-" : formatAge(report.broker_sync_age_seconds),
