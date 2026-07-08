@@ -77,6 +77,9 @@ ACCOUNT_SNAPSHOT_TTL_SECONDS = 30
 # tracks TWS with <= 5s of perceived latency (etape 10.2).
 BROKER_RUNTIME_SNAPSHOT_TTL_SECONDS = 5
 EQUITY_SNAPSHOT_INTERVAL_SECONDS = 120
+ACTIVE_BROKER_ORDER_STATUSES = {"PENDING_SUBMIT", "TRANSMITTED", "PARTIALLY_FILLED"}
+VISIBLE_TWS_ORDER_STATUSES = ACTIVE_BROKER_ORDER_STATUSES | {"PREPARED_NOT_TRANSMITTED"}
+LOCAL_ACTIVE_ORDER_STATUSES = {"CREATED", "SUBMITTED"}
 # Full dashboard snapshots are expensive (broker RPCs + DB aggregation) and the
 # GUI requests one on every page navigation. A short server-side cache makes
 # tab switches instant; state-changing engine methods invalidate it so the GUI
@@ -406,6 +409,7 @@ class TradingEngine:
         setups = self.repository.list_setups()
         local_orders = self.repository.list_orders()
         local_positions = self.repository.list_positions()
+        broker_connected = await self._broker_is_connected()
         broker_open_orders = await self._broker_open_orders_snapshot()
         broker_positions = await self._broker_positions_snapshot(
             setups,
@@ -416,7 +420,7 @@ class TradingEngine:
         positions = self._merge_position_snapshots(
             local_positions,
             broker_positions,
-            await self._broker_is_connected(),
+            broker_connected,
         )
         display_orders = self._orders_with_broker_overlay(
             local_orders,
@@ -429,13 +433,16 @@ class TradingEngine:
         )
         events = self.repository.list_events(limit=200)
         orders = self._enrich_orders_with_event_diagnostics(orders, events)
+        orders, local_order_orphans, order_history = self._split_trading_book_orders(
+            orders,
+            broker_connected=broker_connected,
+        )
         stock_pnl = self._stock_pnl(positions)
         direct_positions_pnl = round(sum(float(row["unrealized_pnl"]) for row in stock_pnl), 2)
         account = await self._account_snapshot(direct_positions_pnl)
         broker_reality = self._broker_reality_snapshot()
         self._drain_broker_audit()
         broker_pnl = broker_reality.get("pnl", {}) if isinstance(broker_reality, dict) else {}
-        broker_connected = runtime.get("connection") == ConnectionStatus.CONNECTED.value
         broker_pnl_status = str(broker_pnl.get("status") or broker_pnl.get("sync_status") or "")
         broker_pnl_fresh = (
             broker_reality.get("broker_tracker_status") == "OK"
@@ -458,32 +465,18 @@ class TradingEngine:
             daily_pnl_for_limits = 0.0
         else:
             daily_pnl_for_limits = daily_pnl
-        active_broker_order_count = self._active_broker_order_count(broker_open_orders)
-        prepared_broker_order_count = self._broker_order_count_by_status(
-            broker_open_orders,
-            {"PREPARED_NOT_TRANSMITTED"},
+        open_positions_count = len(
+            [position for position in positions if int(position.get("quantity") or 0) != 0]
         )
-        local_active_order_count = len([order for order in orders if order.get("is_active")])
-        open_positions_count = self._broker_reality_int(
-            broker_reality,
-            "broker_positions_count",
+        open_orders_count = len([order for order in orders if order.get("is_active")])
+        prepared_orders_count = len(
+            [
+                order
+                for order in orders
+                if str(order.get("broker_order_status") or order.get("broker_live_status") or "")
+                == "PREPARED_NOT_TRANSMITTED"
+            ]
         )
-        if open_positions_count is None:
-            open_positions_count = len(positions)
-        open_orders_count = self._broker_reality_int(
-            broker_reality,
-            "broker_active_orders",
-        )
-        if open_orders_count is None:
-            open_orders_count = (
-                active_broker_order_count if broker_connected else local_active_order_count
-            )
-        prepared_orders_count = self._broker_reality_int(
-            broker_reality,
-            "broker_prepared_not_transmitted_orders",
-        )
-        if prepared_orders_count is None:
-            prepared_orders_count = prepared_broker_order_count
         active_setups = [
             setup
             for setup in setups
@@ -536,12 +529,12 @@ class TradingEngine:
                 "open_orders": open_orders_count,
                 "broker_active_orders": open_orders_count,
                 "broker_prepared_not_transmitted_orders": prepared_orders_count,
-                "historical_orders": len([order for order in orders if not order.get("is_active")]),
+                "historical_orders": len(order_history),
                 "cancelled_orders": len(
-                    [order for order in orders if str(order.get("status") or "") == "CANCELLED"]
+                    [order for order in order_history if str(order.get("status") or "") == "CANCELLED"]
                 ),
                 "filled_orders": len(
-                    [order for order in orders if str(order.get("status") or "") == "FILLED"]
+                    [order for order in order_history if str(order.get("status") or "") == "FILLED"]
                 ),
                 "daily_pnl": daily_pnl,
                 "daily_loss_remaining": (
@@ -566,6 +559,7 @@ class TradingEngine:
                 "unprotected_positions": broker_reality.get("unprotected_positions", 0),
                 "unprotected_orders": broker_reality.get("unprotected_orders", 0),
                 "active_stop_orders": broker_reality.get("active_stop_orders", 0),
+                "local_order_orphans": len(local_order_orphans),
                 "broker_tracker_status": broker_reality.get("broker_tracker_status"),
                 "broker_sync_age_seconds": broker_reality.get("broker_sync_age_seconds"),
                 "auto_execution_blocked": broker_reality.get("auto_execution_blocked"),
@@ -580,6 +574,8 @@ class TradingEngine:
             "setups": setups,
             "positions": positions,
             "orders": orders[:25],
+            "order_history": order_history[:100],
+            "local_order_orphans": local_order_orphans[:25],
             "executions": await self._broker_executions_snapshot(),
             "events": events[:20],
             "market": [to_jsonable(item) for item in self.market_data.all_latest()],
@@ -1362,7 +1358,7 @@ class TradingEngine:
             "status": self._broker_order_status(broker_order),
             "trigger_price": broker_order.trigger_price,
             "limit_price": broker_order.limit_price,
-            "stop_price": broker_order.stop_price if side == "SELL" else None,
+            "stop_price": broker_order.stop_price,
             "broker_order_id": broker_order.broker_order_id,
             "broker_perm_id": broker_order.broker_perm_id,
             "parent_id": broker_order.parent_id,
@@ -1698,6 +1694,59 @@ class TradingEngine:
             ) or self._default_order_diagnostic_message(row)
             enriched.append(row)
         return enriched
+
+    @staticmethod
+    def _split_trading_book_orders(
+        orders: list[dict[str, Any]],
+        *,
+        broker_connected: bool,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+        if not broker_connected:
+            order_history: list[dict[str, Any]] = []
+            for order in orders:
+                row = dict(order)
+                row["source"] = "LOCAL_FALLBACK"
+                row["broker_order_status"] = "LOCAL_FALLBACK"
+                row["broker_live_status"] = "LOCAL_FALLBACK"
+                row["local_intent_active"] = str(row.get("status") or "") in LOCAL_ACTIVE_ORDER_STATUSES
+                row["is_active"] = False
+                row["lifecycle_bucket"] = "HISTORY"
+                order_history.append(row)
+            return [], [], order_history
+
+        broker_rows: list[dict[str, Any]] = []
+        local_orphans: list[dict[str, Any]] = []
+        order_history: list[dict[str, Any]] = []
+        for order in orders:
+            broker_status = str(
+                order.get("broker_order_status") or order.get("broker_live_status") or ""
+            )
+            if broker_status == "NO_BROKER_ORDER":
+                orphan = dict(order)
+                orphan["source"] = "LOCAL_ORPHAN"
+                orphan["broker_order_status"] = "LOCAL_ORPHAN"
+                orphan["broker_live_status"] = "LOCAL_ORPHAN"
+                orphan["local_intent_active"] = str(orphan.get("status") or "") in {
+                    "CREATED",
+                    "SUBMITTED",
+                }
+                orphan["is_active"] = False
+                orphan["lifecycle_bucket"] = "ORPHAN"
+                local_orphans.append(orphan)
+                continue
+            if broker_status in VISIBLE_TWS_ORDER_STATUSES:
+                row = dict(order)
+                row.setdefault("source", "BROKER")
+                row["is_active"] = broker_status in ACTIVE_BROKER_ORDER_STATUSES
+                row["lifecycle_bucket"] = "ACTIVE" if row["is_active"] else "PREPARED"
+                broker_rows.append(row)
+                continue
+            history = dict(order)
+            history.setdefault("source", "LOCAL_HISTORY")
+            history["is_active"] = False
+            history["lifecycle_bucket"] = "HISTORY"
+            order_history.append(history)
+        return broker_rows, local_orphans, order_history
 
     @staticmethod
     def _order_diagnostic_message_from_event(event: dict[str, Any]) -> str:

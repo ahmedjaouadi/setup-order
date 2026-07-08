@@ -10,7 +10,11 @@
   <div class="panel setups-list-panel">
     <div class="panel-heading">
       <h2>Liste</h2>
-      <button class="secondary-button table-reset-button" type="button" id="setups-columns-reset">Defaut</button>
+      <div class="panel-actions">
+        <button class="secondary-button table-reset-button" type="button" id="setups-columns-reset">Defaut</button>
+        <button class="secondary-button" type="button" data-modal-open="setup-tools-modal">Outils configuration</button>
+        <button type="button" data-modal-open="setup-create-modal">Nouveau setup</button>
+      </div>
     </div>
     <div class="table-toolbar">
       <label class="table-search">
@@ -28,43 +32,56 @@
     </div>
   </div>
 
-  <div class="panel setup-tools-panel">
-    <div class="panel-heading">
-      <h2>Outils configuration</h2>
-    </div>
-    <div class="setup-tools-actions">
-      <button type="button" data-action="enable-all-setups">Auto ON pour tous les stocks</button>
-      <button class="secondary-button" type="button" data-action="disable-all-setups">Auto OFF pour tous les stocks</button>
-      <button class="secondary-button" type="button" data-action="show-setup-template">Generer squelette universel expert</button>
-    </div>
-    <div class="conversion-result" id="setup-tools-message" hidden></div>
-    <pre class="config-view compact setup-tools-output" id="setup-tools-output" hidden></pre>
-  </div>
-
-  <div class="panel setup-create-panel">
-    <div class="panel-heading">
-      <h2>Nouveau setup</h2>
-    </div>
-    <form class="tool-form" id="setup-form">
-      <label>
-        Ticker
-        <input name="symbol" required autocomplete="off">
-      </label>
-      <label>
-        Setup
-        <textarea
-          name="text"
-          rows="5"
-          required
-        ></textarea>
-      </label>
-      <div class="button-row">
-        <button type="button" id="setup-preview-button">Convertir</button>
-        <button type="submit">Sauver</button>
-      </div>
-    </form>
-    <div class="conversion-result" id="setup-conversion-result" hidden></div>
-    <pre class="config-view compact" id="setup-preview" hidden></pre>
-  </div>
 </section>
+
+<div class="modal-overlay" id="setup-tools-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="setup-tools-title">
+    <div class="modal-header">
+      <h2 id="setup-tools-title">Outils configuration</h2>
+      <button class="modal-close" type="button" data-modal-close aria-label="Fermer">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="setup-tools-actions">
+        <button type="button" data-action="enable-all-setups">Auto ON pour tous les stocks</button>
+        <button class="secondary-button" type="button" data-action="disable-all-setups">Auto OFF pour tous les stocks</button>
+        <button class="secondary-button" type="button" data-action="show-setup-template">Generer squelette universel expert</button>
+      </div>
+      <div class="conversion-result" id="setup-tools-message" hidden></div>
+      <pre class="config-view compact setup-tools-output" id="setup-tools-output" hidden></pre>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="setup-create-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="setup-create-title">
+    <div class="modal-header">
+      <h2 id="setup-create-title">Nouveau setup</h2>
+      <button class="modal-close" type="button" data-modal-close aria-label="Fermer">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form class="tool-form swap-card" id="setup-form">
+        <div class="swap-panel">
+          <span class="swap-panel-label">Ticker</span>
+          <div class="swap-panel-row">
+            <input class="swap-input" name="symbol" required autocomplete="off" placeholder="AAPL">
+            <span class="swap-pill">Symbole</span>
+          </div>
+        </div>
+
+        <div class="swap-divider">
+          <button type="button" id="setup-preview-button" class="swap-convert" title="Convertir en setup" aria-label="Convertir en setup">&#8645;</button>
+        </div>
+
+        <div class="swap-panel">
+          <span class="swap-panel-label">Setup</span>
+          <textarea class="swap-input swap-textarea" name="text" rows="5" required placeholder="Colle ton setup en texte libre ou en JSON..."></textarea>
+        </div>
+
+        <button type="submit" class="swap-action">Sauver le setup</button>
+      </form>
+      <div class="swap-info conversion-result" id="setup-conversion-result" hidden></div>
+      <pre class="config-view compact" id="setup-preview" hidden></pre>
+    </div>
+  </div>
+</div>
 {% endblock %}

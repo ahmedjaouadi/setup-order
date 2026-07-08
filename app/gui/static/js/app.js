@@ -341,6 +341,10 @@ const STATUS_BADGE_LABELS = {
   MISSING_DEPENDENCY: "Missing dependency",
   MODEL_LOAD_FAILED: "Model load failed",
   MISMATCH: "Mismatch",
+  LOCAL_FALLBACK: "Local fallback",
+  LOCAL_HISTORY: "Local history",
+  LOCAL_ONLY: "Local only",
+  LOCAL_ORPHAN: "Local orphan",
   NO_CACHED_FORECAST: "No cached forecast",
   NO_BROKER_ORDER: "No broker order",
   NO_ENTRY_ORDER: "No entry order",
@@ -530,6 +534,10 @@ const STATUS_BADGE_PROFILES = {
   INVALIDATED: statusProfile(356, 82, 92, 26, 62, 72),
   LOADED: statusProfile(204, 54, 93, 28, 36, 76),
   LOAD_ERROR: statusProfile(0, 82, 92, 26, 62, 72),
+  LOCAL_FALLBACK: statusProfile(220, 18, 94, 30, 18, 80),
+  LOCAL_HISTORY: statusProfile(220, 18, 94, 30, 18, 80),
+  LOCAL_ONLY: statusProfile(220, 18, 94, 30, 18, 80),
+  LOCAL_ORPHAN: statusProfile(0, 78, 93, 28, 58, 76),
   MANAGING_POSITION: statusProfile(170, 64, 92, 24, 40, 74),
   MANUAL_REVIEW_REQUIRED: statusProfile(284, 66, 93, 28, 48, 76),
   MISSING_DEPENDENCY: statusProfile(30, 88, 92, 24, 64, 72),
@@ -919,6 +927,8 @@ function renderSnapshot(snapshot) {
   renderSetups(snapshot.setups || []);
   renderBrokerReality(snapshot.broker_reality || {});
   renderOrders(snapshot.orders || []);
+  renderOrderHistory(snapshot.order_history || []);
+  renderLocalOrderOrphans(snapshot.local_order_orphans || []);
   renderPositions(snapshot.positions || []);
   renderExecutions(snapshot.executions || []);
   renderEvents("dashboard-events", snapshot.events || []);
@@ -1105,6 +1115,7 @@ function renderMetrics(metrics) {
   setText("trading-book-open-positions", metrics.open_positions);
   setText("trading-book-open-orders", metrics.open_orders);
   setText("trading-book-prepared-orders", metrics.broker_prepared_not_transmitted_orders ?? 0);
+  setText("trading-book-local-orphans", metrics.local_order_orphans ?? 0);
   setText("trading-book-positions-pnl", maybeMoney(metrics.positions_pnl));
   setText("broker-reality-status", metrics.broker_tracker_status || "UNKNOWN");
   setText(
@@ -2505,21 +2516,62 @@ function brokerSyncLabel(row) {
 function renderOrders(orders) {
   const tbody = document.getElementById("orders-table");
   if (!tbody) return;
-  const allowInternalFill = ((latestSnapshot || {}).runtime || {}).broker_connector === "simulated";
-  const activeOrders = orders.filter((order) => orderIsBrokerActive(order));
+  const rows = Array.isArray(orders) ? orders : [];
+  const activeOrders = rows.filter((order) => orderIsBrokerActive(order));
+  const preparedOrders = rows.filter((order) => (
+    String(order.broker_order_status || order.broker_live_status || "") === "PREPARED_NOT_TRANSMITTED"
+  ));
   setText("orders-active-count", activeOrders.length);
-  setText("orders-history-count", Math.max(orders.length - activeOrders.length, 0));
-  const sorted = [...orders].sort((a, b) => {
+  setText("orders-prepared-count", preparedOrders.length);
+  const runtime = (latestSnapshot || {}).runtime || {};
+  const connection = String(runtime.connection || runtime.connection_label || "").toUpperCase();
+  const emptyText = connection === "DISCONNECTED" || connection === "ERROR"
+    ? "TWS deconnecte: ordres actifs non verifiables."
+    : "Aucun ordre actif TWS";
+  const sorted = [...rows].sort((a, b) => {
     const activeDelta = Number(orderIsBrokerActive(b)) - Number(orderIsBrokerActive(a));
     if (activeDelta !== 0) return activeDelta;
     return String(b.updated_at || "").localeCompare(String(a.updated_at || ""));
   });
-  tbody.innerHTML = sorted.map((order) => {
-    const detailId = `order-detail-${cssSafeId(order.id)}`;
+  tbody.innerHTML = renderOrderRows(sorted, {
+    detailPrefix: "order-detail",
+    emptyText,
+  });
+}
+
+function renderOrderHistory(orders) {
+  const tbody = document.getElementById("orders-history-table");
+  const rows = Array.isArray(orders) ? orders : [];
+  setText("orders-history-count", rows.length);
+  if (!tbody) return;
+  const sorted = [...rows].sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
+  tbody.innerHTML = renderOrderRows(sorted, {
+    detailPrefix: "order-history-detail",
+    emptyText: "Aucun historique local",
+    history: true,
+  });
+}
+
+function renderOrderRows(orders, options = {}) {
+  const rows = Array.isArray(orders) ? orders : [];
+  const history = Boolean(options.history);
+  const detailPrefix = options.detailPrefix || "order-detail";
+  const emptyText = options.emptyText || "Aucun ordre";
+  const allowInternalFill = !history && ((latestSnapshot || {}).runtime || {}).broker_connector === "simulated";
+  return rows.map((order) => {
+    const safeDetailId = `${detailPrefix}-${cssSafeId(order.id)}`;
+    const actionButtons = history
+      ? `${canDeleteOrder(order) ? `<button class="danger-small" type="button" data-action="delete-order" data-order="${escapeHtml(order.id)}" data-symbol="${escapeHtml(order.symbol)}">Suppr</button>` : ""}`
+      : `
+          ${allowInternalFill && order.status === "SUBMITTED" ? `<button type="button" data-action="fill" data-order="${escapeHtml(order.id)}">Test fill</button>` : ""}
+          ${canAttachMissingStop(order) ? `<button type="button" data-action="attach-stop" data-order="${escapeHtml(order.id)}" data-symbol="${escapeHtml(order.symbol)}">Attach SL</button>` : ""}
+          ${orderIsBrokerActive(order) || order.status === "SUBMITTED" ? `<button class="danger-small" type="button" data-action="cancel-order" data-order="${escapeHtml(order.id)}">Cancel</button>` : ""}
+          ${canDeleteOrder(order) ? `<button class="danger-small" type="button" data-action="delete-order" data-order="${escapeHtml(order.id)}" data-symbol="${escapeHtml(order.symbol)}">Suppr</button>` : ""}
+        `;
     return `
     <tr>
       <td>
-        <button type="button" class="link-like" data-action="toggle-order-detail" data-target="${detailId}" title="Voir le detail">+</button>
+        <button type="button" class="link-like" data-action="toggle-order-detail" data-target="${safeDetailId}" title="Voir le detail">+</button>
       </td>
       <td>${escapeHtml(order.symbol)}</td>
       <td>${escapeHtml(order.side)}</td>
@@ -2531,14 +2583,11 @@ function renderOrders(orders) {
       <td>${escapeHtml(order.setup_id)}</td>
       <td>
         <div class="row-actions">
-          ${allowInternalFill && order.status === "SUBMITTED" ? `<button type="button" data-action="fill" data-order="${escapeHtml(order.id)}">Test fill</button>` : ""}
-          ${canAttachMissingStop(order) ? `<button type="button" data-action="attach-stop" data-order="${escapeHtml(order.id)}" data-symbol="${escapeHtml(order.symbol)}">Attach SL</button>` : ""}
-          ${orderIsBrokerActive(order) || order.status === "SUBMITTED" ? `<button class="danger-small" type="button" data-action="cancel-order" data-order="${escapeHtml(order.id)}">Cancel</button>` : ""}
-          ${canDeleteOrder(order) ? `<button class="danger-small" type="button" data-action="delete-order" data-order="${escapeHtml(order.id)}" data-symbol="${escapeHtml(order.symbol)}">Suppr</button>` : ""}
+          ${actionButtons}
         </div>
       </td>
     </tr>
-    <tr id="${detailId}" class="order-detail-row" hidden>
+    <tr id="${safeDetailId}" class="order-detail-row" hidden>
       <td colspan="10">
         <div class="order-detail">
           <span><strong>ID local:</strong> ${escapeHtml(order.id)}</span>
@@ -2554,7 +2603,26 @@ function renderOrders(orders) {
       </td>
     </tr>
   `;
-  }).join("") || emptyRow(10, "Aucun ordre");
+  }).join("") || emptyRow(10, emptyText);
+}
+
+function renderLocalOrderOrphans(orders) {
+  const tbody = document.getElementById("local-order-orphans-table");
+  setText("local-order-orphans-count", Array.isArray(orders) ? orders.length : 0);
+  if (!tbody) return;
+  const rows = Array.isArray(orders) ? orders : [];
+  tbody.innerHTML = rows.map((order) => `
+    <tr>
+      <td>${escapeHtml(order.symbol || "")}</td>
+      <td>${escapeHtml(order.side || "")}</td>
+      <td>${escapeHtml(order.order_type || "")}</td>
+      <td>${escapeHtml(order.quantity ?? "")}</td>
+      <td>${escapeHtml(describeOrderPrice(order))}</td>
+      <td>${statusBadge(order.status || "-")}</td>
+      <td>${statusBadge(order.broker_order_status || "LOCAL_ORPHAN")}</td>
+      <td>${escapeHtml(describeOrderDiagnostic(order))}</td>
+    </tr>
+  `).join("") || emptyRow(8, "Aucune intention locale orpheline");
 }
 
 function cssSafeId(value) {
@@ -3087,6 +3155,48 @@ function wireTwsAuditForm() {
     } catch (error) {
       toast(error.message);
     }
+  });
+}
+
+function openModal(modal) {
+  if (!modal) return;
+  modal.hidden = false;
+  document.body.classList.add("modal-open");
+  const focusable = modal.querySelector(
+    "input, textarea, select, button:not([data-modal-close])",
+  );
+  if (focusable) focusable.focus();
+}
+
+function closeModal(modal) {
+  if (!modal || modal.hidden) return;
+  modal.hidden = true;
+  if (!document.querySelector(".modal-overlay:not([hidden])")) {
+    document.body.classList.remove("modal-open");
+  }
+}
+
+function wireModals() {
+  document.body.addEventListener("click", (event) => {
+    const opener = event.target.closest("[data-modal-open]");
+    if (opener) {
+      openModal(document.getElementById(opener.dataset.modalOpen));
+      return;
+    }
+    const closer = event.target.closest("[data-modal-close]");
+    if (closer) {
+      closeModal(closer.closest(".modal-overlay"));
+      return;
+    }
+    // Click on the backdrop itself (outside the .modal) closes it.
+    if (event.target.classList.contains("modal-overlay")) {
+      closeModal(event.target);
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    const open = document.querySelector(".modal-overlay:not([hidden])");
+    if (open) closeModal(open);
   });
 }
 
@@ -8238,6 +8348,7 @@ async function init() {
   wireBrokerAccountForm();
   wireTwsAuditForm();
   wireSetupForm();
+  wireModals();
   wireActionButtons();
   wireManualOrderForm();
   wireSetupConfigEditor();

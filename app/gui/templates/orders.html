@@ -21,6 +21,10 @@
     <span>Ordres prepares</span>
     <strong id="trading-book-prepared-orders">0</strong>
   </article>
+  <article class="trading-book-stat">
+    <span>Orphelins locaux</span>
+    <strong id="trading-book-local-orphans">0</strong>
+  </article>
   <article class="trading-book-stat wide">
     <span>PnL latent positions</span>
     <strong id="trading-book-positions-pnl">0.00</strong>
@@ -46,20 +50,31 @@
       <p class="panel-subtitle">Memes protections que les ordres de setup : guards systeme, limites de risque, stop obligatoire a l'achat.</p>
     </div>
   </div>
-  <form id="manual-order-form" class="manual-order-form" autocomplete="off">
-    <label>Symbole
-      <input type="text" id="manual-symbol" maxlength="12" required placeholder="LUNR" />
+  <form id="manual-order-form" class="manual-order-form manual-order-dex" data-ui-variant="dex-swap" autocomplete="off">
+    <!-- Rollback UI: remove the manual-order-dex class to restore the classic compact form. -->
+    <label class="manual-order-field manual-order-field-symbol">
+      <span class="manual-order-field-label">Instrument</span>
+      <span class="manual-order-input-shell">
+        <input type="text" id="manual-symbol" maxlength="12" required placeholder="LUNR" />
+        <span class="manual-order-pill">Ticker</span>
+      </span>
     </label>
-    <label>Side
+    <label class="manual-order-field manual-order-field-quantity">
+      <span class="manual-order-field-label">Qty</span>
+      <span class="manual-order-input-shell">
+        <input type="number" id="manual-quantity" min="1" step="1" required />
+        <span class="manual-order-pill">Titres</span>
+      </span>
+    </label>
+    <label class="manual-order-field manual-order-field-side">
+      <span class="manual-order-field-label">Side</span>
       <select id="manual-side">
         <option value="BUY">BUY</option>
         <option value="SELL">SELL</option>
       </select>
     </label>
-    <label>Qty
-      <input type="number" id="manual-quantity" min="1" step="1" required />
-    </label>
-    <label>Type
+    <label class="manual-order-field manual-order-field-type">
+      <span class="manual-order-field-label">Type</span>
       <select id="manual-order-type">
         <option value="LMT">LMT</option>
         <option value="MKT">MKT</option>
@@ -67,16 +82,19 @@
         <option value="STP_LMT">STP LMT</option>
       </select>
     </label>
-    <label>Limite
+    <label class="manual-order-field manual-order-field-limit">
+      <span class="manual-order-field-label">Limite</span>
       <input type="number" id="manual-limit" min="0.01" step="0.01" placeholder="-" />
     </label>
-    <label>Trigger
+    <label class="manual-order-field manual-order-field-trigger">
+      <span class="manual-order-field-label">Trigger</span>
       <input type="number" id="manual-trigger" min="0.01" step="0.01" placeholder="-" />
     </label>
-    <label>Stop (SL)
-      <input type="number" id="manual-stop" min="0.01" step="0.01" placeholder="obligatoire en BUY" />
+    <label class="manual-order-field manual-order-field-stop">
+      <span class="manual-order-field-label">Stop (SL)</span>
+      <input type="number" id="manual-stop" min="0.01" step="0.01" placeholder="requis BUY" />
     </label>
-    <div class="manual-order-buttons">
+    <div class="manual-order-buttons manual-order-dex-actions">
       <button type="button" id="manual-preview-button">Calculer le risque</button>
       <button type="submit" id="manual-submit-button" disabled>Transmettre</button>
     </div>
@@ -114,9 +132,9 @@
 <section class="panel">
   <div class="panel-heading">
     <div>
-      <h2>Ordres</h2>
-      <p class="panel-subtitle">Etat TWS en premier : une ligne marquee LOCAL n'a pas d'ordre correspondant chez le broker.</p>
-      <p class="panel-subtitle">Actifs: <strong id="orders-active-count">0</strong> | Historique: <strong id="orders-history-count">0</strong></p>
+      <h2>Ordres TWS</h2>
+      <p class="panel-subtitle">Uniquement les ordres verifies chez TWS. Les lignes locales sont separees de cette vue.</p>
+      <p class="panel-subtitle">Actifs TWS: <strong id="orders-active-count">0</strong> | Prepares: <strong id="orders-prepared-count">0</strong></p>
     </div>
   </div>
   <div class="table-wrap">
@@ -140,6 +158,35 @@
   </div>
 </section>
 
+<section class="panel order-history-panel">
+  <details id="order-history-details">
+    <summary>
+      <span>Historique local</span>
+      <strong id="orders-history-count">0</strong>
+    </summary>
+    <p class="panel-subtitle">Ordres locaux remplis, annules, rejetes ou non verifiables pendant une deconnexion TWS.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th></th>
+            <th>Symbole</th>
+            <th>Side</th>
+            <th>Type</th>
+            <th>Qty</th>
+            <th>Prix</th>
+            <th>Stop</th>
+            <th>Statut</th>
+            <th>Setup</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="orders-history-table"></tbody>
+      </table>
+    </div>
+  </details>
+</section>
+
 <section class="panel">
   <div class="panel-heading">
     <div>
@@ -160,6 +207,33 @@
         </tr>
       </thead>
       <tbody id="executions-table"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Intentions locales orphelines</h2>
+      <p class="panel-subtitle">Historique local actif sans ordre correspondant chez TWS. Ces lignes ne comptent pas comme ordres broker actifs.</p>
+      <p class="panel-subtitle">Orphelins: <strong id="local-order-orphans-count">0</strong></p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Symbole</th>
+          <th>Side</th>
+          <th>Type</th>
+          <th>Qty</th>
+          <th>Prix</th>
+          <th>Statut local</th>
+          <th>Broker</th>
+          <th>Diagnostic</th>
+        </tr>
+      </thead>
+      <tbody id="local-order-orphans-table"></tbody>
     </table>
   </div>
 </section>

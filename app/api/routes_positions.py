@@ -4,7 +4,11 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from app.engine.broker_reality import REPORT_STATE_KEY, positions_broker_truth_overlay
+from app.engine.broker_reality import (
+    REPORT_STATE_KEY,
+    freshen_broker_reality_report,
+    positions_broker_truth_overlay,
+)
 
 router = APIRouter()
 
@@ -22,7 +26,11 @@ async def positions_page(request: Request):
 async def list_positions(request: Request):
     repository = request.app.state.repository
     positions = repository.list_positions()
-    report = repository.get_bot_state(REPORT_STATE_KEY, {})
+    settings = getattr(request.app.state, "settings", None)
+    report = freshen_broker_reality_report(
+        repository.get_bot_state(REPORT_STATE_KEY, {}),
+        settings=getattr(settings, "raw", None),
+    )
     return {"items": positions_broker_truth_overlay(positions, report)}
 
 

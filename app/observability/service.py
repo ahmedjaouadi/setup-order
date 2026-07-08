@@ -45,8 +45,8 @@ class ObservabilityService:
             "setup_evaluations_per_minute": metrics.get("setup_evaluations_per_minute", 0),
             "scanner_runs_per_minute": metrics.get("scanner_runs_per_minute", 0),
             "forecast_runs_per_hour": metrics.get("forecast_runs_per_hour", 0),
-            "blocked_entries_count": len(
-                self.repository.list_events(event_type="entry_signal_blocked", limit=1000)
+            "blocked_entries_count": self.repository.count_events(
+                event_type="entry_signal_blocked"
             ),
             "manual_review_count": len(
                 [

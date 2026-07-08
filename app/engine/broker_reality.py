@@ -964,12 +964,25 @@ def _channel_blocking_reasons(channels: dict[str, Any] | None) -> list[str]:
     return reasons
 
 
+def _report_reflects_live_broker(report: dict[str, Any]) -> bool:
+    """A persisted report only counts as broker truth while it is fresh.
+
+    A report written during a previous session keeps broker_connected=True;
+    without this gate stale rows would be labelled broker-verified while TWS
+    is actually unreachable.
+    """
+    if not bool(report.get("broker_connected")):
+        return False
+    status = str(report.get("broker_tracker_status") or "")
+    return status in {"", "OK"}
+
+
 def orders_broker_truth_overlay(
     orders: list[dict[str, Any]],
     report: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
     report = report if isinstance(report, dict) else {}
-    broker_connected = bool(report.get("broker_connected"))
+    broker_connected = _report_reflects_live_broker(report)
     rows_by_setup = {
         str(row.get("setup_id") or ""): row
         for row in report.get("rows", []) or []
@@ -1005,7 +1018,7 @@ def positions_broker_truth_overlay(
     report: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
     report = report if isinstance(report, dict) else {}
-    broker_connected = bool(report.get("broker_connected"))
+    broker_connected = _report_reflects_live_broker(report)
     rows_by_symbol: dict[str, dict[str, Any]] = {}
     for row in report.get("rows", []) or []:
         symbol = str(row.get("symbol") or "").upper() if isinstance(row, dict) else ""

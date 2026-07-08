@@ -628,6 +628,7 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_events_setup_id ON events(setup_id);
                 CREATE INDEX IF NOT EXISTS idx_events_symbol ON events(symbol);
                 CREATE INDEX IF NOT EXISTS idx_events_level ON events(level);
+                CREATE INDEX IF NOT EXISTS idx_events_event_type ON events(event_type, id);
                 CREATE INDEX IF NOT EXISTS idx_corporate_dividends_symbol ON corporate_dividends(symbol);
                 CREATE INDEX IF NOT EXISTS idx_corporate_earnings_symbol ON corporate_earnings(symbol);
                 CREATE INDEX IF NOT EXISTS idx_economic_events_date ON economic_events(event_date);

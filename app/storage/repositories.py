@@ -918,6 +918,33 @@ class TradingRepository:
         rows = self.database.execute(query, params).fetchall()
         return [_row_to_dict(row) for row in rows]
 
+    def count_events(
+        self,
+        setup_id: str | None = None,
+        symbol: str | None = None,
+        level: str | None = None,
+        event_type: str | None = None,
+    ) -> int:
+        query = "SELECT COUNT(*) FROM events"
+        clauses = []
+        params: list[Any] = []
+        if setup_id:
+            clauses.append("setup_id = ?")
+            params.append(setup_id)
+        if symbol:
+            clauses.append("symbol = ?")
+            params.append(symbol.upper())
+        if level:
+            clauses.append("level = ?")
+            params.append(level.upper())
+        if event_type:
+            clauses.append("event_type = ?")
+            params.append(event_type)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        row = self.database.execute(query, params).fetchone()
+        return int(row[0]) if row else 0
+
     def list_runtime_events(
         self,
         limit: int = 100,

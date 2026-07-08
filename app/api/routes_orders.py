@@ -6,7 +6,11 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from app.engine.broker_reality import REPORT_STATE_KEY, orders_broker_truth_overlay
+from app.engine.broker_reality import (
+    REPORT_STATE_KEY,
+    freshen_broker_reality_report,
+    orders_broker_truth_overlay,
+)
 from app.models import EventLevel
 
 router = APIRouter()
@@ -38,7 +42,11 @@ async def orders_page(request: Request):
 async def list_orders(request: Request):
     repository = request.app.state.repository
     orders = repository.list_orders_with_protection()
-    report = repository.get_bot_state(REPORT_STATE_KEY, {})
+    settings = getattr(request.app.state, "settings", None)
+    report = freshen_broker_reality_report(
+        repository.get_bot_state(REPORT_STATE_KEY, {}),
+        settings=getattr(settings, "raw", None),
+    )
     return {"items": orders_broker_truth_overlay(orders, report)}
 
 

@@ -981,12 +981,15 @@ class IbAsyncTwsConnector(BrokerConnector):
     async def open_orders(self) -> list[BrokerOrderRequest]:
         if await self.status() != ConnectionStatus.CONNECTED or self._ib is None:
             return []
+        # reqAllOpenOrders includes orders entered manually in TWS (other
+        # client ids); reqOpenOrders only returns this API client's orders.
+        refresh = getattr(self._ib, "reqAllOpenOrdersAsync", None) or self._ib.reqOpenOrdersAsync
         refresh_started = self._record_tws_request_sent(
-            "reqOpenOrdersAsync",
+            getattr(refresh, "__name__", "reqAllOpenOrdersAsync"),
             "refresh open orders",
         )
         try:
-            await asyncio.wait_for(self._ib.reqOpenOrdersAsync(), timeout=2.0)
+            await asyncio.wait_for(refresh(), timeout=2.0)
         except Exception as exc:
             self._record_tws_request_result(refresh_started, "ERROR", _error_text(exc))
         else:
@@ -1003,22 +1006,36 @@ class IbAsyncTwsConnector(BrokerConnector):
             contract = trade.contract
             order = trade.order
             raw_status = str(getattr(trade.orderStatus, "status", "") or "")
-            broker_order_id = str(getattr(order, "orderId", "") or "")
+            # Orders entered manually in TWS come back with orderId 0; only
+            # permId identifies them reliably.
+            raw_order_id = str(getattr(order, "orderId", "") or "")
+            broker_order_id = raw_order_id if raw_order_id not in {"", "0"} else ""
             broker_perm_id = str(getattr(order, "permId", "") or "") or None
             status = _tws_order_status_to_order_status(raw_status)
             filled_quantity = _float_or_none(getattr(trade.orderStatus, "filled", None))
             remaining_quantity = _float_or_none(getattr(trade.orderStatus, "remaining", None))
+            order_type = _normalize_order_type(str(getattr(order, "orderType", "")))
+            # auxPrice is the stop trigger only for stop-type orders; for a
+            # plain LMT/MKT order the field is an UNSET sentinel, not a stop.
+            aux_price = _ib_price_or_none(getattr(order, "auxPrice", None))
+            is_stop_type = order_type in {"STP", "STP_LMT"} or order_type.startswith("TRAIL")
+            if order_type.startswith("TRAIL"):
+                # For trailing stops auxPrice is the trailing amount; the
+                # actual trigger lives in trailStopPrice.
+                stop_price = _ib_price_or_none(getattr(order, "trailStopPrice", None))
+            else:
+                stop_price = aux_price if is_stop_type else None
             requests.append(
                 BrokerOrderRequest(
-                    client_order_id=broker_order_id,
+                    client_order_id=broker_order_id or broker_perm_id or "",
                     setup_id="broker",
                     symbol=str(getattr(contract, "symbol", "")),
                     side=str(getattr(order, "action", "")),
-                    order_type=_normalize_order_type(str(getattr(order, "orderType", ""))),
+                    order_type=order_type,
                     quantity=int(abs(float(getattr(order, "totalQuantity", 0) or 0))),
-                    trigger_price=_float_or_none(getattr(order, "auxPrice", None)),
-                    limit_price=_float_or_none(getattr(order, "lmtPrice", None)),
-                    stop_price=_float_or_none(getattr(order, "auxPrice", None)),
+                    trigger_price=aux_price if is_stop_type else None,
+                    limit_price=_ib_price_or_none(getattr(order, "lmtPrice", None)),
+                    stop_price=stop_price,
                     parent_id=str(getattr(order, "parentId", "") or "") or None,
                     oca_group=str(getattr(order, "ocaGroup", "") or "") or None,
                     transmit=bool(getattr(order, "transmit", True)),
@@ -1063,22 +1080,25 @@ class IbAsyncTwsConnector(BrokerConnector):
     async def recent_executions(self) -> list[BrokerExecution]:
         if await self.status() != ConnectionStatus.CONNECTED or self._ib is None:
             return []
-        started = self._record_tws_request_sent("executions", "session cache")
+        # ib.fills() pairs each execution with its contract; ib.executions()
+        # returns bare Execution objects without symbol information.
+        started = self._record_tws_request_sent("fills", "session cache")
         try:
-            executions = list(self._ib.executions())
+            fills = list(self._ib.fills())
         except Exception as exc:
             self._record_tws_request_result(started, "ERROR", _error_text(exc))
             return []
-        self._record_tws_request_result(started, "OK", extra={"count": len(executions)})
+        self._record_tws_request_result(started, "OK", extra={"count": len(fills)})
         rows: list[BrokerExecution] = []
-        for execution in executions:
-            contract = getattr(execution, "contract", None)
-            exec_detail = getattr(execution, "execution", execution)
+        for fill in fills:
+            contract = getattr(fill, "contract", None)
+            exec_detail = getattr(fill, "execution", fill)
+            side = str(getattr(exec_detail, "side", "") or "").upper()
             rows.append(
                 BrokerExecution(
                     execution_id=str(getattr(exec_detail, "execId", "") or ""),
                     symbol=str(getattr(contract, "symbol", "") or ""),
-                    side=str(getattr(exec_detail, "side", "") or ""),
+                    side={"BOT": "BUY", "SLD": "SELL"}.get(side, side),
                     quantity=float(getattr(exec_detail, "shares", 0) or 0),
                     price=float(getattr(exec_detail, "price", 0) or 0),
                     order_id=str(getattr(exec_detail, "orderId", "") or "") or None,
@@ -2076,6 +2096,19 @@ def _float_or_none(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+# The IB API reports unset price fields as UNSET_DOUBLE (max float), not None.
+_IB_UNSET_PRICE_THRESHOLD = 1.7e308
+
+
+def _ib_price_or_none(value: Any) -> float | None:
+    number = _float_or_none(value)
+    if number is None:
+        return None
+    if not math.isfinite(number) or abs(number) >= _IB_UNSET_PRICE_THRESHOLD:
+        return None
+    return number
 
 
 def _number_or_none(value: Any) -> float | None:
