@@ -26,6 +26,13 @@ class Database:
             self._connection.row_factory = sqlite3.Row
             self._connection.execute("PRAGMA foreign_keys = ON")
             self._connection.execute("PRAGMA journal_mode = WAL")
+            # WAL only isolates readers from the writer; two writers still
+            # collide. Without a busy_timeout a colliding writer fails
+            # immediately with "database is locked" instead of waiting, which
+            # froze the engine heartbeat when several instances shared this
+            # file (2026-07-08 incident). This is a mitigation: the cure is a
+            # single writer per database, enforced by the instance lock.
+            self._connection.execute("PRAGMA busy_timeout = 5000")
         return self._connection
 
     def initialize(self) -> None:

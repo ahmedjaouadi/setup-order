@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.models import EventLevel, EventRecord, to_jsonable, utc_now_iso
 from app.storage.repositories import TradingRepository
 from app.utils.id_generator import new_id
 
+logger = logging.getLogger(__name__)
+
 
 class EventStore:
     def __init__(self, repository: TradingRepository) -> None:
         self.repository = repository
+        self.failed_writes = 0
 
     def record(
         self,
@@ -20,17 +24,36 @@ class EventStore:
         symbol: str | None = None,
         data: dict | None = None,
     ) -> None:
-        self.repository.add_event(
-            EventRecord(
-                timestamp=utc_now_iso(),
-                level=level.value,
-                event_type=event_type,
-                setup_id=setup_id,
-                symbol=symbol,
-                message=message,
-                data=to_jsonable(data or {}),
+        """Record a telemetry event; never raises.
+
+        Events are an observability sink: no caller wants a failed event write
+        to abort the flow being observed. A raising write here froze the engine
+        heartbeat when "database is locked" propagated out of the stock-poll
+        timeout handler (2026-07-08 incident). Failures are logged to app.log
+        (which does not share the SQLite lock) and counted in failed_writes.
+        Safety decisions must never depend on an event row existing; they are
+        enforced through bot_state (see _persist_engine_safety_block).
+        """
+        try:
+            self.repository.add_event(
+                EventRecord(
+                    timestamp=utc_now_iso(),
+                    level=level.value,
+                    event_type=event_type,
+                    setup_id=setup_id,
+                    symbol=symbol,
+                    message=message,
+                    data=to_jsonable(data or {}),
+                )
             )
-        )
+        except Exception:
+            self.failed_writes += 1
+            logger.exception(
+                "Event write failed (%s total); event dropped: %s %s",
+                self.failed_writes,
+                event_type,
+                message,
+            )
 
     def record_runtime(
         self,
