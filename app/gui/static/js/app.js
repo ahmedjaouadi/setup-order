@@ -3253,6 +3253,13 @@ function wireModals() {
 function wireSetupForm() {
   const form = document.getElementById("setup-form");
   if (!form) return;
+  const textField = form.elements.text;
+  if (textField) {
+    // Keep Ticker filled as the user pastes/types the setup JSON, otherwise
+    // the "symbol" field's native `required` validation blocks the submit
+    // event (and our JS sync in it) before it ever runs.
+    textField.addEventListener("input", () => syncTickerFieldFromSetupText(form));
+  }
   const previewButton = document.getElementById("setup-preview-button");
   if (previewButton) {
     previewButton.addEventListener("click", async () => {
@@ -5576,13 +5583,38 @@ function renderSetupDetailJsonOutput(forceShow = false) {
 function wireSetupDetailJsonButton() {
   onClick("setup-detail-json-button", async () => {
     try {
-      await renderSetupDetail();
-      renderSetupDetailJsonOutput(true);
-      toast("Infos detaillees chargees en JSON");
+      // navigator.clipboard writes (and their execCommand fallback) only work
+      // within the brief user-gesture window. renderSetupDetail() below makes
+      // several sequential API calls and can easily outlast that window, so a
+      // write issued only after awaiting it can silently become a no-op.
+      // ClipboardItem accepts a Blob *promise*, which keeps the write tied to
+      // this click's activation even though the data resolves later.
+      const infoPromise = (async () => {
+        await renderSetupDetail();
+        renderSetupDetailJsonOutput(true);
+        return currentSetupDetailInfo;
+      })();
+      const copied = await copySetupDetailInfoToClipboard(infoPromise);
+      toast(copied ? "Infos detaillees copiees dans le presse-papiers" : "Infos detaillees chargees en JSON");
     } catch (error) {
       toast(error.message);
     }
   });
+}
+
+async function copySetupDetailInfoToClipboard(infoPromise) {
+  try {
+    if (navigator.clipboard && window.isSecureContext && window.ClipboardItem) {
+      const blobPromise = infoPromise.then(
+        (info) => new Blob([JSON.stringify(info, null, 2)], { type: "text/plain" }),
+      );
+      await navigator.clipboard.write([new ClipboardItem({ "text/plain": blobPromise })]);
+      return true;
+    }
+  } catch (error) {
+    // Fall back to the legacy copy path below once the data resolves.
+  }
+  return copySetupTemplateToClipboard(await infoPromise);
 }
 
 function wireSetupIntelligencePanel() {
