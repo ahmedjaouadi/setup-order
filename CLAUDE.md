@@ -47,7 +47,7 @@ run.py / start.bat      # Lanceurs (port auto à partir de 8000)
 | Détail d'un setup (rendu) | `app.js` (provisoire) | `renderSetupDetail`, `renderSetupDetailSummary`, `buildSetupDetailInfo`, `wireSetupDetailJsonButton` |
 | Copie presse-papiers | `app.js` (provisoire) | `copySetupTemplateToClipboard`, `copySetupDetailInfoToClipboard`, `fallbackCopyTextToClipboard` |
 | Appels API frontend | `app.js` (provisoire) | `api`, `optionalApi`, `connectWebSocket` |
-| Helpers UI / toast | `app.js` (provisoire) | `toast`, `onClick`, `setText`, `escapeHtml`, `money`, `openModal`/`closeModal` |
+| Helpers UI / toast | `app/gui/static/js/ui-helpers.js` | `toast`, `onClick`, `setText`, `escapeHtml`, `money`, `openModal`/`closeModal`, badges de statut |
 | Liste des setups | `app.js` (provisoire) | `renderSetups`, `filterSetups`, `renderSetupsColumnControls`, `armSetupById`/`disarmSetupById` |
 | Graphique setup (canvas) | `app.js` (provisoire) | `drawSetupChart`, `renderSetupChart`, `wireSetupChartInteractions`, `drawTimesfmForecastChart` |
 | Ordres / positions / exécutions (UI) | `app.js` (provisoire) | `renderOrders`, `renderPositions`, `renderExecutions`, `wireManualOrderForm` |
