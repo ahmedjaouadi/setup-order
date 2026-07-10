@@ -53,7 +53,7 @@ run.py / start.bat      # Lanceurs (port auto à partir de 8000)
 | Ordres / positions / exécutions (UI) | `app.js` (provisoire) | `renderOrders`, `renderPositions`, `renderExecutions`, `wireManualOrderForm` |
 | Dashboard / métriques (UI) | `app.js` (provisoire) | `renderDashboard`, `renderMetrics`, `renderEngineHealth`, `initDashboardPremium` |
 | Intelligence setup (UI) | `app.js` (provisoire) | `renderSetupIntelligencePanel`, `fetchSetupIntelligence`, `renderSetupIntelligenceComparison` |
-| État global frontend | `app.js` (provisoire, lignes 1–40) | `latestSnapshot`, `currentSetupDetailInfo`, `setupChartState`, `marketContextState`... |
+| État global frontend partagé | `app/gui/static/js/state.js` | `latestSnapshot`, `currentSetupDetailInfo`... (lecture = import du binding, écriture = `setX(...)`) |
 | Routes API setups | `app/api/routes_setups.py` | save/arm/disarm/preview, shortlist niveaux |
 | Routes plateforme (runtime, ordres, métriques) | `app/api/routes_platform.py` | snapshot, orders, positions, metrics, events |
 | Pages HTML | `app/api/routes_v2_pages.py` + `app/gui/templates/` | une route par template |

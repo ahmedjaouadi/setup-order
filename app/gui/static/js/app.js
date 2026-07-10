@@ -1,13 +1,38 @@
+import {
+  latestSnapshot,
+  currentSetupConfig,
+  currentSetupDetailInfo,
+  currentSetupIntelligence,
+  currentSetupIntelligenceSelectedId,
+  currentSetupIntelligenceComparison,
+  currentSetupArmStatus,
+  setupConfigFormDirty,
+  setupConfigEditorDirty,
+  currentSetupDetailSetup,
+  currentSetupSymbolEvents,
+  forecastWatchlistBySymbol,
+  setupChartTimeframe,
+  setupChartDataMessage,
+  setupChartDataMeta,
+  SETUP_CHART_DEFAULT_TIMEFRAME,
+  setLatestSnapshot,
+  setCurrentSetupConfig,
+  setCurrentSetupDetailInfo,
+  setCurrentSetupIntelligence,
+  setCurrentSetupIntelligenceSelectedId,
+  setCurrentSetupIntelligenceComparison,
+  setCurrentSetupArmStatus,
+  setSetupConfigFormDirty,
+  setSetupConfigEditorDirty,
+  setCurrentSetupDetailSetup,
+  setCurrentSetupSymbolEvents,
+  setForecastWatchlistBySymbol,
+  setSetupChartTimeframe,
+  setSetupChartDataMessage,
+  setSetupChartDataMeta,
+} from "./state.js";
+
 const page = document.body.dataset.page;
-let latestSnapshot = null;
-let currentSetupConfig = null;
-let currentSetupDetailInfo = null;
-let currentSetupIntelligence = null;
-let currentSetupIntelligenceSelectedId = null;
-let currentSetupIntelligenceComparison = null;
-let currentSetupArmStatus = null;
-let setupConfigFormDirty = false;
-let setupConfigEditorDirty = false;
 let setupChartState = null;
 let setupChartResizeTimer = null;
 let setupChartInteractionsWired = false;
@@ -15,15 +40,11 @@ let marketContextState = { view: "WATCHLIST", heatmap: null, selectedSymbol: "" 
 let marketContextRefreshTimer = null;
 let appAutoRefreshTimer = null;
 let appAutoRefreshInFlight = false;
-let currentSetupDetailSetup = null;
-let currentSetupSymbolEvents = [];
-let forecastWatchlistBySymbol = {};
 
 const APP_AUTO_REFRESH_INTERVAL_MS = 30000;
 const SETUP_CHART_MIN_VISIBLE_CANDLES = 10;
 const SETUP_CHART_INITIAL_VISIBLE_CANDLES = 60;
 const SETUP_CHART_MAX_SOURCE_CANDLES = 180;
-const SETUP_CHART_DEFAULT_TIMEFRAME = "1d";
 const SETUP_INTELLIGENCE_HISTORY_PAGE_SIZE = 8;
 const SETUP_CHART_TIMEFRAMES = [
   { id: "3m", label: "3mn" },
@@ -34,9 +55,6 @@ const SETUP_CHART_TIMEFRAMES = [
   { id: "4h", label: "4h" },
   { id: "1d", label: "1D" },
 ];
-let setupChartTimeframe = SETUP_CHART_DEFAULT_TIMEFRAME;
-let setupChartDataMessage = "";
-let setupChartDataMeta = {};
 
 const CONFIG_FIELD_OPTIONS = {
   direction: ["long", "short"],
@@ -918,7 +936,7 @@ function fallbackCopyTextToClipboard(text) {
 }
 
 function renderSnapshot(snapshot) {
-  latestSnapshot = snapshot;
+  setLatestSnapshot(snapshot);
   renderRuntime(snapshot.runtime || {});
   renderEngineHealth(snapshot.health || {});
   renderMetrics(snapshot.metrics || {});
@@ -3036,12 +3054,12 @@ async function refreshForecastWatchlist() {
   if (!tbody) return;
   try {
     const rows = await api("/api/forecast/watchlist");
-    forecastWatchlistBySymbol = Object.fromEntries(
+    setForecastWatchlistBySymbol(Object.fromEntries(
       (Array.isArray(rows) ? rows : []).map((item) => [String(item.symbol || "").toUpperCase(), item]),
-    );
+    ));
     renderSetups((latestSnapshot || {}).setups || []);
   } catch (error) {
-    forecastWatchlistBySymbol = {};
+    setForecastWatchlistBySymbol({});
   }
 }
 
@@ -3560,7 +3578,7 @@ function wireActionButtons() {
           },
         );
         if (result && result.resolution_analysis) {
-          currentSetupIntelligenceSelectedId = result.resolution_analysis.analysis_id || null;
+          setCurrentSetupIntelligenceSelectedId(result.resolution_analysis.analysis_id || null);
         }
         showSetupIntelligenceMessage(
           result && result.resolution_analysis
@@ -3573,8 +3591,8 @@ function wireActionButtons() {
       }
       if (action === "view-intelligence-analysis") {
         const analysisId = button.dataset.analysis || null;
-        currentSetupIntelligenceSelectedId = analysisId;
-        currentSetupIntelligenceComparison = null;
+        setCurrentSetupIntelligenceSelectedId(analysisId);
+        setCurrentSetupIntelligenceComparison(null);
         if (analysisId) await ensureSetupIntelligenceAnalysisLoaded(analysisId);
         renderSetupIntelligencePanel(currentSetupIntelligence);
         syncCurrentSetupDetailIntelligence();
@@ -3598,7 +3616,7 @@ function wireActionButtons() {
           );
           return;
         }
-        currentSetupIntelligenceComparison = await api(
+        setCurrentSetupIntelligenceComparison(await api(
           `/api/intelligence/setups/${encodeURIComponent(setupId)}/compare`,
           {
             method: "POST",
@@ -3607,14 +3625,14 @@ function wireActionButtons() {
               right_analysis_id: rightAnalysisId,
             },
           },
-        );
+        ));
         showSetupIntelligenceMessage("Comparaison chargee.", "success");
         renderSetupIntelligencePanel(currentSetupIntelligence);
         syncCurrentSetupDetailIntelligence();
         renderSetupDetailJsonOutput();
       }
       if (action === "clear-intelligence-comparison") {
-        currentSetupIntelligenceComparison = null;
+        setCurrentSetupIntelligenceComparison(null);
         renderSetupIntelligencePanel(currentSetupIntelligence);
         syncCurrentSetupDetailIntelligence();
         renderSetupDetailJsonOutput();
@@ -3634,10 +3652,10 @@ function wireActionButtons() {
             body: { analysis_id: analysisId },
           },
         );
-        currentSetupIntelligenceComparison = null;
-        currentSetupIntelligenceSelectedId = result.rollback_analysis
+        setCurrentSetupIntelligenceComparison(null);
+        setCurrentSetupIntelligenceSelectedId(result.rollback_analysis
           ? (result.rollback_analysis.analysis_id || null)
-          : null;
+          : null);
         showSetupIntelligenceMessage(
           result.history_persisted
             ? "Revision restauree et historisee."
@@ -3681,36 +3699,36 @@ async function fetchSetupSymbolEvents(symbol) {
 }
 
 async function fetchSetupChartQuotes(symbol, timeframe, fallbackEvents) {
-  setupChartDataMessage = "";
-  setupChartDataMeta = {};
+  setSetupChartDataMessage("");
+  setSetupChartDataMeta({});
   const normalized = normalizeSetupChartTimeframe(timeframe);
   const fallbackQuotes = extractQuoteEvents(fallbackEvents, normalized);
-  setupChartDataMeta = {
+  setSetupChartDataMeta({
     timeframe: normalized,
     timeframe_label: setupChartTimeframeLabel(normalized),
-  };
+  });
   if (!symbol) return fallbackQuotes;
   const params = new URLSearchParams({ timeframe: normalized });
   try {
     const result = await api(`/api/market/history/${encodeURIComponent(symbol)}?${params.toString()}`);
-    setupChartDataMeta = result || setupChartDataMeta;
+    setSetupChartDataMeta(result || setupChartDataMeta);
     const quotes = historicalQuotesFromPayload(result);
     if (quotes.length) return quotes.slice(-SETUP_CHART_MAX_SOURCE_CANDLES);
-    setupChartDataMessage = result.message
-      || `Aucune bougie ${setupChartTimeframeLabel(normalized)} disponible`;
+    setSetupChartDataMessage(result.message
+      || `Aucune bougie ${setupChartTimeframeLabel(normalized)} disponible`);
   } catch (error) {
-    setupChartDataMessage = error.message;
+    setSetupChartDataMessage(error.message);
   }
   if (fallbackQuotes.length) {
     const latest = fallbackQuotes[fallbackQuotes.length - 1];
-    setupChartDataMeta = {
+    setSetupChartDataMeta({
       ...setupChartDataMeta,
       historical_bar_size: latest.historical_bar_size,
       historical_duration: latest.historical_duration,
       timeframe: normalized,
       timeframe_label: setupChartTimeframeLabel(normalized),
       source: latest.source || "events",
-    };
+    });
     return fallbackQuotes;
   }
   return [];
@@ -4176,7 +4194,7 @@ function wireSetupChartTimeframeControls() {
     if (!button) return;
     const nextTimeframe = normalizeSetupChartTimeframe(button.dataset.chartTimeframe);
     if (nextTimeframe === setupChartTimeframe) return;
-    setupChartTimeframe = nextTimeframe;
+    setSetupChartTimeframe(nextTimeframe);
     renderSetupChartTimeframeControls();
     try {
       await refreshSetupChartOnly();
@@ -4743,10 +4761,10 @@ async function renderSetupIntelligence(setupId) {
     limit: SETUP_INTELLIGENCE_HISTORY_PAGE_SIZE,
     offset: 0,
   });
-  currentSetupIntelligence = buildSetupIntelligenceState(previousState, setupId, page);
-  currentSetupIntelligenceComparison = null;
-  currentSetupIntelligenceSelectedId = null;
-  currentSetupIntelligenceSelectedId = selectedIntelligenceAnalysis(currentSetupIntelligence)?.analysis_id || null;
+  setCurrentSetupIntelligence(buildSetupIntelligenceState(previousState, setupId, page));
+  setCurrentSetupIntelligenceComparison(null);
+  setCurrentSetupIntelligenceSelectedId(null);
+  setCurrentSetupIntelligenceSelectedId(selectedIntelligenceAnalysis(currentSetupIntelligence)?.analysis_id || null);
   renderSetupIntelligencePanel(currentSetupIntelligence);
   syncCurrentSetupDetailIntelligence();
   renderSetupDetailJsonOutput();
@@ -4804,11 +4822,11 @@ async function loadSetupIntelligenceHistoryPage(setupId, offset) {
     offset: requestedOffset === null ? 0 : Math.max(0, requestedOffset),
   });
   const previousSelectedId = currentSetupIntelligenceSelectedId;
-  currentSetupIntelligence = buildSetupIntelligenceState(previousState, setupId, page);
+  setCurrentSetupIntelligence(buildSetupIntelligenceState(previousState, setupId, page));
   const selected = selectedIntelligenceAnalysis(currentSetupIntelligence);
-  currentSetupIntelligenceSelectedId = selected ? selected.analysis_id : null;
+  setCurrentSetupIntelligenceSelectedId(selected ? selected.analysis_id : null);
   if (previousSelectedId !== currentSetupIntelligenceSelectedId) {
-    currentSetupIntelligenceComparison = null;
+    setCurrentSetupIntelligenceComparison(null);
   }
   renderSetupIntelligencePanel(currentSetupIntelligence);
   syncCurrentSetupDetailIntelligence();
@@ -5139,7 +5157,7 @@ function selectedIntelligenceAnalysis(data) {
   const analysisCache = data && Array.isArray(data.analyses) ? data.analyses : [];
   const analysisHistory = setupIntelligenceHistoryItems(data);
   if (!analysisHistory.length) {
-    currentSetupIntelligenceSelectedId = latest ? latest.analysis_id : null;
+    setCurrentSetupIntelligenceSelectedId(latest ? latest.analysis_id : null);
     return latest;
   }
   if (latest && currentSetupIntelligenceSelectedId === latest.analysis_id) {
@@ -5148,7 +5166,7 @@ function selectedIntelligenceAnalysis(data) {
   const selected = analysisCache.find((analysis) => analysis.analysis_id === currentSetupIntelligenceSelectedId)
     || analysisHistory.find((analysis) => analysis.analysis_id === currentSetupIntelligenceSelectedId);
   if (selected) return selected;
-  currentSetupIntelligenceSelectedId = latest ? latest.analysis_id : analysisHistory[0].analysis_id;
+  setCurrentSetupIntelligenceSelectedId(latest ? latest.analysis_id : analysisHistory[0].analysis_id);
   if (latest && currentSetupIntelligenceSelectedId === latest.analysis_id) {
     return latest;
   }
@@ -5635,8 +5653,8 @@ function wireSetupIntelligencePanel() {
         : "Nouvelle analyse intelligence enregistree.",
       "success",
     );
-    currentSetupIntelligenceComparison = null;
-    currentSetupIntelligenceSelectedId = result.analysis_id || null;
+    setCurrentSetupIntelligenceComparison(null);
+    setCurrentSetupIntelligenceSelectedId(result.analysis_id || null);
     toast(result.reused ? "Analyse reutilisee" : "Analyse intelligence enregistree");
     await renderSetupIntelligence(setupId);
   });
@@ -7212,23 +7230,23 @@ async function renderSetupDetail() {
   const intelligencePromise = fetchSetupIntelligence(setupId).catch(() => emptySetupIntelligencePage());
   const result = await api(`/api/setups/${encodeURIComponent(setupId)}`);
   const setup = result.setup;
-  currentSetupDetailSetup = setup;
-  currentSetupArmStatus = null;
+  setCurrentSetupDetailSetup(setup);
+  setCurrentSetupArmStatus(null);
   try {
-    currentSetupArmStatus = await optionalApi(`/api/setups/${encodeURIComponent(setupId)}/arm-status`);
+    setCurrentSetupArmStatus(await optionalApi(`/api/setups/${encodeURIComponent(setupId)}/arm-status`));
   } catch (error) {
     toast(`Statut armement indisponible: ${error.message}`);
   }
-  currentSetupIntelligence = buildSetupIntelligenceState(null, setupId, emptySetupIntelligencePage());
-  currentSetupIntelligenceComparison = null;
-  currentSetupIntelligenceSelectedId = selectedIntelligenceAnalysis(currentSetupIntelligence)?.analysis_id || null;
+  setCurrentSetupIntelligence(buildSetupIntelligenceState(null, setupId, emptySetupIntelligencePage()));
+  setCurrentSetupIntelligenceComparison(null);
+  setCurrentSetupIntelligenceSelectedId(selectedIntelligenceAnalysis(currentSetupIntelligence)?.analysis_id || null);
   let symbolEvents = [];
   try {
     symbolEvents = await fetchSetupSymbolEvents(setup.symbol);
   } catch (error) {
     toast(`Events symbole indisponibles: ${error.message}`);
   }
-  currentSetupSymbolEvents = symbolEvents;
+  setCurrentSetupSymbolEvents(symbolEvents);
   renderSetupChartTimeframeControls();
   const chartQuotes = await fetchSetupChartQuotes(
     setup.symbol,
@@ -7242,14 +7260,14 @@ async function renderSetupDetail() {
   const latestChartQuote = chartQuotes.length ? chartQuotes[chartQuotes.length - 1] : null;
   const latestQuote = mergeMarketSnapshots(latestEventQuote, latestChartQuote);
   const entryDecision = entryDecisionForSetup(setup, symbolEvents);
-  currentSetupDetailInfo = buildSetupDetailInfo(
+  setCurrentSetupDetailInfo(buildSetupDetailInfo(
     setup,
     symbolEvents,
     latestQuote,
     chartQuotes,
     result.events || [],
     currentSetupIntelligence,
-  );
+  ));
   syncCurrentSetupDetailIntelligence();
   renderSetupDetailSummary(setup);
   renderSetupConditionGrid(setup, latestQuote, entryDecision);
@@ -7258,9 +7276,9 @@ async function renderSetupDetail() {
   renderSetupMarketSummary(setup, symbolEvents, latestQuote, setupChartTimeframe);
   renderSetupChart(setup, symbolEvents, chartQuotes, setupChartTimeframe);
   const config = document.getElementById("setup-config");
-  currentSetupConfig = structuredCloneSafe(setup.config);
-  setupConfigFormDirty = false;
-  setupConfigEditorDirty = false;
+  setCurrentSetupConfig(structuredCloneSafe(setup.config));
+  setSetupConfigFormDirty(false);
+  setSetupConfigEditorDirty(false);
   renderSetupConfigForm(currentSetupConfig);
   if (config) config.value = JSON.stringify(setup.config, null, 2);
   showSetupConfigMessage("");
@@ -7272,9 +7290,9 @@ async function renderSetupDetail() {
   renderSetupCreationSnapshot(setupId).catch((error) => toast(error.message));
   intelligencePromise.then((intelligence) => {
     if (!currentSetupDetailSetup || currentSetupDetailSetup.setup_id !== setupId) return;
-    currentSetupIntelligence = buildSetupIntelligenceState(null, setupId, intelligence);
-    currentSetupIntelligenceComparison = null;
-    currentSetupIntelligenceSelectedId = selectedIntelligenceAnalysis(currentSetupIntelligence)?.analysis_id || null;
+    setCurrentSetupIntelligence(buildSetupIntelligenceState(null, setupId, intelligence));
+    setCurrentSetupIntelligenceComparison(null);
+    setCurrentSetupIntelligenceSelectedId(selectedIntelligenceAnalysis(currentSetupIntelligence)?.analysis_id || null);
     renderSetupIntelligencePanel(currentSetupIntelligence);
     syncCurrentSetupDetailIntelligence();
     renderSetupDetailJsonOutput();
@@ -7329,13 +7347,13 @@ function wireSetupConfigEditor() {
   if (!editor && !form) return;
   if (editor) {
     editor.addEventListener("input", () => {
-      setupConfigEditorDirty = true;
+      setSetupConfigEditorDirty(true);
       syncSetupConfigActions();
     });
   }
   if (form) {
     form.addEventListener("input", () => {
-      setupConfigFormDirty = true;
+      setSetupConfigFormDirty(true);
       syncSetupConfigActions();
       const preview = buildSetupConfigFromForm();
       if (preview && editor && !setupConfigEditorDirty) {
@@ -7346,9 +7364,9 @@ function wireSetupConfigEditor() {
   onClick("setup-config-format", () => {
     const parsed = parseSetupConfigEditor(editor);
     if (!parsed) return;
-    currentSetupConfig = structuredCloneSafe(parsed);
-    setupConfigFormDirty = false;
-    setupConfigEditorDirty = false;
+    setCurrentSetupConfig(structuredCloneSafe(parsed));
+    setSetupConfigFormDirty(false);
+    setSetupConfigEditorDirty(false);
     renderSetupConfigForm(parsed);
     editor.value = JSON.stringify(parsed, null, 2);
     syncSetupConfigActions();
@@ -7396,9 +7414,9 @@ function wireSetupConfigEditor() {
         method: "PUT",
         body: parsed,
       });
-      currentSetupConfig = structuredCloneSafe(result.setup.config);
-      setupConfigFormDirty = false;
-      setupConfigEditorDirty = false;
+      setCurrentSetupConfig(structuredCloneSafe(result.setup.config));
+      setSetupConfigFormDirty(false);
+      setSetupConfigEditorDirty(false);
       renderSetupConfigForm(currentSetupConfig);
       if (editor) editor.value = JSON.stringify(result.setup.config, null, 2);
       syncSetupConfigActions();
