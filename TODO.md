@@ -1,13 +1,51 @@
 # TODO - Priorite actuelle
 
-Derniere lecture: 2026-07-07.
+Derniere lecture: 2026-07-09.
 
 Ce fichier remplace l'ancien backlog qui melangeait des etapes deja acceptees,
-des notes historiques et des travaux encore ouverts. La priorite immediate est de
-corriger l'onglet **Ordres & Positions**, car il peut afficher une vue incoherente
-de la realite TWS.
+des notes historiques et des travaux encore ouverts.
 
-## P0 - Corriger "Ordres & Positions"
+## P0 - Stabilite de connexion TWS et etats d'application figes (a reprendre)
+
+Constate le 2026-07-09 (capture UI a l'appui). Le bandeau d'etat affiche des
+badges contradictoires en meme temps:
+
+- `CONNECTED` + `RUNNING` (socket TWS up, bot marque actif)
+- MAIS `STALE 40S` (heartbeat moteur non re-tamponne depuis 40s)
+- `BROKER STALE` + `SYNC STALE 39S` (rapport broker non rafraichi)
+- `AUTO BLOCKED` (auto-execution bloquee par fail-safe)
+- `RISK CRITICAL` (positions/ordres non protegees non confirmees)
+
+Diagnostic (hypothese principale, a confirmer par instrumentation):
+
+- `last_heartbeat_at` est tamponne en tete de tick, juste apres la sonde legere
+  `reqCurrentTime`, AVANT reconcile/poll/revalidate (`trading_engine.py:673`).
+  C'est un stamp de "loop-liveness".
+- `STALE 40S` signifie donc que la boucle ne repasse plus par ce point: le tick
+  precedent est COINCE dans son corps (`_reconcile_if_due`,
+  `_poll_active_stock_quotes`, ou `_run_revalidate_all`), ou `_broker_health_check`
+  (ligne 659, avant le stamp) hang.
+- Smoking gun: `STALE 40S` ~= `SYNC STALE 39S`. Ages quasi identiques =>
+  UN SEUL tick bloque, pas une staleness independante. Scenario classique
+  "TWS connecte mais fige": la socket repond a la sonde legere (=> CONNECTED)
+  mais une requete plus lourde reste suspendue (pacing/gel TWS). Un seul appel
+  TWS sans `asyncio.wait_for` gele toute la boucle asyncio, et la cascade
+  STALE -> BROKER STALE -> AUTO BLOCKED -> RISK CRITICAL suit.
+
+Pistes de correction (a valider avant de coder):
+
+1. Blinder CHAQUE appel TWS du tick avec un `asyncio.wait_for` a timeout borne
+   (racine du probleme: aucune requete ne doit pouvoir geler la boucle).
+2. Watchdog de tick: annuler et repartir si un tick depasse N secondes.
+3. Badge honnete: degrader `CONNECTED` -> `STALE`/`FROZEN` quand le heartbeat
+   vieillit alors que la socket repond encore, pour que l'UI ne mente pas.
+
+A faire au retour: instrumenter pour prouver quel appel bloque (logs de duree
+par etape du tick), puis appliquer les correctifs. Voir aussi commits
+`bb83b21` (liveness honnete), `84bd8fe` (escalade fail-safe revalidate),
+`c39c9df` (resilience verrou SQLite).
+
+## P0b - Corriger "Ordres & Positions"
 
 Probleme constate:
 
