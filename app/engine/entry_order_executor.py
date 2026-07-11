@@ -5,7 +5,10 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
-from app.engine.broker_reality import broker_reality_blocking_reasons
+from app.engine.broker_reality import (
+    broker_reality_blocking_reasons,
+    engine_safety_blocking_reasons,
+)
 from app.engine.order_manager import (
     BrokerModeMismatchError,
     DuplicateOrderError,
@@ -240,14 +243,19 @@ class EntryOrderExecutor:
             self.repository,
             self.settings,
         )
-        if broker_blocking_reasons:
+        blocking_reasons = broker_blocking_reasons + [
+            reason
+            for reason in engine_safety_blocking_reasons(self.repository)
+            if reason not in broker_blocking_reasons
+        ]
+        if blocking_reasons:
             self.event_store.record(
                 EventLevel.CRITICAL,
                 "entry_blocked_by_broker_reality",
                 "Automatic entry blocked because broker reality is not safe",
                 setup_id=setup["setup_id"],
                 symbol=setup["symbol"],
-                data={"blocking_reasons": broker_blocking_reasons},
+                data={"blocking_reasons": blocking_reasons},
             )
             return True
 

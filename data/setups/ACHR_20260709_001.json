@@ -1,10 +1,10 @@
 {
   "schema_version": "2.0.0",
-  "setup_id": "ACHR_20260702_002",
+  "setup_id": "ACHR_20260709_001",
   "symbol": "ACHR",
   "enabled": true,
   "mode": "paper",
-  "setup_type": "breakout_retest",
+  "setup_type": "range_breakout",
   "setup_role": "ENTRY_AND_MANAGEMENT",
   "direction": "long",
   "timeframes": {
@@ -16,15 +16,13 @@
   "entry": {
     "enabled": true,
     "order_type": "STP_LMT",
-    "allowed_order_types": [
-      "STP_LMT"
-    ],
     "trigger_offset": 0.02,
     "limit_offset": 0.05,
-    "trigger_price": 5.05,
-    "entry_price": 5.05,
-    "limit_price": 5.1,
-    "maximum_limit_price": 5.1,
+    "trigger_price": 5.12,
+    "entry_price": 5.13,
+    "limit_price": 5.17,
+    "maximum_limit_price": 5.18,
+    "quantity": 48,
     "cancel_if_not_filled_after_minutes": 30,
     "requires_trailing_stop_before_transmission": true
   },
@@ -32,21 +30,21 @@
     "max_position_amount_usd": 250,
     "max_risk_usd": 15,
     "risk_model": "TRAILING_STOP_INITIAL_RISK",
+    "maximum_quantity": 48,
+    "computed_position_amount_usd": 246.24,
+    "computed_initial_risk_usd": 12.0,
+    "binding_constraint": "MAX_POSITION_AMOUNT_USD",
     "emergency_exit_if_stop_fails": true,
     "block_entry_if_risk_unknown": true,
-    "block_entry_if_trailing_stop_missing": true,
-    "planned_max_quantity": 41,
-    "planned_risk_per_share_usd": 0.36,
-    "planned_max_risk_usd": 14.76,
-    "planned_position_amount_usd": 209.1
+    "block_entry_if_trailing_stop_missing": true
   },
   "trailing_stop_loss": {
     "enabled": true,
     "mode": "AUTO_INTELLIGENT",
-    "initial_stop": 4.74,
-    "current_stop": 4.74,
+    "initial_stop": 4.88,
+    "current_stop": null,
     "never_lower_stop": true,
-    "stop_source": "AUTO_CALCULATED",
+    "stop_source": "STRUCTURE_INTRADAY_SUPPORT",
     "applies_to": "ENTRY_AND_POSITION_MANAGEMENT",
     "migration_status": "MIGRATED_TO_TRAILING_STOP",
     "activation": {
@@ -66,10 +64,11 @@
       "atr": {
         "timeframe": "1h",
         "period": 14,
-        "multiplier_initial": 1.5,
-        "multiplier_trailing": 1.5,
+        "multiplier_initial": 1.8,
+        "multiplier_trailing": 2.0,
         "min_multiplier": 1,
-        "max_multiplier": 3.5
+        "max_multiplier": 3.5,
+        "note": "multiplicateurs a revalider sur l'ATR 1h en direct"
       },
       "structure": {
         "reference": "INTRADAY_SUPPORT",
@@ -79,14 +78,14 @@
           "RANGE_LOW",
           "BROKEN_RESISTANCE_AS_SUPPORT",
           "VWAP_PULLBACK",
-          "PREVIOUS_DAY_LOW"
+          "PREVIOUS_DAY_LOW",
+          "AUTO_SELECT"
         ],
         "buffer_policy": "MAX_OF_TICK_SPREAD_ATR_FRACTION",
         "min_tick_buffer": 2,
         "spread_buffer_multiplier": 2,
         "atr_fraction_buffer": 0.1,
-        "structure_level_used": 4.845,
-        "buffer_used": 0.105
+        "reference_level": 4.9
       },
       "stock_specific_adjustment": {
         "enabled": true,
@@ -104,10 +103,9 @@
           "distance_to_support",
           "distance_to_breakout_level"
         ],
-        "volatility_regime": "high",
-        "liquidity_regime": "acceptable",
-        "spread_regime": "requires_rth_check",
-        "relative_volume_regime": "elevated"
+        "volatility_regime": "AUTO",
+        "liquidity_regime": "AUTO",
+        "spread_regime": "AUTO"
       },
       "risk_constraints": {
         "respect_max_risk_usd": true,
@@ -124,7 +122,7 @@
       "move_only_down_for_short": true,
       "update_on_closed_bar_only": true,
       "timeframe": "15m",
-      "min_improvement_required": 0.05,
+      "min_improvement_required": "AUTO",
       "min_improvement_atr_fraction": 0.15,
       "do_not_lower_stop": true,
       "do_not_update_outside_rth": true,
@@ -135,7 +133,8 @@
         "enabled": true,
         "trigger_after_profit_r_multiple": 1,
         "new_stop": "ENTRY_PRICE_PLUS_FEES_BUFFER"
-      }
+      },
+      "min_improvement_atr_timeframe": "15m"
     },
     "broker_order": {
       "order_type": "TRAIL_OR_MANAGED_STOP",
@@ -166,41 +165,23 @@
       "mode": "TRAILING_STOP_LOSS",
       "source": "trailing_stop_loss",
       "never_lower_stop": true,
-      "steps": [
-        {
-          "condition": "15m close above 5.18 with volume_ratio >= 1.0 and no rejection wick",
-          "action": "raise_trailing_stop",
-          "new_minimum_stop": 4.95,
-          "reason": "protect after reclaim of intraday high zone"
-        },
-        {
-          "condition": "15m close above 5.55 with volume_ratio >= 1.0",
-          "action": "raise_trailing_stop",
-          "new_minimum_stop": 5.05,
-          "reason": "protect after reclaim of higher local resistance"
-        }
-      ],
       "trail_type": "ATR_OR_STRUCTURE",
       "atr_timeframe": "1h",
-      "atr_multiplier": 1.5
+      "atr_multiplier": 1.8
     }
   },
-  "breakout": {
-    "resistance": 5.08,
-    "broken_resistance": 5.08,
-    "daily_close_above": 5.08,
-    "volume_rule_mode": "FLEXIBLE_CONFIRMATION",
-    "fast_breakout_volume_ratio_min": 1.5,
-    "confirmed_breakout_volume_ratio_min": 0.8,
-    "confirmed_breakout_hold_bars": 2,
-    "confirmed_breakout_timeframe": "15m",
-    "close_above_resistance_required": true
+  "range": {
+    "high": 5.1,
+    "low": 4.7,
+    "breakout_side": "up",
+    "require_close_outside_range": true,
+    "invalidation_below": 4.7,
+    "deeper_support": 4.61
   },
-  "retest": {
-    "zone_min": 4.95,
-    "zone_max": 5.08,
-    "confirmation_required": true,
-    "confirmation_timeframe": "15m"
+  "trend_filter": {
+    "enabled": true,
+    "required_trend": "range_breakout_confirmation",
+    "note": "Tendance moyen terme baissiere (sous MM50/MM200). La cassure elle-meme sert de confirmation; exiger cloture 15m > 5.10 + volume."
   },
   "volume_confirmation": {
     "enabled": true,
@@ -208,20 +189,24 @@
     "comparison_mode": "SAME_TIME_OF_DAY",
     "average_sample_days": 20,
     "fast_volume_ratio_min": 1.5,
-    "normal_volume_ratio_min": 1,
     "confirmed_volume_ratio_min": 0.8,
     "confirmed_hold_bars": 2,
     "close_above_level_required": true,
-    "reject_detection_enabled": true,
-    "max_upper_wick_ratio": 0.5,
     "required_for_entry": false,
-    "weak_volume_action": "WARNING_ONLY"
+    "weak_volume_action": "WARNING_ONLY",
+    "reject_detection_enabled": true,
+    "max_upper_wick_ratio": 0.5
   },
   "anti_chase": {
     "enabled": true,
     "max_price_above_entry_percent": 1.5,
     "action_if_too_far": "MISSED_BREAKOUT_WAIT_RETEST",
     "block_entry_if_price_above_maximum_limit": true
+  },
+  "position_source": {
+    "mode": "new_entry",
+    "require_existing_position": false,
+    "account_position_must_match_direction": true
   },
   "session_policy": {
     "enabled": true,
@@ -233,12 +218,7 @@
     "wait_bars_timeframe": "15m",
     "require_rth_volume_confirmation": true,
     "require_rth_spread_check": true,
-    "require_rth_risk_recalculation": true,
-    "extended_hours": {
-      "allow_detection": true,
-      "allow_auto_execution": false,
-      "allow_manual_review": true
-    }
+    "require_rth_risk_recalculation": true
   },
   "broker_safety": {
     "require_broker_tracker": true,
@@ -249,34 +229,28 @@
     "block_if_reconciliation_mismatch": true
   },
   "entry_decision": {
-    "status": "WAITING_RETEST",
-    "decision": "NO_ENTRY",
+    "status": "EVALUATED_WAITING_TRIGGER",
+    "decision": "WAIT",
     "can_send_order": false,
-    "display_title": "ACHR breakout retest conditionnel",
-    "display_message": "Attendre une cloture daily au-dessus de 5.08, puis un retest propre 4.95-5.08 avec confirmation 15m haussiere.",
-    "next_action": "Arm only after daily close above 5.08, retest inside 4.95-5.08, bullish 15m confirmation, RTH spread check, risk recalculation, and broker confirmation that trailing stop child order is ready.",
+    "display_title": "ACHR — Range breakout en attente",
+    "display_message": "Prix ~4.84, sous le trigger 5.12. Attendre une cloture 15m au-dessus de 5.10 avec volume avant d'armer le bracket.",
+    "next_action": "Attendre cassure > 5.10 (cloture 15m, 2 barres) + volume, puis transmettre bracket parent (entree) + child (trailing stop 4.88).",
     "blocking_reasons": [
-      "daily close above 5.08 not confirmed yet",
-      "retest 4.95-5.08 required",
-      "15m bullish retest confirmation required",
-      "trailing_stop_order_ready=false",
-      "RTH spread check required",
-      "broker parent-child bracket not confirmed"
+      "price_below_trigger",
+      "trailing_stop_order_not_yet_placed",
+      "daily_trend_not_uptrend"
     ],
     "warnings": [
-      "ACHR reste volatil; setup paper uniquement.",
-      "Ne pas entrer si le prix depasse 5.10 sans retest confirme.",
-      "Ne pas transmettre l'ordre si le trailing stop initial 4.74 n'est pas confirme par le broker."
+      "Tendance moyen terme baissiere (<MM50/MM200): cassure de range, pas continuation haussiere.",
+      "Volume recent sous la moyenne (~12-19M vs ~38-45M): exiger confirmation volume sur la cassure.",
+      "Titre tres volatil (beta ~3.1): stop initial et sizing a revalider sur donnees live.",
+      "Earnings ~10 aout 2026: pas immediat mais a surveiller si la position est tenue."
     ],
     "planned_vs_current_risk": {
-      "planned_entry_price": 5.05,
-      "planned_max_fill_price": 5.1,
-      "planned_initial_trailing_stop": 4.74,
-      "planned_max_quantity": 41,
-      "planned_max_risk_usd": 14.76,
-      "planned_position_amount_usd": 209.1
+      "planned_risk_usd": 12.0,
+      "current_risk_usd": null
     }
   },
   "targets": [],
-  "notes": "Version corrigee apres revue expert: choix breakout_retest au lieu de aggressive_rebound, car l'entree autour de 5.05 correspond mieux a un reclaim/retest de resistance qu'a un achat direct sur support. Donnees marche verifiees: ACHR cote 4.98 USD, open 5.02, high intraday 5.185, low intraday 4.845, volume 28.97M, dernier trade 2026-07-02 21:20 UTC. Le high 5.185 est conserve comme niveau de gestion, mais pas comme trigger d'entree. Condition principale: cloture daily au-dessus de 5.08, puis retest 4.95-5.08. Entree STP_LMT uniquement apres confirmation 15m haussiere du retest: trigger 5.05, limite max 5.10. Protection principale: trailing_stop_loss.initial_stop=4.74. Risque calcule sur pire fill 5.10 - stop 4.74 = 0.36 USD/action; quantite max 41 actions; risque planifie 14.76 USD; position planifiee 209.10 USD. Aucune transmission tant que trailing_stop_order_ready=false. Source marche: . Template utilisateur: ."
+  "notes": "Range breakout long. Entree sur cassure confirmee > 5.10; stop initial structure 4.88 (sous shelf intraday 4.85-4.90), invalidation range sous 4.70. Protection = trailing stop uniquement, jamais abaisse. Valeurs prix/ATR derivees de donnees publiques au 8 juil. 2026, a recalculer par le moteur sur ATR 1h en direct."
 }

@@ -7,6 +7,10 @@ from typing import Any
 from app.broker.ib_models import BrokerOrderRequest, BrokerPosition
 
 REPORT_STATE_KEY = "broker_reality"
+# Engine-subsystem safety, distinct from broker truth: the trading engine writes
+# blocking reasons here (e.g. a persistently failing pre-entry revalidation) so
+# they are enforced at the same auto-execution gate as broker-reality reasons.
+ENGINE_SAFETY_STATE_KEY = "engine_safety"
 
 ACTIVE_LOCAL_ORDER_STATUSES = {"CREATED", "SUBMITTED"}
 ORDER_DEPENDENT_SETUP_STATUSES = {
@@ -391,6 +395,19 @@ def freshen_broker_reality_report(
         [row for row in current.get("rows", []) if isinstance(row, dict) and row.get("critical")]
     )
     return current
+
+
+def engine_safety_blocking_reasons(repository: Any) -> list[str]:
+    """Engine-subsystem blocks (e.g. failing pre-entry revalidation).
+
+    Read at the auto-execution gate alongside the broker-reality reasons so an
+    unhealthy engine subsystem fails safe without depending on the broker report
+    aging into STALE first.
+    """
+    state = repository.get_bot_state(ENGINE_SAFETY_STATE_KEY, {})
+    if not isinstance(state, dict):
+        return []
+    return [str(item) for item in state.get("blocking_reasons", []) if str(item or "")]
 
 
 def broker_reality_blocking_reasons(

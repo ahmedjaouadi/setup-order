@@ -141,11 +141,13 @@ class V241LegacyStopCleanupTests(unittest.TestCase):
         self.assertEqual(stop_event["payload"]["stop"], 9.5)
 
     def test_gui_setup_detail_uses_trailing_stop_initial_stop_not_protective_stop(self) -> None:
-        script = Path("app/gui/static/js/app.js").read_text(encoding="utf-8")
+        detail_script = Path("app/gui/static/js/setup-detail.js").read_text(encoding="utf-8")
+        self.assertIn('initial_trailing_stop: "trailing_stop_loss.initial_stop"', detail_script)
 
-        self.assertIn('initial_trailing_stop: "trailing_stop_loss.initial_stop"', script)
-        self.assertNotIn("setup.protective_stop", script)
-        self.assertNotIn('id: "protective_stop"', script)
+        for module in Path("app/gui/static/js").glob("*.js"):
+            script = module.read_text(encoding="utf-8")
+            self.assertNotIn("setup.protective_stop", script, module.name)
+            self.assertNotIn('id: "protective_stop"', script, module.name)
 
     def test_forecasting_and_model_lab_do_not_read_protective_stop_directly(self) -> None:
         for path in (

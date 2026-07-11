@@ -179,7 +179,10 @@ class AccountMetricsTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(snapshot["metrics"]["open_positions"], 1)
         self.assertEqual(snapshot["metrics"]["positions_pnl"], 2.5)
-        self.assertEqual(snapshot["metrics"]["today_pnl"], 2.5)
+        # Broker connected but no fresh TWS PnL report: today_pnl must stay
+        # empty (TWS_STALE), never back-filled from local estimates.
+        self.assertIsNone(snapshot["metrics"]["today_pnl"])
+        self.assertEqual(snapshot["metrics"]["pnl_display_source"], "TWS_STALE")
         self.assertEqual(snapshot["positions"][0]["symbol"], "LUNR")
         self.assertEqual(snapshot["positions"][0]["setup_id"], "broker:LUNR")
 

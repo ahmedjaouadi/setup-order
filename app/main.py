@@ -70,6 +70,7 @@ from app.scoring import SetupQualityEngine
 from app.settings import load_settings
 from app.setups.creation_snapshot_service import SetupCreationSnapshotService
 from app.storage.database import Database
+from app.storage.instance_lock import acquire_instance_lock
 from app.storage.repositories import TradingRepository
 from app.utils.logger import configure_logging
 
@@ -184,6 +185,10 @@ def _start_background_tasks(app: FastAPI) -> list[asyncio.Task]:
 def create_app() -> FastAPI:
     settings = load_settings()
     configure_logging(settings.logs_folder)
+    # Refuse to start if another live process already owns this database:
+    # one writer per SQLite file, one engine per TWS account (see
+    # instance_lock.py for the 4-concurrent-instances incident this prevents).
+    instance_lock = acquire_instance_lock(settings.database_file)
     database = Database(settings.database_file)
     database.initialize()
     seed_builtin_techniques(TechniqueRepository(database))
@@ -205,6 +210,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="Setup Order", version="0.1.0")
     app.state.settings = settings
+    app.state.instance_lock = instance_lock
     app.state.database = database
     app.state.repository = repository
     app.state.intelligence_repository = intelligence_repository
@@ -334,6 +340,7 @@ def create_app() -> FastAPI:
                 await start_task
         await app.state.engine.stop()
         app.state.database.close()
+        app.state.instance_lock.release()
 
     return app
 

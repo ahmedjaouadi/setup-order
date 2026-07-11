@@ -29,6 +29,7 @@
           <span class="pill" id="top-connection-status">DISCONNECTED</span>
           <span class="pill" id="top-bot-status">PAUSED</span>
           <span class="pill warn" id="engine-health-status">CHECKING</span>
+          <span class="pill" id="top-reconciliation" hidden>-</span>
           <span class="pill" id="top-broker-tracker">UNKNOWN</span>
           <span class="pill" id="top-sync-age">-</span>
           <span class="pill" id="top-auto-execution">BLOCKED</span>
@@ -46,6 +47,6 @@
       {% block content %}{% endblock %}
     </main>
     <div class="toast" id="toast" hidden></div>
-    <script src="{{ url_for('static', path='/js/app.js') }}?v=cockpit-dark-20260707-2"></script>
+    <script type="module" src="{{ url_for('static', path='/js/app.js') }}?v=esm-20260711-2"></script>
   </body>
 </html>
