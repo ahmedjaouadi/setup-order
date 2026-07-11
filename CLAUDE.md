@@ -45,7 +45,7 @@ run.py / start.bat      # Lanceurs (port auto à partir de 8000)
 | Fonctionnalité | Fichier(s) | Fonctions/objets principaux |
 |---|---|---|
 | Détail d'un setup (rendu) | `app.js` (provisoire) | `renderSetupDetail`, `renderSetupDetailSummary`, `buildSetupDetailInfo`, `wireSetupDetailJsonButton` |
-| Copie presse-papiers | `app.js` (provisoire) | `copySetupTemplateToClipboard`, `copySetupDetailInfoToClipboard`, `fallbackCopyTextToClipboard` |
+| Copie presse-papiers | `app/gui/static/js/clipboard.js` | `copySetupTemplateToClipboard`, `copySetupDetailInfoToClipboard`, `fallbackCopyTextToClipboard` |
 | Appels API frontend | `app/gui/static/js/api-client.js` | `api`, `optionalApi`, `formatErrorDetail` (`connectWebSocket` reste dans app.js) |
 | Messages de validation setup | `app/gui/static/js/setup-messages.js` | `formatSetupValidationDetail`, `humanizeSetupValidationMessage` |
 | Helpers UI / toast | `app/gui/static/js/ui-helpers.js` | `toast`, `onClick`, `setText`, `escapeHtml`, `money`, `openModal`/`closeModal`, badges de statut |
