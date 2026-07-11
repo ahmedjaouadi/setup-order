@@ -1,6 +1,7 @@
 // État global partagé entre modules (extrait de app.js — aucun changement de comportement).
 // Lecture : import du binding (live). Écriture : passer par le setter correspondant.
 
+export const page = document.body.dataset.page;
 export const SETUP_CHART_DEFAULT_TIMEFRAME = "1d";
 
 export let latestSnapshot = null;

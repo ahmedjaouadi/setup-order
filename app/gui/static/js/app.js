@@ -104,10 +104,12 @@ import {
   timeWithAge,
   toast,
   toneForAge,
+  formatConfigLabel,
   wireModals,
   yesNo,
 } from "./ui-helpers.js";
 import {
+  page,
   latestSnapshot,
   currentSetupConfig,
   currentSetupDetailInfo,
@@ -141,7 +143,6 @@ import {
   setSetupChartDataMeta,
 } from "./state.js";
 
-const page = document.body.dataset.page;
 let setupChartState = null;
 let setupChartResizeTimer = null;
 let setupChartInteractionsWired = false;
@@ -4233,10 +4234,6 @@ function setDeepValue(target, path, value) {
     cursor = cursor[path[index]];
   }
   cursor[path[path.length - 1]] = value;
-}
-
-function formatConfigLabel(value) {
-  return String(value).replaceAll("_", " ");
 }
 
 function configOptionsForPath(path) {

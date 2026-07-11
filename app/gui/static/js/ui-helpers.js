@@ -514,3 +514,7 @@ export function structuredCloneSafe(value) {
   if (typeof structuredClone === "function") return structuredClone(value);
   return JSON.parse(JSON.stringify(value));
 }
+
+export function formatConfigLabel(value) {
+  return String(value).replaceAll("_", " ");
+}
