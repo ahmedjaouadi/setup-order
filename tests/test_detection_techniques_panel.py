@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 TEMPLATE = Path("app/gui/templates/opportunity_radar.html")
-APP_JS = Path("app/gui/static/js/app.js")
+HUB_PAGES_JS = Path("app/gui/static/js/hub-pages.js")
 
 
 class DetectionTechniquesPanelTests(unittest.TestCase):
@@ -20,8 +20,8 @@ class DetectionTechniquesPanelTests(unittest.TestCase):
             html.index('id="detection-techniques"'), html.index('id="opportunity-pipeline"')
         )
 
-    def test_app_js_renders_panel_and_detected_by_column(self) -> None:
-        source = APP_JS.read_text(encoding="utf-8")
+    def test_hub_pages_js_renders_panel_and_detected_by_column(self) -> None:
+        source = HUB_PAGES_JS.read_text(encoding="utf-8")
         self.assertIn("renderDetectionTechniquesPanel", source)
         self.assertIn("/api/techniques", source)
         # The shortlist gains a "Detected by" column fed by detected_by.
