@@ -118,3 +118,52 @@ Deux options :
   `hub-pages.js` ~700 — cohérents par domaine, pas de fragmentation artificielle).
 - Aucun changement de comportement, d'ID HTML, de route API ni de nom de fonction.
 - `NOTES-BUGS.md` créé avec les 9 fonctions > 80 lignes signalées dans la carte.
+
+---
+
+## Bilan Phase 4 (exécuté le 2026-07-11)
+
+**Résultat : 8 744 → 820 lignes pour `app.js`** (−91 %), 22 modules extraits, 24 commits, zéro changement de comportement.
+Vérification à chaque étape : parse Node en mode module, linter d'imports inter-modules, smoke Playwright
+(chargement + zéro erreur console) sur instance sandbox isolée (broker `simulated`, base SQLite dédiée),
+plus tests fonctionnels réels : copie presse-papiers (ClipboardItem), synchro ticker + prévisualisation du
+formulaire setup, recherche/filtre de la liste, zoom molette + resize du chart. Suite unittest backend verte.
+
+### Tailles finales (lignes)
+
+| Module | Lignes | | Module | Lignes |
+|---|---|---|---|---|
+| `setup-chart.js` | 898 | | `opportunity-radar.js` | 337 |
+| `app.js` (app-core) | 820 | | `dashboard-premium.js` | 306 |
+| `setup-detail.js` | 815 | | `setup-config-editor.js` | 290 |
+| `hub-pages.js` | 738 | | `orders-positions.js` | 272 |
+| `setup-intelligence.js` | 691 | | `setup-messages.js` | 204 |
+| `setup-analysis.js` | 640 | | `setup-form.js` | 98 |
+| `setups-list.js` | 601 | | `events-logs.js` | 91 |
+| `dashboard.js` | 598 | | `settings.js` | 73 |
+| `ui-helpers.js` | 520 | | `state.js` | 67 |
+| `market-quotes.js` | 376 | | `api-client.js` | 55 |
+| `setup-forecast.js` | 365 | | `clipboard.js` | 47 |
+| `market-context.js` | 365 | | | |
+
+`setup-chart.js`, `setup-detail.js`, `hub-pages.js`, `setup-intelligence.js`, `setup-analysis.js`, `setups-list.js`,
+`dashboard.js` et `ui-helpers.js` dépassent 500 lignes mais restent d'un seul domaine chacun — dépassement assumé
+(ne pas fragmenter artificiellement). `app.js` reste à 820 à cause de `wireActionButtons` (241 l.) et des `wire*`
+qui orchestrent `refresh`.
+
+### Écarts au plan initial (tous documentés dans les messages de commit)
+
+1. `connectWebSocket`, `refresh*`, `wireRuntimeButtons`, `wireBrokerAccountForm`, `wireTwsAuditForm`,
+   `wireSetupForm`, `wireManualOrderForm`, `wireSetupConfigEditor`, `wireSetupIntelligencePanel`,
+   `armSetupById`/`disarmSetupById` restent en app-core : ils orchestrent `refresh`/`renderSnapshot`/`renderSetupDetail`
+   au travers de plusieurs domaines. Déplaçables plus tard si souhaité, hors mission.
+2. `SETUP_CHART_TIMEFRAMES`, `normalizeSetupChartTimeframe`, `parseChartDate` → `market-quotes.js` (normalisation de données).
+3. Le cluster diagnostic marché (`setupMarketDataDiagnostic` & co) + `setupStatusReason` + `setupAutoExecutionEnabled` → `setup-analysis.js`.
+4. `forecastTone` → `setups-list.js` (cellules TimesFM ; évite un cycle forecast↔liste).
+5. `brokerPnlSourceLabel` → `dashboard-premium.js` ; `page` → `state.js` ; `formatConfigLabel` → `ui-helpers.js`.
+6. `refreshSetupChartOnly` et `wireSetupChartTimeframeControls` → `setup-detail.js` (orchestration chart+détail).
+7. `setup-detail.js` créé en deux temps (amorce `renderSetupDetailJsonOutput`, partagé avec l'intelligence, puis le reste).
+
+### Bugs préexistants relevés (non corrigés — voir NOTES-BUGS.md)
+
+- `formatNumber` non défini, appelé 4× par `renderSetupCreationSnapshot` (présent sur main depuis le commit V2).

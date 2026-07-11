@@ -1,4 +1,8 @@
-# Cartographie de `app/gui/static/js/app.js`
+# Cartographie de `app/gui/static/js/app.js` (HISTORIQUE — monolithe avant découpage)
+
+> **Note (2026-07-11)** : le découpage est fait. Cette carte décrit l'ancien monolithe ; les numéros de
+> lignes ne sont plus valables. Pour localiser une fonction aujourd'hui : tableau « Où se trouve quoi »
+> de `CLAUDE.md`. Bilan et écarts : `docs/refactoring-plan.md`.
 
 Phase 2b de la mission refactoring (2026-07-10). Fichier : **8 744 lignes**, **444 définitions top-level**
 (~385 fonctions, ~29 constantes, 30 variables d'état `let`). Chargé en `<script>` classique par `base.html`

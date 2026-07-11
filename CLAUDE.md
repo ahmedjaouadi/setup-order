@@ -30,7 +30,8 @@ app/
   scoring/ features/ portfolio_risk/ data_quality/ observability/ reports/ alerts/ event_bus/ utils/
   gui/
     templates/          # Pages Jinja2 (base.html charge app.js, setup_detail.html, setups.html...)
-    static/js/app.js    # TOUT le frontend (~8200 lignes) — refactoring en cours
+    static/js/          # Frontend en ES modules — app.js = entrée/app-core, un module par domaine
+                        # (voir tableau « Où se trouve quoi » ci-dessous)
     static/css/styles.css
 config/ + config.yaml   # Configuration runtime
 data/                   # Données runtime (SQLite, setups JSON) — ne pas committer de secrets
@@ -42,19 +43,33 @@ run.py / start.bat      # Lanceurs (port auto à partir de 8000)
 
 ## Où se trouve quoi
 
+Frontend : tous les modules sont dans `app/gui/static/js/` (ES modules, entrée = `app.js`).
+
 | Fonctionnalité | Fichier(s) | Fonctions/objets principaux |
 |---|---|---|
-| Détail d'un setup (rendu) | `app.js` (provisoire) | `renderSetupDetail`, `renderSetupDetailSummary`, `buildSetupDetailInfo`, `wireSetupDetailJsonButton` |
-| Copie presse-papiers | `app/gui/static/js/clipboard.js` | `copySetupTemplateToClipboard`, `copySetupDetailInfoToClipboard`, `fallbackCopyTextToClipboard` |
-| Appels API frontend | `app/gui/static/js/api-client.js` | `api`, `optionalApi`, `formatErrorDetail` (`connectWebSocket` reste dans app.js) |
-| Messages de validation setup | `app/gui/static/js/setup-messages.js` | `formatSetupValidationDetail`, `humanizeSetupValidationMessage` |
-| Helpers UI / toast | `app/gui/static/js/ui-helpers.js` | `toast`, `onClick`, `setText`, `escapeHtml`, `money`, `openModal`/`closeModal`, badges de statut |
-| Liste des setups | `app.js` (provisoire) | `renderSetups`, `filterSetups`, `renderSetupsColumnControls`, `armSetupById`/`disarmSetupById` |
-| Graphique setup (canvas) | `app.js` (provisoire) | `drawSetupChart`, `renderSetupChart`, `wireSetupChartInteractions`, `drawTimesfmForecastChart` |
-| Ordres / positions / exécutions (UI) | `app.js` (provisoire) | `renderOrders`, `renderPositions`, `renderExecutions`, `wireManualOrderForm` |
-| Dashboard / métriques (UI) | `app.js` (provisoire) | `renderDashboard`, `renderMetrics`, `renderEngineHealth`, `initDashboardPremium` |
-| Intelligence setup (UI) | `app.js` (provisoire) | `renderSetupIntelligencePanel`, `fetchSetupIntelligence`, `renderSetupIntelligenceComparison` |
-| État global frontend partagé | `app/gui/static/js/state.js` | `latestSnapshot`, `currentSetupDetailInfo`... (lecture = import du binding, écriture = `setX(...)`) |
+| Bootstrap, refresh périodique, wiring des boutons | `app.js` (app-core) | `init`, `refresh`, `refreshActiveViews`, `connectWebSocket`, `wireActionButtons`, `armSetupById`/`disarmSetupById`, `wireSetupForm`, `wireManualOrderForm`, `wireSetupConfigEditor` (les `wire*` qui appellent `refresh` restent ici) |
+| État global frontend partagé | `state.js` | `page`, `latestSnapshot`, `currentSetupDetailInfo`... (lecture = import du binding, écriture = `setX(...)`) |
+| Helpers UI / toast / modales | `ui-helpers.js` | `toast`, `onClick`, `setText`, `escapeHtml`, `money`, `openModal`/`closeModal`, badges de statut |
+| Appels API frontend | `api-client.js` | `api`, `optionalApi`, `formatErrorDetail` |
+| Messages de validation setup | `setup-messages.js` | `formatSetupValidationDetail`, `humanizeSetupValidationMessage` |
+| Copie presse-papiers | `clipboard.js` | `copySetupTemplateToClipboard`, `copySetupDetailInfoToClipboard`, `fallbackCopyTextToClipboard` |
+| Normalisation quotes/candles/timeframes | `market-quotes.js` | `quoteFromEvent`, `extractQuoteEvents`, `SETUP_CHART_TIMEFRAMES`, `parseChartDate` |
+| Analyse setup (décision d'entrée, niveaux, statut, diagnostic marché) | `setup-analysis.js` | `displaySetupStatus`, `entryReadiness`, `setupTradeLevels`, `setupMarketDataDiagnostic` |
+| Liste des setups (table, colonnes, cellules) | `setups-list.js` | `renderSetups`, `filterSetups`, `renderSetupsColumnControls`, `SETUPS_TABLE_COLUMNS` |
+| Formulaire création/import setup | `setup-form.js` | `syncTickerFieldFromSetupText`, `renderSetupPreview` (submit dans `wireSetupForm`, app.js) |
+| Détail d'un setup (rendu) | `setup-detail.js` | `renderSetupDetail`, `renderSetupDetailSummary`, `buildSetupDetailInfo`, `wireSetupDetailJsonButton`, `refreshSetupChartOnly` |
+| Graphique setup (canvas) | `setup-chart.js` | `drawSetupChart`, `renderSetupChart`, `wireSetupChartInteractions`, listener resize |
+| Forecast setup (panneau + chart) | `setup-forecast.js` | `renderSetupForecastPanel`, `drawTimesfmForecastChart`, `refreshForecastWatchlist` |
+| Éditeur de configuration setup | `setup-config-editor.js` | `renderSetupConfigForm`, `buildSetupConfigFromForm`, `syncSetupConfigActions` |
+| Intelligence setup (UI) | `setup-intelligence.js` | `renderSetupIntelligencePanel`, `fetchSetupIntelligence`, `renderSetupIntelligenceComparison` |
+| Dashboard / métriques / santé moteur | `dashboard.js` | `renderSnapshot` (dispatch global), `renderMetrics`, `renderEngineHealth`, `renderBrokerReality` |
+| Dashboard premium (equity, donut) | `dashboard-premium.js` | `initDashboardPremium`, `renderDashboardPremium`, `drawAllocationDonut` |
+| Ordres / positions / exécutions (UI) | `orders-positions.js` | `renderOrders`, `renderPositions`, `renderExecutions`, `renderManualOrderRisk` |
+| Radar d'opportunités | `opportunity-radar.js` | `renderOpportunityRadar`, `renderOpportunityRadarSummary` |
+| Contexte marché (heatmap, secteurs) | `market-context.js` | `renderMarketContextPage`, `renderMarketContextHeatmap` |
+| Événements / logs | `events-logs.js` | `renderEvents`, `renderTwsEvents`, `renderLogsPage` |
+| Réglages | `settings.js` | `renderSettings`, `wireMarketForm` |
+| Pages hub/V2 (scanner, forecasting, observabilité...) | `hub-pages.js` | `renderV2Page`, `renderV2Table`, `renderForecastStackPage`, `renderForecastAccuracyPage` |
 | Routes API setups | `app/api/routes_setups.py` | save/arm/disarm/preview, shortlist niveaux |
 | Routes plateforme (runtime, ordres, métriques) | `app/api/routes_platform.py` | snapshot, orders, positions, metrics, events |
 | Pages HTML | `app/api/routes_v2_pages.py` + `app/gui/templates/` | une route par template |
@@ -75,8 +90,9 @@ run.py / start.bat      # Lanceurs (port auto à partir de 8000)
 ## Conventions
 
 - Python : modules par domaine, imports explicites, dataclasses/pydantic, tests unittest par fonctionnalité.
-- JS : vanilla, pas de bundler ni framework ; `app.js` chargé en `<script>` classique via `base.html`
-  (avec query-string de cache-busting `?v=...` à incrémenter quand on touche au JS/CSS).
+- JS : vanilla, pas de bundler ni framework ; ES modules chargés via `<script type="module" src=".../app.js">`
+  dans `base.html` (query-string de cache-busting `?v=...` à incrémenter quand on touche au JS/CSS ;
+  les sous-modules sont revalidés par ETag). État partagé : lecture par import du binding, écriture par setter de `state.js`.
 - Nommage JS : `renderX` (rendu DOM), `wireX` (branchement listeners), `fetchX` (appels API), `drawX` (canvas).
 - Erreurs UI : `toast(message)` ; les appels API passent par `api()` qui lève avec détail formaté.
 - Textes UI et commits en français sans accents dans les messages de commit.
