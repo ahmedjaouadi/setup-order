@@ -42,6 +42,7 @@ class StockMarketMonitor:
         opportunity_alert_service: OpportunityAlertService | None = None,
         data_quality_service: Any | None = None,
         feature_store: Any | None = None,
+        condition_tracker: Any | None = None,
     ) -> None:
         self.settings = settings
         self.repository = repository
@@ -56,6 +57,7 @@ class StockMarketMonitor:
         self.opportunity_alert_service = opportunity_alert_service
         self.data_quality_service = data_quality_service
         self.feature_store = feature_store
+        self.condition_tracker = condition_tracker
         self._event_dedupe: dict[str, tuple[str, float]] = {}
 
     async def poll_active_stock_quotes(
@@ -287,6 +289,7 @@ class StockMarketMonitor:
             self.opportunity_alert_service.enrich_processed_items(processed)
         signal_started = time.perf_counter()
         for evaluation in evaluations:
+            self.track_setup_conditions(evaluation, snapshot)
             await self.signal_handler(
                 evaluation.setup,
                 evaluation.current_status,
@@ -312,6 +315,23 @@ class StockMarketMonitor:
             }
         )
         return processed
+
+    def track_setup_conditions(self, evaluation: Any, snapshot: MarketSnapshot) -> None:
+        """Met a jour la checklist persistee du setup; jamais bloquant pour le trading."""
+        if self.condition_tracker is None:
+            return
+        try:
+            self.condition_tracker.update_from_evaluation(
+                evaluation.setup,
+                evaluation.current_status,
+                evaluation.signal,
+                snapshot,
+            )
+        except Exception:
+            logger.exception(
+                "Setup condition tracking failed for %s",
+                evaluation.setup.get("setup_id"),
+            )
 
     def record_stock_analysis(
         self,

@@ -31,6 +31,7 @@ from app.engine.risk_engine import RiskEngine, RiskLimits
 from app.engine.setup_diagnostics import market_snapshot_payload
 from app.engine.setup_engine import SetupEngine
 from app.engine.setup_lifecycle_service import SetupLifecycleService
+from app.engine.setup_condition_tracker import SetupConditionTracker
 from app.engine.setup_status_reporter import SetupStatusReporter
 from app.engine.setup_template_service import SetupTemplateService
 from app.engine.signal_engine import SignalEngine
@@ -185,6 +186,7 @@ class TradingEngine:
             lifecycle_service=self.setup_lifecycle,
             trade_guards=self.trade_guards,
         )
+        self.setup_condition_tracker = SetupConditionTracker(repository)
         market_config = settings.raw.get("market", {})
         self.opportunity_alert_service = OpportunityAlertService(
             repository,
@@ -296,6 +298,7 @@ class TradingEngine:
             opportunity_alert_service=self.opportunity_alert_service,
             data_quality_service=data_quality_service,
             feature_store=feature_store,
+            condition_tracker=self.setup_condition_tracker,
         )
 
     async def start(self) -> None:
@@ -2202,6 +2205,12 @@ class TradingEngine:
 
     def configuration_status(self) -> dict[str, Any]:
         return self.setup_status_reporter.configuration_status()
+
+    def setup_conditions(self, setup_id: str) -> dict[str, Any]:
+        setup = self.repository.get_setup(setup_id)
+        if setup is None:
+            raise KeyError(setup_id)
+        return self.setup_condition_tracker.conditions_payload(setup)
 
     def setup_arm_status(self, setup_id: str) -> dict[str, Any]:
         setup = self.repository.get_setup(setup_id)

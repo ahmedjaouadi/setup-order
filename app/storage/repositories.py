@@ -518,6 +518,35 @@ class TradingRepository:
             "DELETE FROM setups WHERE setup_id = ?",
             (setup_id,),
         )
+        self.delete_setup_condition_state(setup_id)
+
+    def get_setup_condition_state(self, setup_id: str) -> dict[str, Any] | None:
+        row = self.database.execute(
+            "SELECT payload_json FROM setup_condition_states WHERE setup_id = ?",
+            (setup_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        payload = json.loads(row["payload_json"] or "{}")
+        return payload if isinstance(payload, dict) else None
+
+    def save_setup_condition_state(self, setup_id: str, payload: dict[str, Any]) -> None:
+        self.database.execute(
+            """
+            INSERT INTO setup_condition_states (setup_id, payload_json, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(setup_id) DO UPDATE SET
+                payload_json = excluded.payload_json,
+                updated_at = excluded.updated_at
+            """,
+            (setup_id, json.dumps(payload, sort_keys=True), utc_now_iso()),
+        )
+
+    def delete_setup_condition_state(self, setup_id: str) -> None:
+        self.database.execute(
+            "DELETE FROM setup_condition_states WHERE setup_id = ?",
+            (setup_id,),
+        )
 
     def add_setup_creation_snapshot(self, snapshot: dict[str, Any]) -> str:
         snapshot = _normalize_setup_creation_snapshot(dict(snapshot))

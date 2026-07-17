@@ -567,6 +567,12 @@ class Database:
                     payload_json TEXT NOT NULL DEFAULT '{}'
                 );
 
+                CREATE TABLE IF NOT EXISTS setup_condition_states (
+                    setup_id TEXT PRIMARY KEY,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS forecast_stack_experiments (
                     experiment_id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
