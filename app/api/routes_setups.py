@@ -61,6 +61,9 @@ async def get_setup(request: Request, setup_id: str):
         "setup": setup,
         "orders": orders,
         "events": events,
+        "setup_conditions": request.app.state.engine.setup_condition_tracker.conditions_payload(
+            setup
+        ),
         "creation_market_snapshot": request.app.state.repository.get_setup_creation_snapshot(
             setup_id
         ),

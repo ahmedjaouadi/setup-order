@@ -77,6 +77,27 @@ class SetupArmApiIntegrationTests(unittest.TestCase):
             SetupStatus.DISABLED.value,
         )
 
+    def test_setup_detail_payload_includes_setup_conditions(self) -> None:
+        setup = MomentumBreakoutSetup(valid_momentum_config())
+        self.repository.upsert_setup(setup.to_record(SetupStatus.WAITING_ACTIVATION))
+
+        status, body = asyncio.run(
+            _request(self.app, "GET", f"/api/setups/{setup.setup_id}")
+        )
+
+        self.assertEqual(status, 200, body)
+        conditions = body.get("setup_conditions")
+        self.assertIsInstance(conditions, dict)
+        self.assertEqual(conditions["setup_type"], "momentum_breakout")
+        self.assertEqual(conditions["overall_status"], "watching")
+        self.assertFalse(conditions["management_only"])
+        self.assertGreater(len(conditions["conditions"]), 0)
+        for condition in conditions["conditions"]:
+            self.assertIn("id", condition)
+            self.assertIn("label", condition)
+            self.assertIn("status", condition)
+            self.assertIn("target", condition)
+
 
 async def _request(app: FastAPI, method: str, path: str) -> tuple[int, dict]:
     status_code = 0
