@@ -2,6 +2,15 @@
 
 This file records implementation changes that affect behavior, performance, or safety.
 
+## 2026-07-11
+
+### Fix: lifecycle revalidation no longer invalidates pending entries on initial_stop
+
+- `app/engine/setup_lifecycle_service.py` (`revalidate_setup` / `_invalidation_reason`) previously used `trailing_stop_loss.initial_stop` as an entry-thesis invalidation trigger even for setups with no filled position (`WAITING_ACTIVATION` and other pre-fill lifecycle statuses). Since `initial_stop` protects a POSITION, this falsely invalidated waiting entries whenever price dipped below it while still inside the setup's valid range/support (real case: a `range_breakout` setup with price below `trailing_stop_loss.initial_stop` but still above `range.invalidation_below`).
+- `initial_stop` is now only used as an invalidation trigger once a position is confirmed open (via broker reality `position_open`); before any fill it is ignored for invalidation purposes (fail-safe: unknown position state still keeps `initial_stop` protection active).
+- Added a setup-type-aware entry-thesis invalidation level (`_entry_thesis_invalidation_level`), routed by `setup_type`: `range_breakout` -> `range.invalidation_below`/`invalidation_above`, `breakout_retest` -> `retest.no_close_below`/`zone_min` (or the symmetric short fields), `aggressive_rebound` -> `support_zone`/`resistance_zone.invalidation_below`/`invalidation_above` (including the `invalidation.close_below`/`close_above` fallback used by `app/setups/aggressive_rebound.py`), `pullback_continuation` -> `pullback.invalidation_below`/`invalidation_above` or `zone_min`/`zone_max`. `momentum_breakout` intentionally has no such level: `breakout.resistance` is the entry trigger (normally above price for the entire waiting period), not an invalidation floor, and its own `evaluate()` has no INVALIDATE path.
+- Added regression coverage in `tests/test_setup_lifecycle_service.py` for the `range_breakout` waiting/invalidated/with-position cases.
+
 ## 2026-07-02
 
 ### V2.4.1 legacy stop cleanup

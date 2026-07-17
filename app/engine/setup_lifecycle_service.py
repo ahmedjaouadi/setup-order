@@ -207,7 +207,18 @@ def revalidate_setup(
 
     # 5. Price-based invalidation (technical thesis broken).
     close = prices["close"]
-    invalidation_reason = _invalidation_reason(config, close, initial_stop, is_long)
+    # initial_stop protects an existing POSITION. Before any fill there is no
+    # position to protect, so it must not be used as an entry-thesis
+    # invalidation trigger (a price that merely dips below the planned stop
+    # while still inside the setup's range/support is normal, not broken).
+    # Only treat initial_stop as a legitimate invalidation level once a
+    # position is confirmed open; if unknown, fail safe and keep protecting.
+    has_position = _position_open(broker_reality)
+    stop_for_invalidation = initial_stop if has_position is not False else None
+    setup_type = str(config.get("setup_type") or setup.get("setup_type") or "")
+    invalidation_reason = _invalidation_reason(
+        config, close, stop_for_invalidation, is_long, setup_type=setup_type
+    )
     if invalidation_reason:
         return result(SetupStatus.INVALIDATED.value, invalidation_reason)
 
@@ -599,6 +610,7 @@ def _invalidation_reason(
     close: float | None,
     initial_stop: float | None,
     is_long: bool,
+    setup_type: str = "",
 ) -> str:
     if close is None:
         return ""
@@ -610,6 +622,8 @@ def _invalidation_reason(
             invalidation = config.get("invalidation")
             if isinstance(invalidation, dict):
                 invalidation_below = _number_or_none(invalidation.get("price_below"))
+        if invalidation_below is None:
+            invalidation_below = _entry_thesis_invalidation_level(config, setup_type, is_long=True)
         support_min = _number_or_none(zone.get("min"))
         if invalidation_below is not None and close < invalidation_below:
             return "INVALIDATION_LEVEL_BROKEN"
@@ -625,6 +639,8 @@ def _invalidation_reason(
         invalidation = config.get("invalidation")
         if isinstance(invalidation, dict):
             invalidation_above = _number_or_none(invalidation.get("price_above"))
+    if invalidation_above is None:
+        invalidation_above = _entry_thesis_invalidation_level(config, setup_type, is_long=False)
     resistance_max = _number_or_none(zone.get("max"))
     if invalidation_above is not None and close > invalidation_above:
         return "INVALIDATION_LEVEL_BROKEN"
@@ -633,6 +649,65 @@ def _invalidation_reason(
     if initial_stop is not None and close > initial_stop:
         return "TECHNICAL_THESIS_BROKEN"
     return ""
+
+
+def _entry_thesis_invalidation_level(
+    config: dict[str, Any],
+    setup_type: str,
+    is_long: bool,
+) -> float | None:
+    """Level whose breach means the pending ENTRY thesis is broken.
+
+    Unlike `initial_stop` (which protects a position once one exists), these
+    levels are the setup's own "the breakout/rebound/pullback is no longer
+    possible" line, per setup_type. Returns None when the setup has no such
+    level configured, in which case the thesis is treated as still valid.
+    """
+    if setup_type == "range_breakout":
+        range_config = config.get("range")
+        range_config = range_config if isinstance(range_config, dict) else {}
+        if is_long:
+            return _number_or_none(range_config.get("invalidation_below"))
+        return _number_or_none(range_config.get("invalidation_above"))
+    if setup_type == "breakout_retest":
+        retest = config.get("retest")
+        retest = retest if isinstance(retest, dict) else {}
+        if is_long:
+            level = _number_or_none(retest.get("no_close_below"))
+            return level if level is not None else _number_or_none(retest.get("zone_min"))
+        level = _number_or_none(retest.get("no_close_above"))
+        return level if level is not None else _number_or_none(retest.get("zone_max"))
+    if setup_type == "aggressive_rebound":
+        zone_key = "support_zone" if is_long else "resistance_zone"
+        zone = config.get(zone_key)
+        zone = zone if isinstance(zone, dict) else {}
+        if is_long:
+            level = _number_or_none(zone.get("invalidation_below"))
+            invalidation = config.get("invalidation")
+            if level is None and isinstance(invalidation, dict):
+                level = _number_or_none(invalidation.get("close_below"))
+            return level
+        level = _number_or_none(zone.get("invalidation_above"))
+        invalidation = config.get("invalidation")
+        if level is None and isinstance(invalidation, dict):
+            level = _number_or_none(invalidation.get("close_above"))
+        return level
+    if setup_type == "pullback_continuation":
+        pullback = config.get("pullback")
+        pullback = pullback if isinstance(pullback, dict) else {}
+        if is_long:
+            level = _number_or_none(pullback.get("invalidation_below"))
+            return level if level is not None else _number_or_none(pullback.get("zone_min"))
+        level = _number_or_none(pullback.get("invalidation_above"))
+        return level if level is not None else _number_or_none(pullback.get("zone_max"))
+    # momentum_breakout has no price-level thesis-invalidation concept: its
+    # breakout.resistance is the entry TRIGGER, sitting above price for the
+    # entire normal waiting period, so treating it as an invalidation floor
+    # would falsely invalidate every setup that simply hasn't broken out yet.
+    # Its own evaluate() (app/setups/momentum_breakout.py) has no INVALIDATE
+    # signal at all; only PRICE_TOO_FAR_ABOVE_ENTRY (handled elsewhere in
+    # this module) ever moves it out of the waiting state pre-fill.
+    return None
 
 
 def _retest_zone(config: dict[str, Any]) -> tuple[float, float] | None:

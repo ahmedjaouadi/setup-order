@@ -140,6 +140,58 @@ class RevalidateSetupTests(unittest.TestCase):
         self.assertFalse(result["can_send_order"])
         self.assertFalse(result["can_be_armed"])
 
+    def _range_breakout_config(self, **overrides) -> dict:
+        config = lifecycle_config(
+            setup_type="range_breakout",
+            support_zone=None,
+            range={"high": 5.10, "low": 4.70, "invalidation_below": 4.70},
+            trailing_stop_loss={"initial_stop": 4.88, "current_stop": None},
+            entry={
+                "trigger_price": 5.12,
+                "entry_price": 5.13,
+                "limit_price": 5.17,
+                "maximum_limit_price": 5.18,
+            },
+        )
+        for key, value in overrides.items():
+            if isinstance(value, dict) and isinstance(config.get(key), dict):
+                config[key] = {**config[key], **value}
+            else:
+                config[key] = value
+        return config
+
+    def test_range_breakout_waiting_ignores_initial_stop_within_range(self) -> None:
+        # Regression for a real ACHR range_breakout setup: price dipped below
+        # trailing_stop_loss.initial_stop (a POSITION-protection level) while
+        # staying above range.invalidation_below (the ENTRY-thesis level).
+        # No fill ever happened, so initial_stop must not drive invalidation.
+        setup = lifecycle_setup(config=self._range_breakout_config())
+        broker_reality = {**BROKER_OK, "position_open": False}
+        result = revalidate_setup(setup, market(4.80), broker_reality, RTH_NOW)
+
+        self.assertEqual(result["status"], SetupStatus.WAITING_ACTIVATION.value)
+        self.assertTrue(result["can_be_armed"])
+        self.assertNotIn("TECHNICAL_THESIS_BROKEN", result.get("blocking_reasons", []))
+
+    def test_range_breakout_invalidated_below_range_invalidation_level(self) -> None:
+        setup = lifecycle_setup(config=self._range_breakout_config())
+        broker_reality = {**BROKER_OK, "position_open": False}
+        result = revalidate_setup(setup, market(4.65), broker_reality, RTH_NOW)
+
+        self.assertEqual(result["status"], SetupStatus.INVALIDATED.value)
+        self.assertEqual(result["status_reason"], "INVALIDATION_LEVEL_BROKEN")
+        self.assertFalse(result["can_be_armed"])
+
+    def test_range_breakout_with_open_position_still_uses_initial_stop(self) -> None:
+        # Regression: once a position is confirmed open, initial_stop remains
+        # a legitimate invalidation trigger (protection must not weaken).
+        setup = lifecycle_setup(config=self._range_breakout_config())
+        broker_reality = {**BROKER_OK, "position_open": True}
+        result = revalidate_setup(setup, market(4.80), broker_reality, RTH_NOW)
+
+        self.assertEqual(result["status"], SetupStatus.INVALIDATED.value)
+        self.assertEqual(result["status_reason"], "TECHNICAL_THESIS_BROKEN")
+
     def test_missing_market_data_blocks_not_invalidates(self) -> None:
         setup = lifecycle_setup()
 
