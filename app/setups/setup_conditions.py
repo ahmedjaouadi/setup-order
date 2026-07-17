@@ -471,6 +471,41 @@ SETUP_CONDITION_DEFINITIONS: dict[str, SetupConditionsDefinition] = {
 
 MANAGEMENT_ONLY_SETUP_TYPES = {"runner", "trailing_runner", "position_management"}
 
+# Raison d'invalidation moteur -> message lisible affiche dans le bandeau.
+# Deux sources alimentent invalidation_reason:
+#   - les codes internes de revalidate_setup (app/engine/setup_lifecycle_service.py),
+#     seuls ceux qui menent au statut INVALIDATED peuvent atteindre le bandeau;
+#   - les reason des signaux INVALIDATE emis par les evaluate() (app/setups/*.py),
+#     qui sont des phrases anglaises.
+# Toute nouvelle raison d'invalidation cote moteur doit etre ajoutee ici.
+INVALIDATION_REASON_MESSAGES: dict[str, str] = {
+    # Codes lifecycle (setup_lifecycle_service.revalidate_setup)
+    "INVALIDATION_LEVEL_BROKEN": "Le niveau d'invalidation du setup a ete casse",
+    "SUPPORT_BROKEN": "Le support du setup a ete casse",
+    "TECHNICAL_THESIS_BROKEN": "La these technique du setup n'est plus valide",
+    "STOP_ABOVE_ENTRY_FOR_LONG": "Stop place au-dessus de l'entree sur un setup long",
+    "STOP_BELOW_ENTRY_FOR_SHORT": "Stop place en dessous de l'entree sur un setup short",
+    # Signaux INVALIDATE des evaluate()
+    "Close below support invalidation": "Cloture sous le niveau d'invalidation du support",
+    "Close below retest invalidation": "Cloture sous le niveau d'invalidation du retest",
+    "Close below range low": "Cloture sous le bas du range",
+    "Price lost EMA 50 trend filter": "Le prix a perdu le filtre de tendance EMA 50",
+}
+
+
+def humanize_invalidation_reason(reason: str) -> str:
+    """Message lisible pour le bandeau d'invalidation.
+
+    Fallback volontaire: une raison inconnue est renvoyee telle quelle plutot
+    que masquee, pour ne jamais perdre l'information moteur. Ne jamais appeler
+    avant `SetupConditionsDefinition.failed_condition_for`, qui matche sur la
+    raison BRUTE.
+    """
+    text = str(reason or "").strip()
+    if not text:
+        return ""
+    return INVALIDATION_REASON_MESSAGES.get(text, text)
+
 
 def definition_for(setup_type: str) -> SetupConditionsDefinition | None:
     return SETUP_CONDITION_DEFINITIONS.get(str(setup_type or ""))

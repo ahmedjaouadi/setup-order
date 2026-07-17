@@ -9,6 +9,7 @@ from app.setups.setup_conditions import (
     SetupConditionsDefinition,
     definition_for,
     evaluate_setup_conditions,
+    humanize_invalidation_reason,
 )
 from app.storage.repositories import TradingRepository
 
@@ -155,8 +156,12 @@ class SetupConditionTracker:
         adjusted = dict(persisted)
         adjusted["overall_status"] = status_overall
         if status_overall == OVERALL_INVALIDATED:
-            adjusted["invalidation_reason"] = str(setup.get("status_reason") or "") or str(
-                persisted.get("invalidation_reason") or ""
+            # status_reason porte les codes internes du lifecycle
+            # (INVALIDATION_LEVEL_BROKEN...): les rendre lisibles ici.
+            # Idempotent: une raison deja traduite est renvoyee telle quelle.
+            adjusted["invalidation_reason"] = humanize_invalidation_reason(
+                str(setup.get("status_reason") or "")
+                or str(persisted.get("invalidation_reason") or "")
             )
         adjusted["summary_message"] = _summary_message(
             overall=status_overall,
@@ -251,6 +256,9 @@ def build_conditions_payload(
     current_label = (
         definition.conditions[current_step].label if current_step is not None else ""
     )
+    # Traduit seulement maintenant: failed_condition_for() ci-dessus matche sur
+    # la raison BRUTE, la traduire plus tot casserait la condition en echec.
+    readable_reason = humanize_invalidation_reason(invalidation_reason)
     return {
         "setup_id": setup_id,
         "setup_type": definition.setup_type,
@@ -260,10 +268,10 @@ def build_conditions_payload(
         "conditions": conditions,
         "current_step": current_step,
         "overall_status": overall,
-        "invalidation_reason": invalidation_reason if overall == OVERALL_INVALIDATED else "",
+        "invalidation_reason": readable_reason if overall == OVERALL_INVALIDATED else "",
         "summary_message": _summary_message(
             overall=overall,
-            invalidation_reason=invalidation_reason,
+            invalidation_reason=readable_reason,
             validated_count=sum(
                 1 for condition in conditions if condition["status"] == CONDITION_VALIDATED
             ),

@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from app.engine.setup_condition_tracker import SetupConditionTracker
 from app.models import MarketSnapshot, SetupSignal, SetupStatus, SignalAction
+from app.setups.setup_conditions import humanize_invalidation_reason
 from app.storage.database import Database
 from app.storage.repositories import TradingRepository
 
@@ -171,10 +172,56 @@ class SetupConditionTrackerTests(unittest.TestCase):
         )
 
         self.assertEqual(payload["overall_status"], "invalidated")
-        self.assertEqual(payload["invalidation_reason"], "Price lost EMA 50 trend filter")
+        # La raison est traduite pour l'affichage; le marquage de la condition
+        # en echec continue de se faire sur la raison BRUTE.
+        self.assertEqual(
+            payload["invalidation_reason"],
+            "Le prix a perdu le filtre de tendance EMA 50",
+        )
         by_id = {condition["id"]: condition for condition in payload["conditions"]}
         self.assertEqual(by_id["uptrend"]["status"], "failed")
         self.assertIn("Setup invalide", payload["summary_message"])
+
+    def test_lifecycle_invalidation_codes_are_translated_for_display(self) -> None:
+        """Les codes internes du lifecycle ne doivent jamais atteindre le bandeau."""
+        expected = {
+            "INVALIDATION_LEVEL_BROKEN": "Le niveau d'invalidation du setup a ete casse",
+            "SUPPORT_BROKEN": "Le support du setup a ete casse",
+            "TECHNICAL_THESIS_BROKEN": "La these technique du setup n'est plus valide",
+            "STOP_ABOVE_ENTRY_FOR_LONG": "Stop place au-dessus de l'entree sur un setup long",
+            "STOP_BELOW_ENTRY_FOR_SHORT": "Stop place en dessous de l'entree sur un setup short",
+        }
+        for code, message in expected.items():
+            with self.subTest(code=code):
+                setup = pullback_setup("INVALIDATED")
+                setup["status_reason"] = code
+                payload = self.tracker.conditions_payload(setup)
+
+                self.assertEqual(payload["invalidation_reason"], message)
+                self.assertNotIn(code, payload["summary_message"])
+
+    def test_unknown_invalidation_reason_falls_back_to_raw_value(self) -> None:
+        """Fallback: une raison inconnue reste affichee, jamais masquee."""
+        signal = SetupSignal(
+            action=SignalAction.INVALIDATE,
+            reason="UNKNOWN_FUTURE_CODE_42",
+            target_status=SetupStatus.INVALIDATED,
+        )
+        payload = self.tracker.update_from_evaluation(
+            pullback_setup("WAITING_ENTRY_SIGNAL"),
+            SetupStatus.WAITING_ENTRY_SIGNAL,
+            signal,
+            snapshot(price=47.0, close=47.0),
+        )
+
+        self.assertEqual(payload["invalidation_reason"], "UNKNOWN_FUTURE_CODE_42")
+        self.assertIn("UNKNOWN_FUTURE_CODE_42", payload["summary_message"])
+
+    def test_humanize_invalidation_reason_is_idempotent(self) -> None:
+        """conditions_payload peut retraduire une raison deja persistee traduite."""
+        once = humanize_invalidation_reason("SUPPORT_BROKEN")
+        self.assertEqual(humanize_invalidation_reason(once), once)
+        self.assertEqual(humanize_invalidation_reason(""), "")
 
     def test_momentum_conditions_read_engine_analysis(self) -> None:
         signal = hold_signal("SPREAD_TOO_WIDE")
