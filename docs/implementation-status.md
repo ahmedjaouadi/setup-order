@@ -1,7 +1,7 @@
 # Implementation Status
 
 ## Derniere mise a jour
-2026-07-06
+2026-07-16
 
 ## Phase actuelle
 - Phase: V2.4 Architecture Stabilization
@@ -12,6 +12,13 @@
 - Note: V2.4.1 Legacy Stop Cleanup est accepte. La validation V2.4 globale garde les blockers non scopes a traiter separement.
 
 ## Implante
+- Module: Section "Ce que cherche le setup" — checklist temps reel des conditions du moteur
+- Statut: ACCEPTED
+- Fichiers: `app/setups/setup_conditions.py`, `app/engine/setup_condition_tracker.py`, `app/engine/stock_market_monitor.py`, `app/engine/trading_engine.py`, `app/storage/database.py`, `app/storage/repositories.py`, `app/api/routes_setups.py`, `app/gui/templates/setup_detail.html`, `app/gui/static/js/setup-conditions.js`, `tests/test_setup_conditions.py`
+- API: `GET /api/setups/{setup_id}` expose `setup_conditions` (checklist ordonnee, statuts `validated`/`in_progress`/`pending`/`failed`, `overall_status` `watching`/`ready_to_enter`/`entered`/`invalidated`, `current_step`, `summary_message`, `invalidation_reason`).
+- Fidele au moteur: conditions issues des `evaluate()` reels (5 setups d'entree); timestamps de validation persistes dans `setup_condition_states`; reference et ecarts vs catalogue cible dans `docs/21-setup-conditions-catalog.md`.
+- Tests: `python -m unittest tests.test_setup_conditions tests.test_setup_arm_api`
+
 - Module: Etape 13 — Fiabilite du scan : suivi correct/faux visible et boucle de collecte surveillee
 - Statut: ACCEPTED
 - Fichiers: `app/opportunity_scanner/outcome_tracker.py`, `app/opportunity_scanner/outcome_repository.py`, `app/opportunities/scanner.py`, `app/background_jobs.py`, `app/storage/database.py`, `app/api/routes_techniques.py`, `app/api/routes_opportunities.py`, `app/gui/templates/opportunity_radar.html`, `app/gui/static/js/app.js`, `tests/test_scan_reliability.py`

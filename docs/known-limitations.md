@@ -1,5 +1,9 @@
 # Known Limitations
 
+- Dette technique: `data/setups/` est suivi par git alors qu'il contient des donnees de trading runtime (les setups du jour, produits et modifies a chaque session). Consequence: chaque session genere du bruit de diff et des conflits sur des fichiers qui ne sont pas du code. A traiter separement (ajout au `.gitignore` + migration des setups hors du suivi git, en preservant l'historique utile). Le reste de `data/` est deja ignore (`data/*` avec exceptions `!data/setups/` et `!data/watchlists/`).
+
+- La section "Ce que cherche le setup" n'affiche que les conditions reellement calculees par le moteur (3 a 7 selon le setup). Les conditions cibles du catalogue complet (consolidation, contraction de volume, essoufflement vendeur, retournement RSI/MACD, structure HH/HL) ainsi que les setups Bottom Reversal et les variantes short ne sont pas encore implementes cote moteur; ils sont documentes comme roadmap dans `docs/21-setup-conditions-catalog.md`.
+
 - V2.4.1 Legacy Stop Cleanup is accepted: the setup template should not emit `risk.initial_stop_loss` or `risk.protective_stop` as primary fields, and final runtime models should use `trailing_stop_loss.initial_stop`.
 - `initial_stop_loss` and `protective_stop` can still appear in legacy migration code, alias tests, imported historical payloads and archived documentation; they are accepted only as aliases/migration inputs.
 - Scoring, forecasting and Model Lab are no longer known V2.4.1 limitations for stop-field usage: they canonicalize setup configs before reading stop values.

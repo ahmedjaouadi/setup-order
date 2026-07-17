@@ -230,6 +230,7 @@ docs/17-observability-contract.md
 docs/18-tests-golden-contract.md
 docs/19-definition-of-done.md
 docs/20-documentation-governance.md
+docs/21-setup-conditions-catalog.md
 ```
 
 Implementation notes and historical phase reports remain under `docs/existing/`.

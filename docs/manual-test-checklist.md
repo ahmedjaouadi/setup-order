@@ -48,3 +48,9 @@
 - Appeler `POST /api/model-lab/darts/run-experiment` avec `series`, `horizon_bars` et `models`, puis confirmer la presence des resultats Darts, `naive_baseline` et `atr_baseline`.
 - Appeler `POST /api/model-lab/forecast-stack/run-native` avec un provider installe dans `models` et confirmer son classement face aux deux baselines.
 - Confirmer que NeuralForecast, AutoGluon, Darts et Moirai retournent `MODEL_LAB_ONLY` depuis l'API de forecast runtime meme lorsqu'ils sont installes.
+- Ouvrir la page detail d'un setup arme: verifier que la section `Ce que cherche le setup` apparait entre le graphe et `Forecast stack summary`, avec le badge du setup, la direction, la checklist ordonnee et la barre `X/N conditions validees`.
+- Sur un setup en attente, verifier qu'une seule condition est en cours (jaune) avec sa cible chiffree, que les suivantes sont grisees, et que les conditions validees affichent valeur observee + horodatage.
+- Forcer un signal ENTRY_READY (simulateur) et verifier le bandeau vert `Toutes les conditions sont reunies` avec toutes les conditions validees.
+- Forcer une invalidation (ex: cloture sous le support/zone) et verifier le bandeau rouge avec la raison moteur et la condition en cause en rouge.
+- Redemarrer l'application et verifier que les timestamps de validation de la checklist sont conserves (persistance `setup_condition_states`).
+- Ouvrir un setup `runner`/`position_management` et verifier l'etat sobre sans checklist (`Setup de gestion de position`).

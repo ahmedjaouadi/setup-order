@@ -2,6 +2,18 @@
 
 This file records implementation changes that affect behavior, performance, or safety.
 
+## 2026-07-16
+
+### Feature: section "Ce que cherche le setup" sur la page detail setup
+
+- Nouvelle section sur la page detail d'un setup, placee entre le graphe et "Forecast stack summary": checklist ordonnee des conditions que le moteur verifie avant d'entrer, avec statut temps reel par condition (`validated`/`in_progress`/`pending`/`failed`), valeur observee, cible attendue, timestamp de validation, barre de progression, message de synthese et bandeaux `ready_to_enter`/`invalidated`.
+- Regle de fidelite: chaque condition affichee correspond a un calcul reellement effectue par le `evaluate()` du setup; les conditions cibles non calculees par le moteur (consolidation, contraction volume, RSI/MACD, bottom reversal, shorts...) sont documentees comme roadmap dans `docs/21-setup-conditions-catalog.md` et ne sont pas affichees.
+- Backend: `app/setups/setup_conditions.py` (definitions des checklists par setup type, evaluateurs miroirs des calculs moteur; pour `momentum_breakout` les valeurs proviennent directement de `metadata.analysis` du signal), `app/engine/setup_condition_tracker.py` (evaluation sequentielle avec plancher par statut du state machine, une seule condition `in_progress`, invalidation via le signal `INVALIDATE` reel avec raison, reset sur rearm lifecycle), table SQLite `setup_condition_states` (timestamps de validation persistes, jamais recalcules au rafraichissement).
+- Alimentation: `StockMarketMonitor.analyze_market_snapshot` appelle le tracker a chaque evaluation (jamais bloquant pour le trading); `repository.delete_setup` purge l'etat de conditions associe.
+- API: `GET /api/setups/{setup_id}` expose le nouveau champ `setup_conditions` (structure documentee dans `docs/21-setup-conditions-catalog.md`); la section se rafraichit au meme rythme que le reste de la page.
+- UI (livree separement sur la branche portant le decoupage ES modules de `app.js`): module `app/gui/static/js/setup-conditions.js` (`renderSetupConditionsPanel`), section dans `setup_detail.html`, styles dans `styles.css`, cache-busting incremente. Les setups MANAGEMENT_ONLY (`runner`, `trailing_runner`, `position_management`) affichent un etat sobre sans checklist.
+- Tests: `tests/test_setup_conditions.py` (evaluation sequentielle, persistance des timestamps, `ready_to_enter`, invalidation avec raison et condition en echec, lecture de `metadata.analysis` momentum, reset apres rearm, payloads management-only et sans historique, purge a la suppression) + payload API dans `tests/test_setup_arm_api.py`.
+
 ## 2026-07-11
 
 ### Fix: lifecycle revalidation no longer invalidates pending entries on initial_stop

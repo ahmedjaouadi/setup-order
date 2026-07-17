@@ -76,4 +76,6 @@ Un nouveau setup sauvegarde ou importe demarre toujours en `DISABLED`: il n'est 
 
 `Desarmer setup` est bloque si le setup a un ordre actif ou une position ouverte. Dans ce cas, utiliser `Auto OFF` pour empecher de nouveaux ordres sans couper la gestion en cours.
 
+La page detail d'un setup affiche, juste avant `Forecast stack summary`, la section `Ce que cherche le setup`: la checklist ordonnee des conditions que le moteur verifie reellement avant d'entrer (statut par condition, valeur observee, cible attendue, timestamp de validation persiste), avec barre de progression, message de synthese et bandeaux `ready_to_enter`/`invalidated`. Le catalogue des setups et de leurs conditions est documente dans `docs/21-setup-conditions-catalog.md`; seuls les calculs reellement effectues par le moteur sont affiches.
+
 Le panneau `Forecast stack summary` du detail setup charge seulement un forecast deja en cache a l'ouverture de la page. Le calcul lourd du forecast stack est lance uniquement via `Recalculer`, ce qui evite de ralentir la navigation dans les setups.
