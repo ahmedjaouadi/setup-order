@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import logging
 import math
 from typing import Any, TypedDict
 
 from app.broker.ib_models import BrokerExecution, BrokerOrderRequest, BrokerPosition
 from app.broker.tws_connector import BrokerConnector
 from app.engine.broker_reality import REPORT_STATE_KEY, build_broker_reality_report
+from app.engine.post_fill_progression import PostFillProgression
 from app.models import ConnectionStatus, EventLevel, OrderStatus, PositionRecord, SetupStatus
 from app.setups.setup_roles import setup_is_management_only, setup_role_from_config
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
+
+logger = logging.getLogger(__name__)
 
 
 class ReconciliationResult(TypedDict):
@@ -51,6 +55,7 @@ class ReconciliationEngine:
         self.event_store = event_store
         self.broker = broker
         self.settings = settings if isinstance(settings, dict) else {}
+        self.progression = PostFillProgression(repository, event_store)
 
     async def run(self) -> ReconciliationResult:
         broker_connected = await self.broker.status() == ConnectionStatus.CONNECTED
@@ -360,6 +365,7 @@ class ReconciliationEngine:
                         open_status,
                         result,
                         source="broker_open_orders",
+                        broker_positions=broker_positions,
                         broker_executions=executions,
                     )
                 continue
@@ -376,6 +382,7 @@ class ReconciliationEngine:
                     result,
                     source="broker_reconciliation",
                     missing_from_open_orders=True,
+                    broker_positions=broker_positions,
                     broker_executions=executions,
                 )
 
@@ -387,6 +394,7 @@ class ReconciliationEngine:
         *,
         source: str,
         missing_from_open_orders: bool = False,
+        broker_positions: list[BrokerPosition] | None = None,
         broker_executions: list[BrokerExecution] | None = None,
     ) -> None:
         order_id = str(order.get("id") or "")
@@ -424,6 +432,7 @@ class ReconciliationEngine:
         self._update_setup_after_reconciled_order(
             order,
             status,
+            broker_positions=broker_positions or [],
             broker_executions=broker_executions or [],
         )
 
@@ -432,6 +441,7 @@ class ReconciliationEngine:
         order: dict[str, Any],
         status: str,
         *,
+        broker_positions: list[BrokerPosition] | None = None,
         broker_executions: list[BrokerExecution] | None = None,
     ) -> None:
         setup_id = str(order.get("setup_id") or "")
@@ -458,6 +468,71 @@ class ReconciliationEngine:
                     "Open order restored from TWS",
                 )
             return
+        if status == OrderStatus.FILLED.value:
+            if side != "BUY":
+                return
+            if setup_status not in {
+                SetupStatus.ENTRY_ORDER_PLACED.value,
+                SetupStatus.ENTRY_PARTIALLY_FILLED.value,
+            }:
+                logger.debug(
+                    "Ignoring FILLED order %s for setup %s in unexpected status %s",
+                    order.get("id"),
+                    setup_id,
+                    setup_status,
+                )
+                return
+
+            quantity, fill_price = self._resolve_fill_details(
+                order,
+                symbol=symbol,
+                broker_positions=broker_positions or [],
+                broker_executions=broker_executions or [],
+            )
+            if quantity is None or fill_price is None:
+                self.repository.update_setup_status(
+                    setup_id,
+                    SetupStatus.ENTRY_FILLED.value,
+                    "Entry order filled",
+                )
+                self.repository.update_setup_status(
+                    setup_id,
+                    SetupStatus.MANUAL_REVIEW_REQUIRED.value,
+                    "Filled but fill price/quantity unavailable",
+                )
+                self.event_store.record(
+                    EventLevel.CRITICAL,
+                    "entry_filled_unknown_fill_details",
+                    "Entry filled but fill price/quantity unavailable",
+                    setup_id=setup_id,
+                    symbol=symbol,
+                    data={"order_id": str(order.get("id") or "")},
+                )
+                return
+
+            order_id = str(order.get("id") or "")
+            position = self.progression.record_fill(order_id, setup_id, quantity, fill_price, symbol)
+            if position is None:
+                return
+
+            protection_verified = self.progression.has_active_protection(setup_id)
+            if protection_verified:
+                self.progression.mark_in_position(setup_id, protection_verified=protection_verified)
+                return
+            self.repository.update_setup_status(
+                setup_id,
+                SetupStatus.MANUAL_REVIEW_REQUIRED.value,
+                "Filled without active protective stop",
+            )
+            self.event_store.record(
+                EventLevel.CRITICAL,
+                "entry_filled_without_protection",
+                "Filled without active protective stop",
+                setup_id=setup_id,
+                symbol=symbol,
+                data={"order_id": order_id},
+            )
+            return
         if status != OrderStatus.CANCELLED.value:
             return
         if setup_status in _TERMINAL_SETUP_STATUSES:
@@ -483,6 +558,34 @@ class ReconciliationEngine:
                 SetupStatus.CANCELLED.value,
                 "Entry order cancelled in TWS",
             )
+
+    def _resolve_fill_details(
+        self,
+        order: dict[str, Any],
+        *,
+        symbol: str,
+        broker_positions: list[BrokerPosition],
+        broker_executions: list[BrokerExecution],
+    ) -> tuple[int | None, float | None]:
+        match = _match_executions_to_order(broker_executions, order)
+        if match is not None and match["quantity_matches"]:
+            return round(match["quantity"]), match["price"]
+
+        if self.repository.get_position(symbol) is not None:
+            return None, None
+        broker_position = None
+        for position in broker_positions:
+            if position.symbol.upper() == symbol:
+                broker_position = position
+                break
+        if broker_position is None:
+            return None, None
+        order_quantity = order.get("quantity")
+        if order_quantity is None or not math.isclose(
+            broker_position.quantity, float(order_quantity), rel_tol=1e-9, abs_tol=1e-6
+        ):
+            return None, None
+        return int(order_quantity), broker_position.average_price
 
 
 def _protective_stop(config: dict) -> float | None:

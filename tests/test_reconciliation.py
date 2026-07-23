@@ -3,15 +3,18 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from app.broker.ib_models import BrokerExecution
+from app.broker.ib_models import BrokerExecution, BrokerPosition
 from app.broker.tws_connector import SimulatedBrokerConnector
 from app.engine.broker_reality import REPORT_STATE_KEY
 from app.engine.reconciliation import ReconciliationEngine, _match_executions_to_order
-from app.models import OrderRecord, OrderStatus
+from app.models import OrderRecord, OrderStatus, OrderType, PositionRecord, SetupStatus
+from app.setups.breakout_retest import BreakoutRetestSetup
 from app.storage.database import Database
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
+from tests.test_setups import valid_breakout_config
 
 
 class FailingOpenOrdersBroker(SimulatedBrokerConnector):
@@ -201,6 +204,261 @@ class MatchExecutionsToOrderTests(unittest.TestCase):
         match = _match_executions_to_order([execution], mismatched_order)
         self.assertIsNotNone(match)
         self.assertFalse(match["quantity_matches"])
+
+
+class FilledBranchTests(unittest.TestCase):
+    """Lot 3b-2: FILLED branch of _update_setup_after_reconciled_order."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.database = Database(Path(self.tmp.name) / "state.sqlite")
+        self.database.initialize()
+        self.repository = TradingRepository(self.database)
+        self.event_store = EventStore(self.repository)
+        self.reconciliation = ReconciliationEngine(
+            self.repository, self.event_store, SimulatedBrokerConnector()
+        )
+        self.config = valid_breakout_config()
+        self.symbol = self.config["symbol"]
+        self.repository.upsert_setup(BreakoutRetestSetup(self.config).to_record())
+        self.order = OrderRecord(
+            id="ord-1",
+            setup_id=self.config["setup_id"],
+            symbol=self.symbol,
+            side="BUY",
+            order_type=OrderType.STP_LMT.value,
+            quantity=40,
+            status=OrderStatus.SUBMITTED.value,
+            broker_order_id="9001",
+            broker_perm_id="555",
+        )
+        self.repository.upsert_order(self.order)
+        self.repository.update_setup_status(
+            self.config["setup_id"], SetupStatus.ENTRY_ORDER_PLACED.value, "test setup"
+        )
+
+    def tearDown(self) -> None:
+        self.database.close()
+        self.tmp.cleanup()
+
+    def _order_dict(self, **overrides) -> dict:
+        base = {
+            "id": self.order.id,
+            "setup_id": self.config["setup_id"],
+            "symbol": self.symbol,
+            "side": "BUY",
+            "quantity": 40,
+            "broker_order_id": "9001",
+            "broker_perm_id": "555",
+        }
+        base.update(overrides)
+        return base
+
+    def _add_active_stop_order(self) -> None:
+        self.repository.upsert_order(
+            OrderRecord(
+                id="stp-1",
+                setup_id=self.config["setup_id"],
+                symbol=self.symbol,
+                side="SELL",
+                order_type=OrderType.STP.value,
+                quantity=40,
+                status=OrderStatus.SUBMITTED.value,
+                stop_price=13.85,
+                parent_id=self.order.id,
+            )
+        )
+
+    def _setup_status(self) -> str:
+        return str(self.repository.get_setup(self.config["setup_id"])["status"])
+
+    def _event_types(self) -> set[str]:
+        return {event["event_type"] for event in self.repository.list_events(limit=20)}
+
+    def test_barreau1_nominal_weighted_price_reaches_in_position(self) -> None:
+        self._add_active_stop_order()
+        executions = [
+            _execution(
+                execution_id="E1", quantity=10, price=100.0, order_id="9001", broker_perm_id="555"
+            ),
+            _execution(
+                execution_id="E2", quantity=30, price=110.0, order_id="9001", broker_perm_id="555"
+            ),
+        ]
+
+        self.reconciliation._update_setup_after_reconciled_order(
+            self._order_dict(),
+            OrderStatus.FILLED.value,
+            broker_positions=[],
+            broker_executions=executions,
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+        position = self.repository.get_position(self.symbol)
+        weighted_average = (10 * 100.0 + 30 * 110.0) / 40
+        self.assertNotEqual(weighted_average, (100.0 + 110.0) / 2)
+        self.assertAlmostEqual(position["average_price"], weighted_average)
+        self.assertEqual(position["quantity"], 40)
+
+    def test_barreau1_without_active_stop_requires_manual_review(self) -> None:
+        # The 2026-06-29 incident: entry filled while its stop was rejected.
+        executions = [
+            _execution(order_id="9001", broker_perm_id="555", quantity=40, price=100.0)
+        ]
+
+        with mock.patch.object(
+            self.reconciliation.progression,
+            "mark_in_position",
+            wraps=self.reconciliation.progression.mark_in_position,
+        ) as mark_in_position:
+            self.reconciliation._update_setup_after_reconciled_order(
+                self._order_dict(),
+                OrderStatus.FILLED.value,
+                broker_positions=[],
+                broker_executions=executions,
+            )
+            mark_in_position.assert_not_called()
+
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertIn("entry_filled_without_protection", self._event_types())
+
+    def test_barreau1_quantity_mismatch_falls_through_to_barreau3(self) -> None:
+        executions = [
+            _execution(order_id="9001", broker_perm_id="555", quantity=10, price=100.0)
+        ]
+
+        self.reconciliation._update_setup_after_reconciled_order(
+            self._order_dict(quantity=40),
+            OrderStatus.FILLED.value,
+            broker_positions=[],
+            broker_executions=executions,
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertIsNone(self.repository.get_position(self.symbol))
+        self.assertIn("entry_filled_unknown_fill_details", self._event_types())
+
+    def test_barreau2_used_when_position_newly_born(self) -> None:
+        self._add_active_stop_order()
+        broker_position = BrokerPosition(
+            symbol=self.symbol, quantity=40, average_price=105.0, current_price=106.0
+        )
+
+        self.reconciliation._update_setup_after_reconciled_order(
+            self._order_dict(),
+            OrderStatus.FILLED.value,
+            broker_positions=[broker_position],
+            broker_executions=[],
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+        position = self.repository.get_position(self.symbol)
+        self.assertEqual(position["average_price"], 105.0)
+        self.assertEqual(position["quantity"], 40)
+
+    def test_barreau2_excluded_when_local_position_preexists(self) -> None:
+        self.repository.upsert_position(
+            PositionRecord(
+                symbol=self.symbol,
+                setup_id="OTHER_SETUP",
+                quantity=5,
+                average_price=50.0,
+                current_price=51.0,
+                unrealized_pnl=5.0,
+                current_stop=45.0,
+                risk_remaining=25.0,
+                status="OPEN",
+            )
+        )
+        broker_position = BrokerPosition(
+            symbol=self.symbol, quantity=40, average_price=105.0, current_price=106.0
+        )
+
+        self.reconciliation._update_setup_after_reconciled_order(
+            self._order_dict(),
+            OrderStatus.FILLED.value,
+            broker_positions=[broker_position],
+            broker_executions=[],
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+
+    def test_barreau3_no_reliable_source_marks_manual_review_without_position(self) -> None:
+        self.reconciliation._update_setup_after_reconciled_order(
+            self._order_dict(),
+            OrderStatus.FILLED.value,
+            broker_positions=[],
+            broker_executions=[],
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertIsNone(self.repository.get_position(self.symbol))
+        self.assertIn("entry_filled_unknown_fill_details", self._event_types())
+
+    def test_sell_filled_triggers_no_write(self) -> None:
+        with mock.patch.object(
+            self.reconciliation.progression,
+            "record_fill",
+            wraps=self.reconciliation.progression.record_fill,
+        ) as record_fill:
+            self.reconciliation._update_setup_after_reconciled_order(
+                self._order_dict(side="SELL"),
+                OrderStatus.FILLED.value,
+                broker_positions=[],
+                broker_executions=[],
+            )
+            record_fill.assert_not_called()
+
+        self.assertEqual(self._setup_status(), SetupStatus.ENTRY_ORDER_PLACED.value)
+        self.assertIsNone(self.repository.get_position(self.symbol))
+
+    def test_setup_already_in_position_receives_no_write(self) -> None:
+        self.repository.update_setup_status(
+            self.config["setup_id"], SetupStatus.IN_POSITION.value, "already in position"
+        )
+        executions = [
+            _execution(order_id="9001", broker_perm_id="555", quantity=40, price=100.0)
+        ]
+
+        self.reconciliation._update_setup_after_reconciled_order(
+            self._order_dict(),
+            OrderStatus.FILLED.value,
+            broker_positions=[],
+            broker_executions=executions,
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+        self.assertIsNone(self.repository.get_position(self.symbol))
+
+    def test_setup_status_guard_prevents_second_record_fill(self) -> None:
+        self._add_active_stop_order()
+        executions = [
+            _execution(order_id="9001", broker_perm_id="555", quantity=40, price=100.0)
+        ]
+
+        with mock.patch.object(
+            self.reconciliation.progression,
+            "record_fill",
+            wraps=self.reconciliation.progression.record_fill,
+        ) as record_fill:
+            self.reconciliation._update_setup_after_reconciled_order(
+                self._order_dict(),
+                OrderStatus.FILLED.value,
+                broker_positions=[],
+                broker_executions=executions,
+            )
+            self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+
+            # Second reconciliation pass for the same order: the setup is no
+            # longer ENTRY_ORDER_PLACED/ENTRY_PARTIALLY_FILLED, so the status
+            # guard blocks re-entry into the FILLED branch.
+            self.reconciliation._update_setup_after_reconciled_order(
+                self._order_dict(),
+                OrderStatus.FILLED.value,
+                broker_positions=[],
+                broker_executions=executions,
+            )
+            record_fill.assert_called_once()
 
 
 if __name__ == "__main__":
