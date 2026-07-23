@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import math
 from typing import Any, TypedDict
 
-from app.broker.ib_models import BrokerOrderRequest, BrokerPosition
+from app.broker.ib_models import BrokerExecution, BrokerOrderRequest, BrokerPosition
 from app.broker.tws_connector import BrokerConnector
 from app.engine.broker_reality import REPORT_STATE_KEY, build_broker_reality_report
 from app.models import ConnectionStatus, EventLevel, OrderStatus, PositionRecord, SetupStatus
@@ -29,6 +30,13 @@ class ReconciliationResult(TypedDict):
     reconciliation_mismatches: int
     auto_execution_blocked: bool
     broker_tracker_status: str
+
+
+class ExecutionMatch(TypedDict):
+    quantity: float
+    price: float
+    execution_count: int
+    quantity_matches: bool
 
 
 class ReconciliationEngine:
@@ -133,6 +141,7 @@ class ReconciliationEngine:
                 broker_positions=broker_positions,
                 broker_orders=broker_orders,
                 broker_order_statuses=broker_order_statuses,
+                broker_executions=broker_executions,
                 result=result,
             )
         positions_by_symbol = {
@@ -329,7 +338,9 @@ class ReconciliationEngine:
         broker_orders: list[BrokerOrderRequest],
         broker_order_statuses: dict[str, str],
         result: ReconciliationResult,
+        broker_executions: list[BrokerExecution] | None = None,
     ) -> None:
+        executions = broker_executions or []
         positions_by_symbol = {
             position.symbol.upper(): position
             for position in broker_positions
@@ -349,6 +360,7 @@ class ReconciliationEngine:
                         open_status,
                         result,
                         source="broker_open_orders",
+                        broker_executions=executions,
                     )
                 continue
             if current_status not in _ACTIVE_ORDER_STATUSES:
@@ -364,6 +376,7 @@ class ReconciliationEngine:
                     result,
                     source="broker_reconciliation",
                     missing_from_open_orders=True,
+                    broker_executions=executions,
                 )
 
     def _mark_local_order_status(
@@ -374,6 +387,7 @@ class ReconciliationEngine:
         *,
         source: str,
         missing_from_open_orders: bool = False,
+        broker_executions: list[BrokerExecution] | None = None,
     ) -> None:
         order_id = str(order.get("id") or "")
         if not order_id:
@@ -407,12 +421,18 @@ class ReconciliationEngine:
                 "missing_from_open_orders": missing_from_open_orders,
             },
         )
-        self._update_setup_after_reconciled_order(order, status)
+        self._update_setup_after_reconciled_order(
+            order,
+            status,
+            broker_executions=broker_executions or [],
+        )
 
     def _update_setup_after_reconciled_order(
         self,
         order: dict[str, Any],
         status: str,
+        *,
+        broker_executions: list[BrokerExecution] | None = None,
     ) -> None:
         setup_id = str(order.get("setup_id") or "")
         if not setup_id:
@@ -569,7 +589,53 @@ def _broker_order_keys(order: BrokerOrderRequest) -> set[str]:
 
 
 def _clean_keys(values: set[Any]) -> set[str]:
-    return {text for value in values for text in [str(value or "").strip()] if text}
+    return {key for value in values for key in [_normalize_key(value)] if key}
+
+
+def _normalize_key(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _execution_matches_order(execution: BrokerExecution, order: dict[str, Any]) -> bool:
+    execution_side = str(getattr(execution, "side", "") or "").upper()
+    order_side = str(order.get("side") or "").upper()
+    if execution_side != order_side:
+        return False
+    execution_order_id = _normalize_key(getattr(execution, "order_id", None))
+    order_broker_order_id = _normalize_key(order.get("broker_order_id"))
+    if execution_order_id and order_broker_order_id and execution_order_id == order_broker_order_id:
+        return True
+    execution_perm_id = _normalize_key(getattr(execution, "broker_perm_id", None))
+    order_broker_perm_id = _normalize_key(order.get("broker_perm_id"))
+    if execution_perm_id and order_broker_perm_id and execution_perm_id == order_broker_perm_id:
+        return True
+    return False
+
+
+def _match_executions_to_order(
+    executions: list[BrokerExecution],
+    order: dict[str, Any],
+) -> ExecutionMatch | None:
+    matched = [execution for execution in executions if _execution_matches_order(execution, order)]
+    if not matched:
+        return None
+    total_quantity = sum(float(execution.quantity) for execution in matched)
+    if total_quantity == 0:
+        return None
+    weighted_price = (
+        sum(float(execution.quantity) * float(execution.price) for execution in matched)
+        / total_quantity
+    )
+    order_quantity = order.get("quantity")
+    quantity_matches = order_quantity is not None and math.isclose(
+        total_quantity, float(order_quantity), rel_tol=1e-9, abs_tol=1e-6
+    )
+    return {
+        "quantity": total_quantity,
+        "price": weighted_price,
+        "execution_count": len(matched),
+        "quantity_matches": quantity_matches,
+    }
 
 
 def _first_matching_status(keys: set[str], statuses: dict[str, str]) -> str:
