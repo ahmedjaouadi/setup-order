@@ -68,6 +68,21 @@ class SetupStatus(SerializableEnum):
     ERROR = "ERROR"
 
 
+ENTRY_ELIGIBLE_STATUSES: frozenset[SetupStatus] = frozenset(
+    {
+        SetupStatus.WAITING_ACTIVATION,
+        SetupStatus.WAITING_ENTRY_SIGNAL,
+        SetupStatus.ENTRY_READY,
+        SetupStatus.WAITING_RETEST,
+        SetupStatus.WAITING_CONFIRMATION,
+        SetupStatus.WAITING_REBOUND,
+        SetupStatus.REARMED_ON_NEW_BASE,
+        SetupStatus.VALIDATED,
+        SetupStatus.MISSED_BREAKOUT,
+    }
+)
+
+
 class SetupType(SerializableEnum):
     AGGRESSIVE_REBOUND = "aggressive_rebound"
     BREAKOUT_RETEST = "breakout_retest"

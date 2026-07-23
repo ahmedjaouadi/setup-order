@@ -10,7 +10,7 @@ from app.engine.broker_reality import REPORT_STATE_KEY, build_broker_reality_rep
 from app.engine.entry_order_executor import EntryOrderExecutor
 from app.engine.order_manager import OrderManager
 from app.engine.risk_engine import RiskEngine, RiskLimits
-from app.models import SetupSignal, SignalAction
+from app.models import SetupSignal, SetupStatus, SignalAction
 from app.settings import DEFAULT_CONFIG
 from app.setups.breakout_retest import BreakoutRetestSetup
 from app.storage.database import Database
@@ -72,7 +72,9 @@ class EntryOrderExecutorTests(unittest.IsolatedAsyncioTestCase):
             stop_loss=13.85,
         )
 
-        handled = await self.executor.execute_entry_ready(setup, signal)
+        handled = await self.executor.execute_entry_ready(
+            setup, signal, SetupStatus(setup["status"])
+        )
 
         self.assertTrue(handled)
         updated = self.repository.get_setup(self.config["setup_id"])
@@ -98,7 +100,9 @@ class EntryOrderExecutorTests(unittest.IsolatedAsyncioTestCase):
             stop_loss=13.85,
         )
 
-        handled = await self.executor.execute_entry_ready(setup, signal)
+        handled = await self.executor.execute_entry_ready(
+            setup, signal, SetupStatus(setup["status"])
+        )
 
         self.assertTrue(handled)
         self.assertEqual(self.repository.list_orders(), [])
@@ -116,7 +120,9 @@ class EntryOrderExecutorTests(unittest.IsolatedAsyncioTestCase):
             stop_loss=13.85,
         )
 
-        handled = await self.executor.execute_entry_ready(setup, signal)
+        handled = await self.executor.execute_entry_ready(
+            setup, signal, SetupStatus(setup["status"])
+        )
 
         self.assertTrue(handled)
         self.assertEqual(self.repository.list_orders(), [])
@@ -139,7 +145,9 @@ class EntryOrderExecutorTests(unittest.IsolatedAsyncioTestCase):
             stop_loss=15.00,
         )
 
-        handled = await self.executor.execute_entry_ready(setup, signal)
+        handled = await self.executor.execute_entry_ready(
+            setup, signal, SetupStatus(setup["status"])
+        )
 
         self.assertTrue(handled)
         self.assertEqual(self.repository.list_orders(), [])
@@ -164,7 +172,9 @@ class EntryOrderExecutorTests(unittest.IsolatedAsyncioTestCase):
             stop_loss=None,
         )
 
-        handled = await self.executor.execute_entry_ready(setup, signal)
+        handled = await self.executor.execute_entry_ready(
+            setup, signal, SetupStatus(setup["status"])
+        )
 
         self.assertTrue(handled)
         self.assertEqual(self.repository.list_orders(), [])
@@ -186,7 +196,9 @@ class EntryOrderExecutorTests(unittest.IsolatedAsyncioTestCase):
             stop_loss=13.85,
         )
 
-        handled = await self.executor.execute_entry_ready(setup, signal)
+        handled = await self.executor.execute_entry_ready(
+            setup, signal, SetupStatus(setup["status"])
+        )
 
         self.assertTrue(handled)
         self.assertEqual(self.repository.list_orders(), [])
@@ -217,7 +229,9 @@ class EntryOrderExecutorTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        handled = await self.executor.execute_entry_ready(setup, signal)
+        handled = await self.executor.execute_entry_ready(
+            setup, signal, SetupStatus(setup["status"])
+        )
 
         self.assertTrue(handled)
         self.assertEqual(self.repository.list_orders(), [])
@@ -244,7 +258,9 @@ class EntryOrderExecutorTests(unittest.IsolatedAsyncioTestCase):
             stop_loss=13.85,
         )
 
-        handled = await executor.execute_entry_ready(setup, signal)
+        handled = await executor.execute_entry_ready(
+            setup, signal, SetupStatus(setup["status"])
+        )
 
         self.assertTrue(handled)
         self.assertEqual(self.repository.list_orders(), [])
