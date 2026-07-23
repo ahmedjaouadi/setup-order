@@ -14,6 +14,7 @@ from app.engine.risk_engine import RiskEngine, RiskLimits
 from app.engine.trading_engine import TradingEngine
 from app.models import (
     ENTRY_ELIGIBLE_STATUSES,
+    MarketSnapshot,
     SetupRecord,
     SetupSignal,
     SetupStatus,
@@ -119,6 +120,12 @@ class _EngineHarness:
         self.database.close()
         self.tmp.cleanup()
 
+    def seed_market_data(self, symbol: str, price: float = 14.44) -> None:
+        # Mirrors production ticks so lifecycle revalidation never falls back
+        # to MISSING_MARKET_DATA, whose outcome would otherwise depend on the
+        # wall-clock session (see audit/22_diag_lot1.md).
+        self.engine.market_data.update(MarketSnapshot(symbol=symbol, price=price, close=price))
+
     def seed_broker_reality(self) -> None:
         self.repository.set_bot_state(
             REPORT_STATE_KEY,
@@ -163,6 +170,7 @@ class EntryGateTradingEngineTests(unittest.IsolatedAsyncioTestCase):
                     )
                     harness.repository.upsert_setup(record)
                     harness.seed_broker_reality()
+                    harness.seed_market_data(symbol)
 
                     setup = harness.repository.get_setup(setup_id)
                     self.assertIsNotNone(setup)
@@ -227,6 +235,7 @@ class EntryGateTradingEngineTests(unittest.IsolatedAsyncioTestCase):
         )
         self.repository.upsert_setup(record)
         self._seed_broker_reality()
+        self.harness.seed_market_data("RBRK")
 
         setup = self.repository.get_setup(setup_id)
         await self.engine._handle_signal(
