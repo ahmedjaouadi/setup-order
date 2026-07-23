@@ -4,8 +4,9 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 from app.broker.tws_connector import BrokerConnector, SimulatedBrokerConnector
+from app.engine.post_fill_progression import PostFillProgression
 from app.engine.transaction_costs import simulated_fill_price, transaction_cost_settings
-from app.models import EventLevel, OrderRecord, OrderStatus, PositionRecord, SetupStatus
+from app.models import OrderRecord, OrderStatus, PositionRecord
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
 
@@ -34,6 +35,7 @@ class FillExecutor:
         self.broker_provider = broker_provider
         self.stop_order_placer = stop_order_placer
         self.settings = settings if isinstance(settings, dict) else {}
+        self.progression = PostFillProgression(repository, event_store)
 
     async def simulate_fill_order(
         self,
@@ -65,69 +67,34 @@ class FillExecutor:
         if not broker_position:
             return None
 
-        self.repository.update_order_status(order_id, OrderStatus.FILLED.value)
+        position = self.progression.record_fill(
+            order_id=order_id,
+            setup_id=order["setup_id"],
+            quantity=broker_position.quantity,
+            fill_price=fill_price,
+            symbol=broker_position.symbol,
+        )
+        if position is None:
+            return None
+
         setup = self.repository.get_setup(order["setup_id"])
         if not setup:
             return None
 
-        config = setup.get("config", {}) if isinstance(setup.get("config"), dict) else {}
-        trailing = config.get("trailing_stop_loss", {}) if isinstance(config, dict) else {}
-        stop_raw = trailing.get("initial_stop") if isinstance(trailing, dict) else None
-        if stop_raw is None:
-            self.event_store.record(
-                EventLevel.CRITICAL,
-                "entry_fill_missing_trailing_stop",
-                "Filled entry has no trailing_stop_loss.initial_stop",
-                setup_id=setup["setup_id"],
-                symbol=setup["symbol"],
-            )
-            self.repository.update_setup_status(
-                setup["setup_id"],
-                SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value,
-                "Filled entry missing trailing stop",
-            )
-            return None
-        stop_loss = float(stop_raw)
-        position = PositionRecord(
-            symbol=broker_position.symbol,
-            setup_id=setup["setup_id"],
-            quantity=broker_position.quantity,
-            average_price=fill_price,
-            current_price=fill_price,
-            unrealized_pnl=0.0,
-            current_stop=stop_loss,
-            risk_remaining=round(max(fill_price - stop_loss, 0) * broker_position.quantity, 2),
-            status="OPEN",
-        )
-        self.repository.upsert_position(position)
-        self.repository.update_setup_status(
-            setup["setup_id"],
-            SetupStatus.ENTRY_FILLED.value,
-            "Entry order filled",
-        )
-        self.event_store.record(
-            EventLevel.TRADE,
-            "entry_filled",
-            "Entry filled by the internal test broker",
-            setup_id=setup["setup_id"],
-            symbol=setup["symbol"],
-            data={"fill_price": fill_price, "quantity": broker_position.quantity},
-        )
-
-        protection = self.repository.protection_snapshot_for_setup(setup["setup_id"])
-        if not protection.get("has_active_stop_order"):
+        protection_verified = self.progression.has_active_protection(setup["setup_id"])
+        if not protection_verified:
             stop_order = await self.stop_order_placer.place_stop_order(
                 setup,
                 quantity=broker_position.quantity,
-                stop_loss=stop_loss,
+                stop_loss=position.current_stop,
                 parent_id=order_id,
             )
             if stop_order.status in {OrderStatus.REJECTED.value, OrderStatus.ERROR.value}:
                 return position
+            protection_verified = True
 
-        self.repository.update_setup_status(
+        self.progression.mark_in_position(
             setup["setup_id"],
-            SetupStatus.IN_POSITION.value,
-            "Position protected and open",
+            protection_verified=protection_verified,
         )
         return position
