@@ -20,7 +20,7 @@ from app.engine.risk_engine import RiskEngine
 from app.engine.session_policy import execution_window_block, signal_blocked_by_session_policy
 from app.engine.trade_guards import TradeGuardsService
 from app.engine.transaction_costs import COST_GATE_NO_GO, COST_GATE_WARNING, evaluate_cost_gate
-from app.models import EventLevel, SetupStatus, SignalAction
+from app.models import ENTRY_ELIGIBLE_STATUSES, EventLevel, SetupStatus, SignalAction
 from app.setups.setup_roles import setup_is_management_only, setup_role_from_config
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
@@ -51,7 +51,11 @@ class EntryOrderExecutor:
         self,
         setup: dict[str, Any],
         signal: Any,
+        current_status: SetupStatus,
     ) -> bool:
+        if current_status not in ENTRY_ELIGIBLE_STATUSES:
+            return True
+
         if signal.action != SignalAction.ENTRY_READY:
             return False
 

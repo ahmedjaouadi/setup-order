@@ -1,0 +1,259 @@
+{
+  "schema_version": "2.0.0",
+  "setup_id": "VRT_20260713_001",
+  "symbol": "VRT",
+  "enabled": true,
+  "mode": "paper",
+  "setup_type": "range_breakout",
+  "setup_role": "ENTRY_AND_MANAGEMENT",
+  "direction": "long",
+  "timeframes": {
+    "signal": "15m",
+    "confirmation": "1d",
+    "trailing_management": "15m",
+    "atr_reference": "1h"
+  },
+  "entry": {
+    "enabled": true,
+    "order_type": "STP_LMT",
+    "trigger_offset": 0.27,
+    "limit_offset": 1.5,
+    "trigger_price": 325.0,
+    "entry_price": 325.0,
+    "limit_price": 326.5,
+    "maximum_limit_price": 327.0,
+    "cancel_if_not_filled_after_minutes": 30,
+    "requires_trailing_stop_before_transmission": true
+  },
+  "risk": {
+    "max_position_amount_usd": 250,
+    "max_risk_usd": 15,
+    "risk_model": "TRAILING_STOP_INITIAL_RISK",
+    "emergency_exit_if_stop_fails": true,
+    "block_entry_if_risk_unknown": true,
+    "block_entry_if_trailing_stop_missing": true
+  },
+  "trailing_stop_loss": {
+    "enabled": true,
+    "mode": "AUTO_INTELLIGENT",
+    "initial_stop": 308.0,
+    "current_stop": null,
+    "never_lower_stop": true,
+    "stop_source": "AUTO_CALCULATED",
+    "applies_to": "ENTRY_AND_POSITION_MANAGEMENT",
+    "migration_status": "MIGRATED_TO_TRAILING_STOP",
+    "activation": {
+      "mode": "ON_ENTRY_FILL",
+      "activate_before_entry_transmission": true,
+      "entry_order_requires_attached_trailing_stop": true
+    },
+    "calculation": {
+      "method": "HYBRID_ATR_STRUCTURE",
+      "allowed_methods": [
+        "ATR_BASED",
+        "STRUCTURE_BASED",
+        "HYBRID_ATR_STRUCTURE",
+        "PERCENT_BASED_FALLBACK"
+      ],
+      "default_method": "HYBRID_ATR_STRUCTURE",
+      "atr": {
+        "timeframe": "1h",
+        "period": 14,
+        "multiplier_initial": "AUTO",
+        "multiplier_trailing": "AUTO",
+        "min_multiplier": 1,
+        "max_multiplier": 3.5
+      },
+      "structure": {
+        "reference": "HIGHER_LOW",
+        "allowed_references": [
+          "HIGHER_LOW",
+          "INTRADAY_SUPPORT",
+          "RANGE_LOW",
+          "BROKEN_RESISTANCE_AS_SUPPORT",
+          "VWAP_PULLBACK",
+          "PREVIOUS_DAY_LOW",
+          "AUTO_SELECT"
+        ],
+        "buffer_policy": "MAX_OF_TICK_SPREAD_ATR_FRACTION",
+        "min_tick_buffer": 2,
+        "spread_buffer_multiplier": 2,
+        "atr_fraction_buffer": 0.1
+      },
+      "stock_specific_adjustment": {
+        "enabled": true,
+        "inputs": [
+          "price",
+          "atr_15m",
+          "atr_1h",
+          "average_true_range_percent",
+          "spread_bps",
+          "relative_volume",
+          "liquidity",
+          "gap_percent",
+          "intraday_range_percent",
+          "sector_volatility",
+          "distance_to_support",
+          "distance_to_breakout_level"
+        ],
+        "volatility_regime": "HIGH",
+        "liquidity_regime": "HIGH",
+        "spread_regime": "NORMAL"
+      },
+      "risk_constraints": {
+        "respect_max_risk_usd": true,
+        "respect_max_position_amount_usd": true,
+        "minimum_quantity": 1,
+        "block_if_quantity_zero": true,
+        "block_if_initial_stop_above_entry_for_long": true,
+        "block_if_initial_stop_below_entry_for_short": true
+      }
+    },
+    "ratchet_rules": {
+      "enabled": true,
+      "move_only_up_for_long": true,
+      "move_only_down_for_short": true,
+      "update_on_closed_bar_only": true,
+      "timeframe": "15m",
+      "min_improvement_required": "AUTO",
+      "min_improvement_atr_fraction": 0.15,
+      "do_not_lower_stop": true,
+      "do_not_update_outside_rth": true,
+      "do_not_update_if_spread_wide": true,
+      "do_not_update_on_unconfirmed_intrabar_move": true,
+      "allow_break_even_move": true,
+      "break_even_policy": {
+        "enabled": true,
+        "trigger_after_profit_r_multiple": 1,
+        "new_stop": "ENTRY_PRICE_PLUS_FEES_BUFFER"
+      },
+      "min_improvement_atr_timeframe": "15m"
+    },
+    "broker_order": {
+      "order_type": "TRAIL_OR_MANAGED_STOP",
+      "attach_to_entry_order": true,
+      "required_before_entry_transmission": true,
+      "use_native_ibkr_trailing_order_if_available": false,
+      "fallback_to_managed_stop_updates": true,
+      "parent_child_bracket_required": true,
+      "entry_parent_transmit": false,
+      "trailing_stop_child_transmit": true,
+      "block_if_broker_stop_not_confirmed": true,
+      "trailing_stop_order_ready": false
+    },
+    "audit": {
+      "record_initial_stop_calculation": true,
+      "record_each_stop_update": true,
+      "record_reason": true,
+      "record_old_stop": true,
+      "record_new_stop": true,
+      "record_broker_order_id": true
+    }
+  },
+  "management": {
+    "take_profit_mode": "none",
+    "never_lower_stop": true,
+    "position_management_mode": "TRAILING_STOP_ONLY",
+    "stop_management": {
+      "mode": "TRAILING_STOP_LOSS",
+      "source": "trailing_stop_loss",
+      "never_lower_stop": true,
+      "steps": [],
+      "trail_type": "ATR_OR_STRUCTURE",
+      "atr_timeframe": "1h",
+      "atr_multiplier": 1.5
+    }
+  },
+  "volume_confirmation": {
+    "enabled": true,
+    "required_for_entry": false,
+    "weak_volume_action": "WARNING_ONLY",
+    "signal_timeframe": "15m",
+    "comparison_mode": "SAME_TIME_OF_DAY",
+    "average_sample_days": 20,
+    "fast_volume_ratio_min": 1.5,
+    "normal_volume_ratio_min": 1,
+    "confirmed_volume_ratio_min": 0.8,
+    "confirmed_hold_bars": 2,
+    "close_above_level_required": true,
+    "reject_detection_enabled": true,
+    "max_upper_wick_ratio": 0.5
+  },
+  "range": {
+    "high": 325.0,
+    "low": 287.0,
+    "breakout_side": "up",
+    "require_close_outside_range": true
+  },
+  "trend_filter": {
+    "enabled": true,
+    "required_trend": "uptrend"
+  },
+  "position_source": {
+    "mode": "new_entry",
+    "require_existing_position": false,
+    "account_position_must_match_direction": true
+  },
+  "anti_chase": {
+    "enabled": true,
+    "max_price_above_entry_percent": 1.5,
+    "action_if_too_far": "MISSED_BREAKOUT_WAIT_RETEST",
+    "block_entry_if_price_above_maximum_limit": true
+  },
+  "session_policy": {
+    "enabled": true,
+    "require_regular_trading_hours_for_entry": true,
+    "allow_premarket_entry": false,
+    "allow_after_hours_entry": false,
+    "wait_after_open_minutes": 30,
+    "wait_closed_bars_after_open": 2,
+    "wait_bars_timeframe": "15m",
+    "require_rth_volume_confirmation": true,
+    "require_rth_spread_check": true,
+    "require_rth_risk_recalculation": true,
+    "extended_hours": {
+      "allow_detection": true,
+      "allow_auto_execution": false,
+      "allow_manual_review": true
+    }
+  },
+  "broker_safety": {
+    "require_broker_tracker": true,
+    "block_if_broker_tracker_stale": true,
+    "block_if_tws_disconnected": true,
+    "block_if_position_without_stop": true,
+    "block_if_entry_order_without_trailing_stop": true,
+    "block_if_reconciliation_mismatch": true
+  },
+  "entry_decision": {
+    "status": "EVALUATED",
+    "decision": "NO_ENTRY",
+    "can_send_order": false,
+    "display_title": "VRT - Cassure de range en attente + blocage de sizing",
+    "display_message": "Range ~287-325. Entree long sur cloture 15m au-dessus de 325.00 avec volume. Blocage actuel: le prix (~319$) depasse max_position_amount_usd=250$, donc 0 action entiere possible.",
+    "next_action": "Attendre cloture 15m > 325.00 en RTH; corriger le sizing (fractions ou augmenter le plafond de position a >= 330$).",
+    "blocking_reasons": [
+      "position_sizing_impossible: prix action ~319-325$ > max_position_amount_usd=250$ => 0 action entiere (block_if_quantity_zero=true). Solution: activer fractions ou porter max_position_amount_usd >= 330$.",
+      "risk_cap_tight: avec stop initial 308$, risque/action ~17$ > max_risk_usd=15$ pour 1 action entiere.",
+      "breakout_not_confirmed: prix sous range.high 325.00, aucune cloture 15m au-dessus du range.",
+      "trailing_stop_broker_order not ready (trailing_stop_order_ready=false)."
+    ],
+    "warnings": [
+      "Resultats trimestriels le 2026-07-29 (~2 semaines): envisager sortie/reduction avant l'evenement (risque de gap).",
+      "Volume vendredi ~3M < moyenne 20j ~7.24M: la cassure doit se faire avec volume >= moyenne.",
+      "Volatilite elevee: ATR journalier ~17$ (~5.3%); stop volontairement large.",
+      "Valorisation etiree (P/E ~80, tres au-dessus de la juste valeur): trade de momentum uniquement, pas d'investissement.",
+      "Court terme sous la 20-EMA en baisse (~328-339$): la zone 325-338 est une resistance dense."
+    ],
+    "planned_vs_current_risk": {
+      "planned_entry": 325.0,
+      "planned_initial_stop": 308.0,
+      "planned_risk_per_share": 17.0,
+      "current_price_reference": 318.86,
+      "range_high": 325.0,
+      "range_low": 287.0
+    }
+  },
+  "targets": [],
+  "notes": "VRT (Vertiv) - data center / AI infrastructure. Tendance long terme haussiere (>> SMA200 ~213$), mais correction depuis le plus haut ~380$ (14 mai 2026) vers ~287$ (7 juil), puis rebond. Le titre evolue dans un range large horizontal ~287-338$. Choix range_breakout (et non momentum_breakout par defaut) car la structure court terme est laterale/corrective, pas une tendance propre a acheter en repli. Declencheur: cloture 15m > 325.00$ (plus haut recent 324.73$) avec volume. Protection: trailing stop initial 308$ (sous le higher-low de reprise et la SMA50 ~310$), puis ratchet ATR/structure, jamais abaisse, break-even a +1R. Niveaux cles: support 287$ puis 268$; resistance 325$ puis 338$ puis 376-380$ (ATH). Sources prix: cloture 10 juil 318.86$; range 12 juil 315.70-324.73$; ATR(14)~17.4$."
+}

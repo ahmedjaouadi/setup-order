@@ -1,0 +1,278 @@
+{
+  "schema_version": "2.0.0",
+  "setup_id": "NOW_20260712_001",
+  "symbol": "NOW",
+  "enabled": true,
+  "mode": "paper",
+  "setup_type": "range_breakout",
+  "setup_role": "ENTRY_AND_MANAGEMENT",
+  "direction": "long",
+  "timeframes": {
+    "signal": "15m",
+    "confirmation": "1d",
+    "trailing_management": "15m",
+    "atr_reference": "1h"
+  },
+  "entry": {
+    "enabled": true,
+    "order_type": "STP_LMT",
+    "trigger_offset": 0.02,
+    "limit_offset": 0.05,
+    "trigger_price": 112.5,
+    "entry_price": 112.5,
+    "limit_price": 112.55,
+    "maximum_limit_price": 114.0,
+    "cancel_if_not_filled_after_minutes": 30,
+    "requires_trailing_stop_before_transmission": true
+  },
+  "risk": {
+    "max_position_amount_usd": 250,
+    "max_risk_usd": 15,
+    "risk_model": "TRAILING_STOP_INITIAL_RISK",
+    "emergency_exit_if_stop_fails": true,
+    "block_entry_if_risk_unknown": true,
+    "block_entry_if_trailing_stop_missing": true
+  },
+  "trailing_stop_loss": {
+    "enabled": true,
+    "mode": "AUTO_INTELLIGENT",
+    "initial_stop": 101.5,
+    "current_stop": 101.5,
+    "never_lower_stop": true,
+    "stop_source": "STRUCTURE_BASED_50D_SMA_AND_RANGE_MID",
+    "applies_to": "ENTRY_AND_POSITION_MANAGEMENT",
+    "migration_status": "MIGRATED_TO_TRAILING_STOP",
+    "activation": {
+      "mode": "ON_ENTRY_FILL",
+      "activate_before_entry_transmission": true,
+      "entry_order_requires_attached_trailing_stop": true
+    },
+    "calculation": {
+      "method": "HYBRID_ATR_STRUCTURE",
+      "allowed_methods": [
+        "ATR_BASED",
+        "STRUCTURE_BASED",
+        "HYBRID_ATR_STRUCTURE",
+        "PERCENT_BASED_FALLBACK"
+      ],
+      "default_method": "HYBRID_ATR_STRUCTURE",
+      "atr": {
+        "timeframe": "1h",
+        "period": 14,
+        "multiplier_initial": "AUTO",
+        "multiplier_trailing": "AUTO",
+        "min_multiplier": 1,
+        "max_multiplier": 3.5
+      },
+      "structure": {
+        "reference": "RANGE_LOW",
+        "allowed_references": [
+          "HIGHER_LOW",
+          "INTRADAY_SUPPORT",
+          "RANGE_LOW",
+          "BROKEN_RESISTANCE_AS_SUPPORT",
+          "VWAP_PULLBACK",
+          "PREVIOUS_DAY_LOW",
+          "AUTO_SELECT"
+        ],
+        "buffer_policy": "MAX_OF_TICK_SPREAD_ATR_FRACTION",
+        "min_tick_buffer": 2,
+        "spread_buffer_multiplier": 2,
+        "atr_fraction_buffer": 0.1
+      },
+      "stock_specific_adjustment": {
+        "enabled": true,
+        "inputs": [
+          "price",
+          "atr_15m",
+          "atr_1h",
+          "average_true_range_percent",
+          "spread_bps",
+          "relative_volume",
+          "liquidity",
+          "gap_percent",
+          "intraday_range_percent",
+          "sector_volatility",
+          "distance_to_support",
+          "distance_to_breakout_level"
+        ],
+        "volatility_regime": "AUTO",
+        "liquidity_regime": "AUTO",
+        "spread_regime": "AUTO"
+      },
+      "risk_constraints": {
+        "respect_max_risk_usd": true,
+        "respect_max_position_amount_usd": true,
+        "minimum_quantity": 1,
+        "block_if_quantity_zero": true,
+        "block_if_initial_stop_above_entry_for_long": true,
+        "block_if_initial_stop_below_entry_for_short": true
+      }
+    },
+    "ratchet_rules": {
+      "enabled": true,
+      "move_only_up_for_long": true,
+      "move_only_down_for_short": true,
+      "update_on_closed_bar_only": true,
+      "timeframe": "15m",
+      "min_improvement_required": "AUTO",
+      "min_improvement_atr_fraction": 0.15,
+      "do_not_lower_stop": true,
+      "do_not_update_outside_rth": true,
+      "do_not_update_if_spread_wide": true,
+      "do_not_update_on_unconfirmed_intrabar_move": true,
+      "allow_break_even_move": true,
+      "break_even_policy": {
+        "enabled": true,
+        "trigger_after_profit_r_multiple": 1,
+        "new_stop": "ENTRY_PRICE_PLUS_FEES_BUFFER"
+      },
+      "min_improvement_atr_timeframe": "15m"
+    },
+    "broker_order": {
+      "order_type": "TRAIL_OR_MANAGED_STOP",
+      "attach_to_entry_order": true,
+      "required_before_entry_transmission": true,
+      "use_native_ibkr_trailing_order_if_available": false,
+      "fallback_to_managed_stop_updates": true,
+      "parent_child_bracket_required": true,
+      "entry_parent_transmit": false,
+      "trailing_stop_child_transmit": true,
+      "block_if_broker_stop_not_confirmed": true,
+      "trailing_stop_order_ready": false
+    },
+    "audit": {
+      "record_initial_stop_calculation": true,
+      "record_each_stop_update": true,
+      "record_reason": true,
+      "record_old_stop": true,
+      "record_new_stop": true,
+      "record_broker_order_id": true
+    }
+  },
+  "management": {
+    "take_profit_mode": "none",
+    "never_lower_stop": true,
+    "position_management_mode": "TRAILING_STOP_ONLY",
+    "stop_management": {
+      "mode": "TRAILING_STOP_LOSS",
+      "source": "trailing_stop_loss",
+      "never_lower_stop": true,
+      "steps": [],
+      "trail_type": "ATR_OR_STRUCTURE",
+      "atr_timeframe": "1h",
+      "atr_multiplier": 1.5
+    }
+  },
+  "range": {
+    "high": 112.0,
+    "low": 95.0,
+    "breakout_side": "up",
+    "require_close_outside_range": true
+  },
+  "breakout": {
+    "resistance": 112.0,
+    "broken_resistance": null,
+    "daily_close_above": 112.0,
+    "volume_rule_mode": "FLEXIBLE_CONFIRMATION",
+    "fast_breakout_volume_ratio_min": 1.5,
+    "confirmed_breakout_volume_ratio_min": 0.8,
+    "confirmed_breakout_hold_bars": 2,
+    "confirmed_breakout_timeframe": "15m",
+    "close_above_resistance_required": true
+  },
+  "volume_confirmation": {
+    "enabled": true,
+    "signal_timeframe": "15m",
+    "comparison_mode": "SAME_TIME_OF_DAY",
+    "average_sample_days": 20,
+    "fast_volume_ratio_min": 1.5,
+    "normal_volume_ratio_min": 1,
+    "confirmed_volume_ratio_min": 0.8,
+    "confirmed_hold_bars": 2,
+    "close_above_level_required": true,
+    "reject_detection_enabled": true,
+    "max_upper_wick_ratio": 0.5,
+    "required_for_entry": false,
+    "weak_volume_action": "WARNING_ONLY"
+  },
+  "trend_filter": {
+    "enabled": false,
+    "required_trend": "uptrend",
+    "note": "Tendance daily de fond baissiere (prix < SMA200 ~130). Setup contre-tendance sur base/range: filtre desactive volontairement, c'est le risque principal du trade."
+  },
+  "anti_chase": {
+    "enabled": true,
+    "max_price_above_entry_percent": 1.5,
+    "action_if_too_far": "MISSED_BREAKOUT_WAIT_RETEST",
+    "block_entry_if_price_above_maximum_limit": true
+  },
+  "missed_breakout": {
+    "retest_zone_min": 108.0,
+    "retest_zone_max": 112.0
+  },
+  "session_policy": {
+    "enabled": true,
+    "require_regular_trading_hours_for_entry": true,
+    "allow_premarket_entry": false,
+    "allow_after_hours_entry": false,
+    "wait_after_open_minutes": 30,
+    "wait_closed_bars_after_open": 2,
+    "wait_bars_timeframe": "15m",
+    "require_rth_volume_confirmation": true,
+    "require_rth_spread_check": true,
+    "require_rth_risk_recalculation": true,
+    "extended_hours": {
+      "allow_detection": true,
+      "allow_auto_execution": false,
+      "allow_manual_review": true
+    }
+  },
+  "broker_safety": {
+    "require_broker_tracker": true,
+    "block_if_broker_tracker_stale": true,
+    "block_if_tws_disconnected": true,
+    "block_if_position_without_stop": true,
+    "block_if_entry_order_without_trailing_stop": true,
+    "block_if_reconciliation_mismatch": true
+  },
+  "entry_decision": {
+    "status": "EVALUATED",
+    "decision": "NO_ENTRY",
+    "can_send_order": false,
+    "display_title": "Range breakout en attente - NOW 107.71$",
+    "display_message": "Prix (107.71$) sous le trigger 112.50$. Attendre une cloture au-dessus de 112$ (haut de range) avant armement. Trailing stop broker non pret.",
+    "next_action": "Attendre cassure confirmee > 112.00 (cloture), puis armer l'ordre STP_LMT avec trailing stop initial a 101.50 attache.",
+    "blocking_reasons": [
+      "PRICE_BELOW_BREAKOUT_TRIGGER",
+      "RANGE_NOT_BROKEN_ON_CLOSE",
+      "TRAILING_STOP_BROKER_ORDER_NOT_READY"
+    ],
+    "warnings": [
+      "COUNTER_TREND_SETUP_PRICE_BELOW_200D_SMA",
+      "INTRADAY_ATR_VOLUME_SPREAD_NOT_AVAILABLE_IN_DATASET_ENGINE_MUST_RECOMPUTE_AT_RTH"
+    ],
+    "planned_vs_current_risk": {
+      "planned_entry": 112.5,
+      "planned_initial_stop": 101.5,
+      "planned_risk_per_share_usd": 11.0,
+      "planned_quantity": 1,
+      "planned_position_usd": 112.5,
+      "planned_total_risk_usd": 11.0,
+      "quantity_note": "2 actions = risque 22$ > max_risk 15$ -> bloque. Quantite plafonnee a 1."
+    }
+  },
+  "targets": [
+    {
+      "label": "T1_structure",
+      "price": 122.0,
+      "setup_type": "reference_only"
+    },
+    {
+      "label": "T2_measured_move_and_200d_sma",
+      "price": 130.0,
+      "setup_type": "reference_only"
+    }
+  ],
+  "notes": "ServiceNow (NYSE:NOW) @ 107.71$ le 2026-07-12. Donnees fournies = daily/fondamental uniquement (pas d'ATR/volume/spread intraday dans le package) -> le moteur DOIT recalculer ATR 1h, volume RTH et spread a l'ouverture avant armement. Structure: downtrend majeur (sommet ~195 aout 2025 -> plancher ~85 avril 2026), base en formation, SMA50 ~101 qui s'aplatit, SMA200 ~130 declinante = resistance. Range de travail 95-112. Setup = cassure haussiere du haut de range (112) visant gap-fill / SMA200 ~130 (measured move 112+17=129). Stop initial structurel a 101.50 (sous SMA50 et milieu de range). Quantite = 1 action (contrainte max_risk 15$). Take-profit = trailing uniquement; T1/T2 informatifs. RISQUE PRINCIPAL: trade contre-tendance sous SMA200; invalidation si retour < 95 (bas de range) et surtout < 85 (plancher avril). Ceci est une analyse technique, pas un conseil d'investissement."
+}

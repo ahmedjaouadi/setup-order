@@ -1,0 +1,273 @@
+{
+  "schema_version": "2.0.0",
+  "setup_id": "ALAB_20260713_001",
+  "symbol": "ALAB",
+  "enabled": true,
+  "mode": "paper",
+  "setup_type": "pullback_continuation",
+  "setup_role": "ENTRY_AND_MANAGEMENT",
+  "direction": "long",
+  "timeframes": {
+    "signal": "15m",
+    "confirmation": "1d",
+    "trailing_management": "15m",
+    "atr_reference": "1h"
+  },
+  "entry": {
+    "enabled": true,
+    "order_type": "STP_LMT",
+    "trigger_offset": 0.05,
+    "limit_offset": 0.15,
+    "trigger_price": 424.5,
+    "entry_price": 425.0,
+    "limit_price": 427.0,
+    "maximum_limit_price": 431.5,
+    "cancel_if_not_filled_after_minutes": 30,
+    "requires_trailing_stop_before_transmission": true
+  },
+  "risk": {
+    "max_position_amount_usd": 250,
+    "max_risk_usd": 15,
+    "risk_model": "TRAILING_STOP_INITIAL_RISK",
+    "planned_quantity": 0,
+    "planned_risk_per_share": 36.0,
+    "emergency_exit_if_stop_fails": true,
+    "block_entry_if_risk_unknown": true,
+    "block_entry_if_trailing_stop_missing": true,
+    "required_config_to_enable": {
+      "min_max_position_amount_usd_for_1_share": 430,
+      "min_max_risk_usd_for_structural_stop": 40,
+      "comment": "A 413$ et ~5% de volatilite journaliere, ALAB ne tient pas dans 250$ de taille / 15$ de risque. Relever les deux plafonds OU choisir un autre vehicule (fractionnel, options, ou titre moins cher)."
+    }
+  },
+  "trailing_stop_loss": {
+    "enabled": true,
+    "mode": "AUTO_INTELLIGENT",
+    "initial_stop": 389.0,
+    "current_stop": 389.0,
+    "never_lower_stop": true,
+    "stop_source": "STRUCTURE_BELOW_BASE_SUPPORT",
+    "applies_to": "ENTRY_AND_POSITION_MANAGEMENT",
+    "migration_status": "MIGRATED_TO_TRAILING_STOP",
+    "activation": {
+      "mode": "ON_ENTRY_FILL",
+      "activate_before_entry_transmission": true,
+      "entry_order_requires_attached_trailing_stop": true
+    },
+    "calculation": {
+      "method": "HYBRID_ATR_STRUCTURE",
+      "allowed_methods": [
+        "ATR_BASED",
+        "STRUCTURE_BASED",
+        "HYBRID_ATR_STRUCTURE",
+        "PERCENT_BASED_FALLBACK"
+      ],
+      "default_method": "HYBRID_ATR_STRUCTURE",
+      "atr": {
+        "timeframe": "1h",
+        "period": 14,
+        "multiplier_initial": "AUTO",
+        "multiplier_trailing": "AUTO",
+        "min_multiplier": 1,
+        "max_multiplier": 3.5
+      },
+      "structure": {
+        "reference": "HIGHER_LOW",
+        "allowed_references": [
+          "HIGHER_LOW",
+          "INTRADAY_SUPPORT",
+          "RANGE_LOW",
+          "BROKEN_RESISTANCE_AS_SUPPORT",
+          "VWAP_PULLBACK",
+          "PREVIOUS_DAY_LOW",
+          "AUTO_SELECT"
+        ],
+        "buffer_policy": "MAX_OF_TICK_SPREAD_ATR_FRACTION",
+        "min_tick_buffer": 2,
+        "spread_buffer_multiplier": 2,
+        "atr_fraction_buffer": 0.1
+      },
+      "stock_specific_adjustment": {
+        "enabled": true,
+        "inputs": [
+          "price",
+          "atr_15m",
+          "atr_1h",
+          "average_true_range_percent",
+          "spread_bps",
+          "relative_volume",
+          "liquidity",
+          "gap_percent",
+          "intraday_range_percent",
+          "sector_volatility",
+          "distance_to_support",
+          "distance_to_breakout_level"
+        ],
+        "volatility_regime": "AUTO",
+        "liquidity_regime": "AUTO",
+        "spread_regime": "AUTO"
+      },
+      "risk_constraints": {
+        "respect_max_risk_usd": true,
+        "respect_max_position_amount_usd": true,
+        "minimum_quantity": 1,
+        "block_if_quantity_zero": true,
+        "block_if_initial_stop_above_entry_for_long": true,
+        "block_if_initial_stop_below_entry_for_short": true
+      }
+    },
+    "ratchet_rules": {
+      "enabled": true,
+      "move_only_up_for_long": true,
+      "move_only_down_for_short": true,
+      "update_on_closed_bar_only": true,
+      "timeframe": "15m",
+      "min_improvement_required": "AUTO",
+      "min_improvement_atr_fraction": 0.15,
+      "do_not_lower_stop": true,
+      "do_not_update_outside_rth": true,
+      "do_not_update_if_spread_wide": true,
+      "do_not_update_on_unconfirmed_intrabar_move": true,
+      "allow_break_even_move": true,
+      "break_even_policy": {
+        "enabled": true,
+        "trigger_after_profit_r_multiple": 1,
+        "new_stop": "ENTRY_PRICE_PLUS_FEES_BUFFER"
+      },
+      "min_improvement_atr_timeframe": "15m"
+    },
+    "broker_order": {
+      "order_type": "TRAIL_OR_MANAGED_STOP",
+      "attach_to_entry_order": true,
+      "required_before_entry_transmission": true,
+      "use_native_ibkr_trailing_order_if_available": false,
+      "fallback_to_managed_stop_updates": true,
+      "parent_child_bracket_required": true,
+      "entry_parent_transmit": false,
+      "trailing_stop_child_transmit": true,
+      "block_if_broker_stop_not_confirmed": true,
+      "trailing_stop_order_ready": false
+    },
+    "audit": {
+      "record_initial_stop_calculation": true,
+      "record_each_stop_update": true,
+      "record_reason": true,
+      "record_old_stop": true,
+      "record_new_stop": true,
+      "record_broker_order_id": true
+    }
+  },
+  "management": {
+    "take_profit_mode": "none",
+    "never_lower_stop": true,
+    "position_management_mode": "TRAILING_STOP_ONLY",
+    "stop_management": {
+      "mode": "TRAILING_STOP_LOSS",
+      "source": "trailing_stop_loss",
+      "never_lower_stop": true,
+      "steps": [],
+      "trail_type": "ATR_OR_STRUCTURE",
+      "atr_timeframe": "1h",
+      "atr_multiplier": 2.0
+    }
+  },
+  "trend_filter": {
+    "enabled": true,
+    "required_trend": "uptrend",
+    "reference_moving_averages": [
+      50,
+      200
+    ],
+    "trend_confirmed": true
+  },
+  "pullback": {
+    "entry_reference": 415.0,
+    "zone_min": 398.0,
+    "zone_max": 408.0,
+    "confirmation_required": true,
+    "confirmation_timeframe": "15m",
+    "confirmation_rule": "BASE_400_424_THEN_RECLAIM_RANGE_TOP"
+  },
+  "volume_confirmation": {
+    "enabled": true,
+    "required_for_entry": false,
+    "weak_volume_action": "WARNING_ONLY",
+    "signal_timeframe": "15m",
+    "comparison_mode": "SAME_TIME_OF_DAY",
+    "average_sample_days": 20,
+    "normal_volume_ratio_min": 1,
+    "close_above_level_required": true,
+    "reject_detection_enabled": true,
+    "max_upper_wick_ratio": 0.5
+  },
+  "anti_chase": {
+    "enabled": true,
+    "max_price_above_entry_percent": 1.5,
+    "action_if_too_far": "WAIT_PULLBACK_INTO_ZONE",
+    "block_entry_if_price_above_maximum_limit": true
+  },
+  "session_policy": {
+    "enabled": true,
+    "require_regular_trading_hours_for_entry": true,
+    "allow_premarket_entry": false,
+    "allow_after_hours_entry": false,
+    "wait_after_open_minutes": 30,
+    "wait_closed_bars_after_open": 2,
+    "wait_bars_timeframe": "15m",
+    "require_rth_volume_confirmation": true,
+    "require_rth_spread_check": true,
+    "require_rth_risk_recalculation": true
+  },
+  "position_source": {
+    "mode": "new_entry",
+    "require_existing_position": false,
+    "account_position_must_match_direction": true
+  },
+  "broker_safety": {
+    "require_broker_tracker": true,
+    "block_if_broker_tracker_stale": true,
+    "block_if_tws_disconnected": true,
+    "block_if_position_without_stop": true,
+    "block_if_entry_order_without_trailing_stop": true,
+    "block_if_reconciliation_mismatch": true
+  },
+  "event_risk": {
+    "earnings_date": "2026-08-04",
+    "trailing_stop_protects_gap": false,
+    "policy": "DO_NOT_HOLD_THROUGH_EARNINGS",
+    "action": "FLATTEN_BEFORE_2026-08-03_CLOSE_OR_TREAT_AS_POST_EARNINGS"
+  },
+  "entry_decision": {
+    "status": "EVALUATED",
+    "decision": "NO_ENTRY",
+    "can_send_order": false,
+    "display_title": "ALAB - Setup valide mais BLOQUE: instrument incompatible avec l'enveloppe de risque",
+    "display_message": "ALAB ~413$, volatilite ~5%/jour. Avec max_position 250$ la quantite est 0 (1 action = ~425$). Meme a 1 action, le risque du stop structurel (~36$) depasse max_risk 15$. Setup non armable en l'etat.",
+    "next_action": "Choisir: (A) relever max_position_amount_usd >= 430 ET max_risk_usd >= 40, puis re-evaluer; (B) utiliser actions fractionnees ou options; (C) choisir un titre moins cher / moins volatil. Decider aussi la gestion des resultats du 04/08.",
+    "blocking_reasons": [
+      "POSITION_CAP_250_TOO_SMALL_1_SHARE_425_QUANTITY_ZERO",
+      "STRUCTURAL_STOP_RISK_36_EXCEEDS_MAX_RISK_15",
+      "TRAILING_STOP_BROKER_ORDER_NOT_READY"
+    ],
+    "warnings": [
+      "EXTREME_VOLATILITY_BETA_2_7_TO_3_1_DAILY_RANGE_5PCT",
+      "PULLBACK_FROM_ATH_499_ON_2026-06-30",
+      "EARNINGS_2026-08-04_GAP_RISK_TRAILING_STOP_DOES_NOT_PROTECT",
+      "VALUATION_STRETCHED_ANALYST_AVG_PT_272_BELOW_PRICE",
+      "LEVELS_FROM_DELAYED_DATA_REVALIDATE_WITH_LIVE_IBKR"
+    ],
+    "planned_vs_current_risk": {
+      "scenario_if_caps_raised_1_share": {
+        "planned_entry": 425.0,
+        "planned_stop": 389.0,
+        "planned_risk_per_share": 36.0,
+        "planned_quantity": 1,
+        "planned_total_risk_usd": 36.0,
+        "position_value_usd": 425.0,
+        "r_multiple_1_price": 461.0
+      }
+    }
+  },
+  "targets": [],
+  "notes": "ALAB en tendance haussiere forte (>MM50 ~320 / MM200 ~200) mais apres pic parabolique a 499 (30/06) et repli vers base 400-424. Plan pullback_continuation: base 400-424, entree sur reclaim du haut de range (~424-425), stop structurel 389 sous le support ~390. Trailing HYBRID_ATR_STRUCTURE 1h, ratchet 15m, break-even a +1R (~461). BLOCAGE PRINCIPAL: instrument trop cher/volatil pour l'enveloppe 250$/15$ -> 0 action, et risque stop ~36$ > 15$. Alternatives de setup si tu releves les plafonds: aggressive_rebound (rebond depuis support ~370-400) ou range_breakout (>466 vers ATH 499). RISQUE: resultats 04/08 - trailing stop ne couvre pas un gap. Niveaux issus de donnees differees ~10-12/07/2026, a revalider en live IBKR."
+}

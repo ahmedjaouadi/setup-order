@@ -1,0 +1,273 @@
+{
+  "schema_version": "2.0.0",
+  "setup_id": "SNEX_20260712_001",
+  "symbol": "SNEX",
+  "enabled": true,
+  "mode": "paper",
+  "setup_type": "pullback_continuation",
+  "setup_role": "ENTRY_AND_MANAGEMENT",
+  "direction": "long",
+  "timeframes": {
+    "signal": "15m",
+    "confirmation": "1d",
+    "trailing_management": "15m",
+    "atr_reference": "1h"
+  },
+  "entry": {
+    "enabled": true,
+    "order_type": "STP_LMT",
+    "trigger_offset": 0.02,
+    "limit_offset": 0.05,
+    "trigger_price": 119.85,
+    "entry_price": 119.85,
+    "limit_price": 120.35,
+    "maximum_limit_price": 121.6,
+    "cancel_if_not_filled_after_minutes": 30,
+    "requires_trailing_stop_before_transmission": true
+  },
+  "risk": {
+    "max_position_amount_usd": 250,
+    "max_risk_usd": 15,
+    "risk_model": "TRAILING_STOP_INITIAL_RISK",
+    "computed_quantity": 2,
+    "computed_initial_risk_usd": 12.7,
+    "computed_position_value_usd": 239.7,
+    "emergency_exit_if_stop_fails": true,
+    "block_entry_if_risk_unknown": true,
+    "block_entry_if_trailing_stop_missing": true
+  },
+  "trailing_stop_loss": {
+    "enabled": true,
+    "mode": "AUTO_INTELLIGENT",
+    "initial_stop": 113.5,
+    "current_stop": 113.5,
+    "never_lower_stop": true,
+    "stop_source": "STRUCTURE_BELOW_PULLBACK_ZONE",
+    "applies_to": "ENTRY_AND_POSITION_MANAGEMENT",
+    "migration_status": "MIGRATED_TO_TRAILING_STOP",
+    "activation": {
+      "mode": "ON_ENTRY_FILL",
+      "activate_before_entry_transmission": true,
+      "entry_order_requires_attached_trailing_stop": true
+    },
+    "calculation": {
+      "method": "HYBRID_ATR_STRUCTURE",
+      "allowed_methods": [
+        "ATR_BASED",
+        "STRUCTURE_BASED",
+        "HYBRID_ATR_STRUCTURE",
+        "PERCENT_BASED_FALLBACK"
+      ],
+      "default_method": "HYBRID_ATR_STRUCTURE",
+      "atr": {
+        "timeframe": "1h",
+        "period": 14,
+        "multiplier_initial": 2.0,
+        "multiplier_trailing": 1.8,
+        "min_multiplier": 1,
+        "max_multiplier": 3.5
+      },
+      "structure": {
+        "reference": "INTRADAY_SUPPORT",
+        "allowed_references": [
+          "HIGHER_LOW",
+          "INTRADAY_SUPPORT",
+          "RANGE_LOW",
+          "BROKEN_RESISTANCE_AS_SUPPORT",
+          "VWAP_PULLBACK",
+          "PREVIOUS_DAY_LOW",
+          "AUTO_SELECT"
+        ],
+        "buffer_policy": "MAX_OF_TICK_SPREAD_ATR_FRACTION",
+        "min_tick_buffer": 2,
+        "spread_buffer_multiplier": 2,
+        "atr_fraction_buffer": 0.1,
+        "reference_level": 114.0,
+        "swing_low_reference": 117.68
+      },
+      "stock_specific_adjustment": {
+        "enabled": true,
+        "inputs": [
+          "price",
+          "atr_15m",
+          "atr_1h",
+          "average_true_range_percent",
+          "spread_bps",
+          "relative_volume",
+          "liquidity",
+          "gap_percent",
+          "intraday_range_percent",
+          "sector_volatility",
+          "distance_to_support",
+          "distance_to_breakout_level"
+        ],
+        "volatility_regime": "AUTO",
+        "liquidity_regime": "AUTO",
+        "spread_regime": "AUTO"
+      },
+      "risk_constraints": {
+        "respect_max_risk_usd": true,
+        "respect_max_position_amount_usd": true,
+        "minimum_quantity": 1,
+        "block_if_quantity_zero": true,
+        "block_if_initial_stop_above_entry_for_long": true,
+        "block_if_initial_stop_below_entry_for_short": true
+      }
+    },
+    "ratchet_rules": {
+      "enabled": true,
+      "move_only_up_for_long": true,
+      "move_only_down_for_short": true,
+      "update_on_closed_bar_only": true,
+      "timeframe": "15m",
+      "min_improvement_required": "AUTO",
+      "min_improvement_atr_fraction": 0.15,
+      "do_not_lower_stop": true,
+      "do_not_update_outside_rth": true,
+      "do_not_update_if_spread_wide": true,
+      "do_not_update_on_unconfirmed_intrabar_move": true,
+      "allow_break_even_move": true,
+      "break_even_policy": {
+        "enabled": true,
+        "trigger_after_profit_r_multiple": 1,
+        "new_stop": "ENTRY_PRICE_PLUS_FEES_BUFFER"
+      },
+      "min_improvement_atr_timeframe": "15m"
+    },
+    "broker_order": {
+      "order_type": "TRAIL_OR_MANAGED_STOP",
+      "attach_to_entry_order": true,
+      "required_before_entry_transmission": true,
+      "use_native_ibkr_trailing_order_if_available": true,
+      "fallback_to_managed_stop_updates": true,
+      "parent_child_bracket_required": true,
+      "entry_parent_transmit": false,
+      "trailing_stop_child_transmit": true,
+      "block_if_broker_stop_not_confirmed": true,
+      "trailing_stop_order_ready": false
+    },
+    "audit": {
+      "record_initial_stop_calculation": true,
+      "record_each_stop_update": true,
+      "record_reason": true,
+      "record_old_stop": true,
+      "record_new_stop": true,
+      "record_broker_order_id": true
+    }
+  },
+  "management": {
+    "take_profit_mode": "none",
+    "never_lower_stop": true,
+    "position_management_mode": "TRAILING_STOP_ONLY",
+    "stop_management": {
+      "mode": "TRAILING_STOP_LOSS",
+      "source": "trailing_stop_loss",
+      "never_lower_stop": true,
+      "steps": [],
+      "trail_type": "ATR_OR_STRUCTURE",
+      "atr_timeframe": "1h",
+      "atr_multiplier": 1.8
+    }
+  },
+  "volume_confirmation": {
+    "enabled": true,
+    "required_for_entry": false,
+    "weak_volume_action": "WARNING_ONLY",
+    "signal_timeframe": "15m",
+    "comparison_mode": "SAME_TIME_OF_DAY",
+    "average_sample_days": 20,
+    "normal_volume_ratio_min": 1,
+    "close_above_level_required": true,
+    "reject_detection_enabled": true,
+    "max_upper_wick_ratio": 0.5
+  },
+  "trend_filter": {
+    "enabled": true,
+    "required_trend": "uptrend",
+    "reference": "PRICE_ABOVE_RISING_SMA50_AND_SMA200",
+    "status": "CONFIRMED"
+  },
+  "pullback": {
+    "entry_reference": 118.0,
+    "zone_min": 114.0,
+    "zone_max": 119.5,
+    "confirmation_required": true,
+    "confirmation_timeframe": "15m",
+    "confirmation_rule": "BULLISH_15M_CANDLE_CLOSING_BACK_ABOVE_ZONE_WITH_LOWER_WICK_REJECTION",
+    "confirmation_status": "NOT_YET_PRINTED"
+  },
+  "support_zone": {
+    "min": 114.0,
+    "max": 119.5,
+    "invalidation_below": 108.0,
+    "note": "SMA50 region ~114-119; deeper breakout base 109-110; structural invalidation below 108"
+  },
+  "position_source": {
+    "mode": "new_entry",
+    "require_existing_position": false,
+    "account_position_must_match_direction": true
+  },
+  "anti_chase": {
+    "enabled": true,
+    "max_price_above_entry_percent": 1.5,
+    "action_if_too_far": "MISSED_PULLBACK_WAIT_LOWER_ENTRY",
+    "block_entry_if_price_above_maximum_limit": true
+  },
+  "session_policy": {
+    "enabled": true,
+    "require_regular_trading_hours_for_entry": true,
+    "allow_premarket_entry": false,
+    "allow_after_hours_entry": false,
+    "wait_after_open_minutes": 30,
+    "wait_closed_bars_after_open": 2,
+    "wait_bars_timeframe": "15m",
+    "require_rth_volume_confirmation": true,
+    "require_rth_spread_check": true,
+    "require_rth_risk_recalculation": true
+  },
+  "corporate_action_guard": {
+    "enabled": true,
+    "type": "STOCK_SPLIT_3_FOR_2",
+    "ex_date": "2026-07-20",
+    "record_date": "2026-07-07",
+    "block_resting_orders_across_ex_date": true,
+    "require_manual_review_before_ex_date": true,
+    "note": "Split 3:2 ex-date 2026-07-20. Prix et niveaux (~118) seront ajustes ~x0.667 (~78.6). Ne pas laisser d'ordre au repos traverser la date ex; recalibrer tous les niveaux apres split."
+  },
+  "broker_safety": {
+    "require_broker_tracker": true,
+    "block_if_broker_tracker_stale": true,
+    "block_if_tws_disconnected": true,
+    "block_if_position_without_stop": true,
+    "block_if_entry_order_without_trailing_stop": true,
+    "block_if_reconciliation_mismatch": true
+  },
+  "entry_decision": {
+    "status": "EVALUATED",
+    "decision": "WAIT",
+    "can_send_order": false,
+    "display_title": "SNEX - Pullback sur MM50, attente confirmation",
+    "display_message": "SNEX en repli (~117.7) teste la zone MM50 (114-119.5) dans une tendance de fond haussiere. Cloture vendredi sur les bas = pas de couteau qui tombe. On attend une bougie 15m haussiere de rejet dans la zone avant d'armer l'entree. Attention: split 3:2 ex-date 20/07.",
+    "next_action": "ATTENDRE bougie de confirmation 15m + resoudre timing split avant transmission",
+    "blocking_reasons": [
+      "pullback.confirmation_status = NOT_YET_PRINTED (aucune bougie 15m haussiere de rejet dans la zone)",
+      "trailing_stop_loss.broker_order.trailing_stop_order_ready = false",
+      "corporate_action_guard: split 3:2 ex-date 2026-07-20 exige revue avant tout ordre au repos"
+    ],
+    "warnings": [
+      "Cloture du 11/07 sur le plus bas de seance -> momentum court terme baissier",
+      "Cible moyenne analystes ~109 sous le cours -> upside fondamental limite CT",
+      "Volatilite elevee (range journalier ~5-6%) -> stop structurel large, position reduite a 2 actions"
+    ],
+    "planned_vs_current_risk": {
+      "planned_entry": 119.85,
+      "planned_initial_stop": 113.5,
+      "planned_quantity": 2,
+      "planned_risk_usd": 12.7,
+      "planned_position_value_usd": 239.7,
+      "current_price_reference": 117.72
+    }
+  },
+  "targets": [],
+  "notes": "Contexte fondamental (ZIP 29/06): T2 FY26 record, BPA 2.07 vs 1.34-1.49 att., integration RJ O'Brien, +142% sur 1 an, sommet historique 141.99. Depuis: correction ~17% vers la MM50. Setup pullback_continuation long avec confirmation obligatoire. Protection = trailing_stop_loss uniquement (pas de stop fixe, pas de take-profit). Re-evaluer entierement apres le split du 20/07."
+}

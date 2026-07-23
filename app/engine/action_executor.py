@@ -45,6 +45,15 @@ class ActionExecutor:
         target_status: SetupStatus,
         reason: str,
     ) -> None:
+        if not self.state_machine.can_transition(current_status, target_status):
+            logger.debug(
+                "transition_skipped_not_allowed setup_id=%s symbol=%s from=%s to=%s",
+                setup["setup_id"],
+                setup["symbol"],
+                current_status.value,
+                target_status.value,
+            )
+            return
         try:
             new_status = self.state_machine.transition(current_status, target_status)
         except Exception as exc:

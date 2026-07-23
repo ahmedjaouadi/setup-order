@@ -1,0 +1,271 @@
+{
+  "schema_version": "2.0.0",
+  "setup_id": "EFOR_20260712_001",
+  "symbol": "EFOR",
+  "enabled": true,
+  "mode": "paper",
+  "setup_type": "aggressive_rebound",
+  "setup_role": "ENTRY_AND_MANAGEMENT",
+  "direction": "long",
+  "timeframes": {
+    "signal": "15m",
+    "confirmation": "1d",
+    "trailing_management": "15m",
+    "atr_reference": "1h"
+  },
+  "entry": {
+    "enabled": true,
+    "order_type": "STP_LMT",
+    "trigger_price": 17.9,
+    "entry_price": 17.9,
+    "limit_price": 18.05,
+    "maximum_limit_price": 18.17,
+    "cancel_if_not_filled_after_minutes": 30,
+    "requires_trailing_stop_before_transmission": true
+  },
+  "risk": {
+    "max_position_amount_usd": 250,
+    "max_risk_usd": 15,
+    "risk_model": "TRAILING_STOP_INITIAL_RISK",
+    "planned_quantity": 12,
+    "planned_position_usd": 214.8,
+    "planned_initial_risk_usd": 15.0,
+    "emergency_exit_if_stop_fails": true,
+    "block_entry_if_risk_unknown": true,
+    "block_entry_if_trailing_stop_missing": true
+  },
+  "trailing_stop_loss": {
+    "enabled": true,
+    "mode": "AUTO_INTELLIGENT",
+    "initial_stop": 16.8,
+    "current_stop": 16.8,
+    "never_lower_stop": true,
+    "stop_source": "STRUCTURE_BASED",
+    "applies_to": "ENTRY_AND_POSITION_MANAGEMENT",
+    "migration_status": "MIGRATED_TO_TRAILING_STOP",
+    "activation": {
+      "mode": "ON_ENTRY_FILL",
+      "activate_before_entry_transmission": true,
+      "entry_order_requires_attached_trailing_stop": true
+    },
+    "calculation": {
+      "method": "HYBRID_ATR_STRUCTURE",
+      "allowed_methods": [
+        "ATR_BASED",
+        "STRUCTURE_BASED",
+        "HYBRID_ATR_STRUCTURE",
+        "PERCENT_BASED_FALLBACK"
+      ],
+      "default_method": "HYBRID_ATR_STRUCTURE",
+      "atr": {
+        "timeframe": "1h",
+        "period": 14,
+        "multiplier_initial": "AUTO",
+        "multiplier_trailing": "AUTO",
+        "min_multiplier": 1,
+        "max_multiplier": 3.5
+      },
+      "structure": {
+        "reference": "INTRADAY_SUPPORT",
+        "allowed_references": [
+          "HIGHER_LOW",
+          "INTRADAY_SUPPORT",
+          "RANGE_LOW",
+          "BROKEN_RESISTANCE_AS_SUPPORT",
+          "VWAP_PULLBACK",
+          "PREVIOUS_DAY_LOW",
+          "AUTO_SELECT"
+        ],
+        "buffer_policy": "MAX_OF_TICK_SPREAD_ATR_FRACTION",
+        "min_tick_buffer": 2,
+        "spread_buffer_multiplier": 2,
+        "atr_fraction_buffer": 0.1,
+        "structural_stop_level": 16.8,
+        "note": "Sous le plus-bas 52 semaines (17.00 $) avec buffer."
+      },
+      "stock_specific_adjustment": {
+        "enabled": true,
+        "inputs": [
+          "price",
+          "atr_15m",
+          "atr_1h",
+          "average_true_range_percent",
+          "spread_bps",
+          "relative_volume",
+          "liquidity",
+          "gap_percent",
+          "intraday_range_percent",
+          "sector_volatility",
+          "distance_to_support",
+          "distance_to_breakout_level"
+        ],
+        "volatility_regime": "AUTO",
+        "liquidity_regime": "AUTO",
+        "spread_regime": "AUTO"
+      },
+      "risk_constraints": {
+        "respect_max_risk_usd": true,
+        "respect_max_position_amount_usd": true,
+        "minimum_quantity": 1,
+        "block_if_quantity_zero": true,
+        "block_if_initial_stop_above_entry_for_long": true,
+        "block_if_initial_stop_below_entry_for_short": true
+      }
+    },
+    "ratchet_rules": {
+      "enabled": true,
+      "move_only_up_for_long": true,
+      "move_only_down_for_short": true,
+      "update_on_closed_bar_only": true,
+      "timeframe": "15m",
+      "min_improvement_required": "AUTO",
+      "min_improvement_atr_fraction": 0.15,
+      "do_not_lower_stop": true,
+      "do_not_update_outside_rth": true,
+      "do_not_update_if_spread_wide": true,
+      "do_not_update_on_unconfirmed_intrabar_move": true,
+      "allow_break_even_move": true,
+      "break_even_policy": {
+        "enabled": true,
+        "trigger_after_profit_r_multiple": 1,
+        "new_stop": "ENTRY_PRICE_PLUS_FEES_BUFFER"
+      },
+      "min_improvement_atr_timeframe": "15m"
+    },
+    "broker_order": {
+      "order_type": "TRAIL_OR_MANAGED_STOP",
+      "attach_to_entry_order": true,
+      "required_before_entry_transmission": true,
+      "use_native_ibkr_trailing_order_if_available": false,
+      "fallback_to_managed_stop_updates": true,
+      "parent_child_bracket_required": true,
+      "entry_parent_transmit": false,
+      "trailing_stop_child_transmit": true,
+      "block_if_broker_stop_not_confirmed": true,
+      "trailing_stop_order_ready": false
+    },
+    "audit": {
+      "record_initial_stop_calculation": true,
+      "record_each_stop_update": true,
+      "record_reason": true,
+      "record_old_stop": true,
+      "record_new_stop": true,
+      "record_broker_order_id": true
+    }
+  },
+  "management": {
+    "take_profit_mode": "none",
+    "never_lower_stop": true,
+    "position_management_mode": "TRAILING_STOP_ONLY",
+    "stop_management": {
+      "mode": "TRAILING_STOP_LOSS",
+      "source": "trailing_stop_loss",
+      "never_lower_stop": true,
+      "steps": [],
+      "trail_type": "ATR_OR_STRUCTURE",
+      "atr_timeframe": "1h",
+      "atr_multiplier": 1.5
+    }
+  },
+  "support_zone": {
+    "min": 17.0,
+    "max": 17.8,
+    "invalidation_below": 16.8
+  },
+  "rebound_confirmation": {
+    "require_bullish_candle": true,
+    "require_volume_confirmation": true,
+    "confirmation_timeframe": "15m"
+  },
+  "volume_confirmation": {
+    "enabled": true,
+    "signal_timeframe": "15m",
+    "comparison_mode": "SAME_TIME_OF_DAY",
+    "average_sample_days": 20,
+    "confirmed_volume_ratio_min": 0.8,
+    "confirmed_hold_bars": 2,
+    "reject_detection_enabled": true,
+    "max_upper_wick_ratio": 0.5,
+    "required_for_entry": false,
+    "weak_volume_action": "WARNING_ONLY"
+  },
+  "trend_filter": {
+    "enabled": false,
+    "required_trend": "n/a",
+    "note": "Setup contre-tendance assume : rebond sur support en downtrend. Filtre desactive volontairement."
+  },
+  "anti_chase": {
+    "enabled": true,
+    "max_price_above_entry_percent": 1.5,
+    "action_if_too_far": "MISSED_BREAKOUT_WAIT_RETEST",
+    "block_entry_if_price_above_maximum_limit": true
+  },
+  "session_policy": {
+    "enabled": true,
+    "require_regular_trading_hours_for_entry": true,
+    "allow_premarket_entry": false,
+    "allow_after_hours_entry": false,
+    "wait_after_open_minutes": 30,
+    "wait_closed_bars_after_open": 2,
+    "wait_bars_timeframe": "15m",
+    "require_rth_volume_confirmation": true,
+    "require_rth_spread_check": true,
+    "require_rth_risk_recalculation": true
+  },
+  "position_source": {
+    "mode": "new_entry",
+    "require_existing_position": false,
+    "account_position_must_match_direction": true
+  },
+  "broker_safety": {
+    "require_broker_tracker": true,
+    "block_if_broker_tracker_stale": true,
+    "block_if_tws_disconnected": true,
+    "block_if_position_without_stop": true,
+    "block_if_entry_order_without_trailing_stop": true,
+    "block_if_reconciliation_mismatch": true
+  },
+  "entry_decision": {
+    "status": "EVALUATED",
+    "decision": "WAIT_CONFIRMATION",
+    "can_send_order": false,
+    "display_title": "EFOR — Rebond agressif sur support 17 $",
+    "display_message": "Prix 17.54 $ sur le plancher 52s (17 $). Attente d'une bougie 15m haussiere de rebond dans la zone 17.00-17.80 + trailing stop broker pret avant transmission.",
+    "next_action": "Armer le trailing stop broker (initial_stop 16.80), puis attendre confirmation haussiere 15m en RTH.",
+    "blocking_reasons": [
+      "trailing_stop_order_ready=false (ordre trailing broker non confirme)",
+      "confirmation de rebond 15m non encore validee"
+    ],
+    "warnings": [
+      "Tendance de fond BAISSIERE (prix < SMA50 et SMA200) : trade contre-tendance, haut risque.",
+      "Prix au plus-bas 52 semaines : risque de cassure vers de nouveaux plus-bas.",
+      "Earnings Q2 le 29/07/2026 : risque evenementiel binaire — envisager de sortir/reduire avant.",
+      "Momentum faible (Price Momentum Health 0.59), volume de conviction requis pour valider le rebond."
+    ],
+    "planned_vs_current_risk": {
+      "planned_entry": 17.9,
+      "initial_stop": 16.8,
+      "risk_per_share": 1.1,
+      "planned_quantity": 12,
+      "planned_risk_usd": 13.2
+    }
+  },
+  "targets": [
+    {
+      "level": 19.2,
+      "setup_type": "reference_resistance",
+      "note": "1er rebond / comblement partiel du gap (~1R)"
+    },
+    {
+      "level": 21.0,
+      "setup_type": "reference_resistance",
+      "note": "Haut de range post-gap + PT BMO"
+    },
+    {
+      "level": 22.0,
+      "setup_type": "reference_resistance",
+      "note": "PT Jefferies / zone de sortie momentum"
+    }
+  ],
+  "notes": "Rebond agressif contre-tendance sur le support historique 17 $ (plus-bas 52s). These fondamentale de decote (P/E 7.3x, P/B 0.4x, FCF yield ~39%, fair value 27-30 $, achats d'inities). Protection = trailing stop UNIQUEMENT (initial 16.80). Invalidation nette sous 16.80. Cibles listees a titre de reference : gestion 100% trailing, on laisse courir. Reduire/sortir avant l'earnings du 29/07 si en position."
+}

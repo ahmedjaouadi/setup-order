@@ -50,11 +50,13 @@ from app.engine.stop_modification_service import StopModificationService
 from app.engine.trade_guards import TradeGuardsService
 from app.market_data.market_data_service import MarketDataService
 from app.models import (
+    ENTRY_ELIGIBLE_STATUSES,
     BotStatus,
     ConnectionStatus,
     EventLevel,
     MarketSnapshot,
     SetupStatus,
+    SignalAction,
     to_jsonable,
 )
 from app.settings import Settings
@@ -2467,7 +2469,21 @@ class TradingEngine:
             return
         if self.position_action_executor.execute_raise_stop_signal(setup, current_status, signal):
             return
-        await self.entry_order_executor.execute_entry_ready(setup, signal)
+        if signal.action == SignalAction.ENTRY_READY and current_status not in ENTRY_ELIGIBLE_STATUSES:
+            self.event_store.record(
+                EventLevel.WARNING,
+                "entry_gate_blocked",
+                f"ENTRY_READY blocked: setup already past entry (status={current_status.value})",
+                setup_id=setup["setup_id"],
+                symbol=setup["symbol"],
+                data={
+                    "setup_type": setup.get("setup_type"),
+                    "current_status": current_status.value,
+                    "entry_price": signal.entry_price,
+                },
+            )
+            return
+        await self.entry_order_executor.execute_entry_ready(setup, signal, current_status)
 
     async def simulate_fill_order(
         self,
