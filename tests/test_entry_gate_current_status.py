@@ -186,22 +186,24 @@ class EntryGateTradingEngineTests(unittest.IsolatedAsyncioTestCase):
                     await harness.close()
 
     async def test_entry_ready_blocked_for_each_post_entry_status(self) -> None:
-        """Proof 2: ENTRY_READY on any post-entry status places no order and emits entry_gate_blocked."""
-        for status in POST_ENTRY_STATUSES:
-            with self.subTest(status=status.value):
-                setup_id = f"RANGE_{status.value}_001"
-                record = _setup_record(setup_id, "RNGB", "range_breakout", status)
-                self.repository.upsert_setup(record)
-                self._seed_broker_reality()
+        """Proof 2: ENTRY_READY on any post-entry status places no order and emits entry_gate_blocked, for all 5 entry-capable types."""
+        for setup_type in ENTRY_CAPABLE_SETUP_TYPES:
+            for status in POST_ENTRY_STATUSES:
+                with self.subTest(setup_type=setup_type.value, status=status.value):
+                    setup_id = f"{setup_type.value.upper()}_{status.value}_001"
+                    symbol = setup_type.value.upper()[:6]
+                    record = _setup_record(setup_id, symbol, setup_type.value, status)
+                    self.repository.upsert_setup(record)
+                    self._seed_broker_reality()
 
-                setup = self.repository.get_setup(setup_id)
-                self.assertIsNotNone(setup)
-                await self.engine._handle_signal(setup, status, _entry_ready_signal())
+                    setup = self.repository.get_setup(setup_id)
+                    self.assertIsNotNone(setup)
+                    await self.engine._handle_signal(setup, status, _entry_ready_signal())
 
-                self.assertEqual(self.repository.list_orders(setup_id), [])
-                events = self.repository.list_events(limit=1, setup_id=setup_id)
-                self.assertEqual(events[0]["event_type"], "entry_gate_blocked")
-                self.assertEqual(events[0]["data"]["current_status"], status.value)
+                    self.assertEqual(self.repository.list_orders(setup_id), [])
+                    events = self.repository.list_events(limit=1, setup_id=setup_id)
+                    self.assertEqual(events[0]["event_type"], "entry_gate_blocked")
+                    self.assertEqual(events[0]["data"]["current_status"], status.value)
 
     async def test_whitelist_blocks_hypothetical_status_by_default(self) -> None:
         """Proof 4: a status that is neither pre-entry-eligible nor post-entry is blocked by default (whitelist, not blacklist)."""
