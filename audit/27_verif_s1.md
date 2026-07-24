@@ -88,7 +88,7 @@ git status --short -- audit/
 ```
 Sortie brute :
 ```
-?? audit/
+(vide)
 ```
 
 Commande :
@@ -97,12 +97,16 @@ git log --oneline origin/feat/setup-conditions -- audit/ | head -1
 ```
 Sortie brute :
 ```
-(vide)
+5361621 docs(audit): track audit trail files (lots 1-3b, verification S1)
 ```
-audit/ est non tracké (`??`) et absent de l'historique distant.
-Verdict : **FAIL**
-Valeur observée : `audit/` = untracked localement, aucun commit le
-concernant sur origin/feat/setup-conditions.
+audit/ est tracké (aucune sortie `git status`, donc rien en attente) et
+présent dans l'historique distant via le commit 5361621, poussé sur
+origin/feat/setup-conditions.
+Verdict : **PASS**
+
+Note : `audit/.claude/settings.local.json` reste exclu (règle globale
+`**/.claude/settings.local.json` dans le gitignore utilisateur) — seuls
+les 24 fichiers `.md` de audit/ sont trackés.
 
 ## C7 — main n'a pas été poussé ni modifié
 
@@ -142,6 +146,6 @@ Verdict : **PASS**
 | C3 | PASS |
 | C4 | PASS |
 | C5 | PASS |
-| C6 | FAIL |
+| C6 | PASS |
 | C7 | PASS |
 | C8 | PASS |
