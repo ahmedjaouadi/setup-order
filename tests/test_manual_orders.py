@@ -20,6 +20,7 @@ from app.engine.manual_order_service import (
 from app.engine.order_manager import OrderManager
 from app.engine.risk_engine import RiskLimits
 from app.engine.trade_guards import (
+    REASON_CONFLICT_WITH_OPEN_POSITION,
     REASON_HALT_ACTIVE,
     REASON_OUTSIDE_TRADING_WINDOW,
     TradeGuardsService,
@@ -186,6 +187,43 @@ class ManualBuyOrderTests(ManualOrderServiceTestCase):
         self.assertIsNone(result.get("stop_order_id"))
         broker_orders = await self.broker.open_orders()
         self.assertEqual(len(broker_orders), 1)
+
+    async def test_buy_blocked_when_position_already_open_on_symbol(self) -> None:
+        """Audit 32/S4: the manual BUY path has no current_status/setup_id to
+        rely on (a fresh setup_id is minted per call), so the only guard
+        against stacking a manual buy on a symbol already held is
+        trade_guards._exposure_verdict's block_if_position_on_same_symbol
+        rule, keyed by symbol rather than setup_id. This test proves that
+        guard actually stops a manual BUY end-to-end, not just in isolation.
+        """
+        self.repository.upsert_position(
+            PositionRecord(
+                symbol="LUNR",
+                setup_id="LUNR_AUTO_SETUP",
+                quantity=6,
+                average_price=20.0,
+                current_price=21.0,
+                unrealized_pnl=6.0,
+                current_stop=18.0,
+                risk_remaining=12.0,
+                status="OPEN",
+            )
+        )
+
+        result = await self.service.submit(self._buy_payload())
+
+        self.assertFalse(result["ok"])
+        assert result["block"] is not None
+        self.assertEqual(
+            result["block"]["reason_code"],
+            REASON_CONFLICT_WITH_OPEN_POSITION,
+        )
+        self.assertEqual(self.repository.list_orders(result["setup_id"]), [])
+        self.assertEqual(await self.broker.open_orders(), [])
+        traces = self._manual_traces()
+        self.assertEqual(len(traces), 1)
+        self.assertIn(REASON_CONFLICT_WITH_OPEN_POSITION, traces[0]["final_decision"])
+        self.assertEqual(traces[0]["trace"]["block"]["reason_code"], REASON_CONFLICT_WITH_OPEN_POSITION)
 
 
 class ManualSellOrderTests(ManualOrderServiceTestCase):

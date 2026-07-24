@@ -200,6 +200,16 @@ class ManualOrderService:
             }
             return
 
+        # This call is the ONLY protection against stacking a manual BUY on a
+        # symbol already held: a fresh setup_id is minted per call (see
+        # new_id("man") above), so protection_snapshot_for_setup/
+        # DuplicateOrderError further down never sees a prior manual order on
+        # this symbol. The actual guard is trade_guards._exposure_verdict's
+        # block_if_position_on_same_symbol rule, keyed by symbol, not
+        # setup_id -- and it depends entirely on the
+        # trade_guards.exposure.block_if_position_on_same_symbol config
+        # switch staying True (audit 32/S4; locked by
+        # tests/test_manual_order_guard_config_lock.py).
         guard_verdict = self.trade_guards.evaluate_entry(symbol, now=now)
         if guard_verdict is not None:
             assessment["block"] = {
