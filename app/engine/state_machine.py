@@ -145,6 +145,12 @@ ALLOWED_TRANSITIONS: dict[SetupStatus, set[SetupStatus]] = {
     SetupStatus.ENTRY_FILLED: {
         SetupStatus.STOP_ORDER_PLACED,
         SetupStatus.STOP_PLACED,
+        # On the real (bracket) path the protective stop is transmitted
+        # together with the entry, so it is already active by the time the
+        # fill lands: there is no post-fill moment where STOP_ORDER_PLACED
+        # applies. That status only describes the simulated path, where the
+        # stop is placed after the fill.
+        SetupStatus.IN_POSITION,
         SetupStatus.ERROR,
         SetupStatus.MANUAL_REVIEW_REQUIRED,
     },
