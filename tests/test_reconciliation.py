@@ -461,5 +461,82 @@ class FilledBranchTests(unittest.TestCase):
             record_fill.assert_called_once()
 
 
+class SubmittedBranchReviewLockTests(unittest.TestCase):
+    """S5b-1: the SUBMITTED (order-restore) branch must never overwrite a
+    MANUAL_REVIEW_REQUIRED / ERROR_REQUIRES_MANUAL_REVIEW setup — these
+    statuses mean "a human must look", and the 2026-06-29 incident (audits
+    35/36) showed this branch silently erasing that alarm."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.database = Database(Path(self.tmp.name) / "state.sqlite")
+        self.database.initialize()
+        self.repository = TradingRepository(self.database)
+        self.event_store = EventStore(self.repository)
+        self.reconciliation = ReconciliationEngine(
+            self.repository, self.event_store, SimulatedBrokerConnector()
+        )
+        self.config = valid_breakout_config()
+        self.symbol = self.config["symbol"]
+        self.setup_id = self.config["setup_id"]
+        self.repository.upsert_setup(BreakoutRetestSetup(self.config).to_record())
+
+    def tearDown(self) -> None:
+        self.database.close()
+        self.tmp.cleanup()
+
+    def _setup_status(self) -> str:
+        return str(self.repository.get_setup(self.setup_id)["status"])
+
+    def _event_types(self) -> set[str]:
+        return {event["event_type"] for event in self.repository.list_events(limit=20)}
+
+    def test_manual_review_required_survives_sell_order_reported_submitted(self) -> None:
+        self.repository.update_setup_status(
+            self.setup_id, SetupStatus.MANUAL_REVIEW_REQUIRED.value, "test setup"
+        )
+
+        self.reconciliation._update_setup_after_reconciled_order(
+            _order(setup_id=self.setup_id, symbol=self.symbol, side="SELL"),
+            OrderStatus.SUBMITTED.value,
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertIn("reconciliation_skipped_review_locked", self._event_types())
+
+    def test_error_requires_manual_review_survives_buy_order_reported_submitted(self) -> None:
+        self.repository.update_setup_status(
+            self.setup_id, SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value, "test setup"
+        )
+
+        self.reconciliation._update_setup_after_reconciled_order(
+            _order(setup_id=self.setup_id, symbol=self.symbol, side="BUY"),
+            OrderStatus.SUBMITTED.value,
+        )
+
+        self.assertEqual(
+            self._setup_status(), SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value
+        )
+        self.assertIn("reconciliation_skipped_review_locked", self._event_types())
+
+    def test_non_alarm_terminal_status_still_restored_from_tws(self) -> None:
+        # Non-regression: CLOSED is a terminal status with no manual-review
+        # meaning. The SUBMITTED branch must keep restoring it exactly as
+        # before this fix.
+        self.repository.update_setup_status(
+            self.setup_id, SetupStatus.CLOSED.value, "test setup"
+        )
+
+        self.reconciliation._update_setup_after_reconciled_order(
+            _order(setup_id=self.setup_id, symbol=self.symbol, side="SELL"),
+            OrderStatus.SUBMITTED.value,
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.STOP_ORDER_PLACED.value)
+        setup = self.repository.get_setup(self.setup_id)
+        self.assertEqual(setup["last_event"], "Open order restored from TWS")
+        self.assertNotIn("reconciliation_skipped_review_locked", self._event_types())
+
+
 if __name__ == "__main__":
     unittest.main()

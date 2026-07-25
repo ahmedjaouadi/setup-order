@@ -459,9 +459,23 @@ class ReconciliationEngine:
                 if side == "SELL"
                 else SetupStatus.ENTRY_ORDER_PLACED.value
             )
-            if setup_status in _TERMINAL_SETUP_STATUSES or setup_status in {
-                SetupStatus.MANUAL_REVIEW_REQUIRED.value,
-            }:
+            if setup_status in _REVIEW_LOCKED_SETUP_STATUSES:
+                self.event_store.record(
+                    EventLevel.INFO,
+                    "reconciliation_skipped_review_locked",
+                    f"Setup left in {setup_status} instead of restoring "
+                    f"{target_status} from TWS",
+                    setup_id=setup_id,
+                    symbol=symbol,
+                    data={
+                        "order_id": str(order.get("id") or ""),
+                        "broker_order_id": order.get("broker_order_id"),
+                        "preserved_status": setup_status,
+                        "target_status": target_status,
+                    },
+                )
+                return
+            if setup_status in _TERMINAL_SETUP_STATUSES:
                 self.repository.update_setup_status(
                     setup_id,
                     target_status,
@@ -621,6 +635,16 @@ _TERMINAL_SETUP_STATUSES = {
     SetupStatus.EXPIRED.value,
     SetupStatus.INVALIDATED.value,
     SetupStatus.ERROR.value,
+    SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value,
+}
+# Statuses meaning "a human must look at this setup". The SUBMITTED branch of
+# _update_setup_after_reconciled_order must never overwrite these with an
+# order-restore status (S5b-1, audits 35/36): _TERMINAL_SETUP_STATUSES itself
+# is left untouched because it is also read by the position-adoption loop
+# (reconciliation.py, ~line 162) and by the CANCELLED branch (~line 538/552),
+# both out of scope for this fix.
+_REVIEW_LOCKED_SETUP_STATUSES = {
+    SetupStatus.MANUAL_REVIEW_REQUIRED.value,
     SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value,
 }
 
