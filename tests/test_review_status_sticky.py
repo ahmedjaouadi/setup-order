@@ -625,6 +625,65 @@ class SubmittedBranchStickyReferenceTest(unittest.TestCase):
         self.assertEqual(setup["status"], SetupStatus.MANUAL_REVIEW_REQUIRED.value)
 
 
+class ReconciliationFilledBranchUnreachableFromAlarmTests(unittest.TestCase):
+    """reconciliation.py:507 (ENTRY_FILLED, the "fill price/quantity
+    unavailable" fallback inside the FILLED branch) and, downstream of it
+    in the same branch, the record_fill()/mark_in_position() calls at
+    :528/:534. All of it sits behind one gate at the top of the FILLED
+    branch (reconciliation.py:488-491): `if setup_status not in
+    {ENTRY_ORDER_PLACED, ENTRY_PARTIALLY_FILLED}: ... return` -- neither
+    alarm status is in that set, so a FILLED order can never reach :507 (or
+    :528/:534) while the setup is in MANUAL_REVIEW_REQUIRED or
+    ERROR_REQUIRES_MANUAL_REVIEW. Unlike the simulated-fill path
+    (fill_executor.py, tested above), this is a real, working guard, not a
+    gap."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.database = Database(Path(self.tmp.name) / "state.sqlite")
+        self.database.initialize()
+        self.repository = TradingRepository(self.database)
+        self.event_store = EventStore(self.repository)
+        self.reconciliation = ReconciliationEngine(
+            self.repository, self.event_store, SimulatedBrokerConnector()
+        )
+        config = valid_breakout_config()
+        self.setup_id = config["setup_id"]
+        self.symbol = config["symbol"]
+        self.repository.upsert_setup(BreakoutRetestSetup(config).to_record())
+
+    def tearDown(self) -> None:
+        self.database.close()
+        self.tmp.cleanup()
+
+    def _setup_status(self) -> str:
+        return str(self.repository.get_setup(self.setup_id)["status"])
+
+    def _assert_filled_order_is_ignored(self, alarm_status: str) -> None:
+        self.repository.update_setup_status(self.setup_id, alarm_status, "test setup")
+
+        self.reconciliation._update_setup_after_reconciled_order(
+            {
+                "id": "ord_1",
+                "setup_id": self.setup_id,
+                "symbol": self.symbol,
+                "side": "BUY",
+                "quantity": 10,
+                "broker_order_id": "9001",
+            },
+            OrderStatus.FILLED.value,
+        )
+
+        self.assertEqual(self._setup_status(), alarm_status)
+        self.assertEqual(self.repository.list_positions(), [])
+
+    def test_manual_review_required_blocks_filled_branch(self) -> None:
+        self._assert_filled_order_is_ignored(SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+
+    def test_error_requires_manual_review_blocks_filled_branch(self) -> None:
+        self._assert_filled_order_is_ignored(SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value)
+
+
 class DisarmSetupLegitimateExitTests(unittest.TestCase):
     """disarm_setup (setup_engine.py:273-281) CAN and does exit an alarm
     status -- this is intentional, a human explicitly asking to stand a
