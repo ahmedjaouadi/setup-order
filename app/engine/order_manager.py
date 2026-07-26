@@ -451,22 +451,30 @@ class OrderManager:
                 protection_status="STOP_REPAIR_EXCEPTION",
             )
             raise
-        if stop_order.status in {
-            OrderStatus.REJECTED.value,
-            OrderStatus.ERROR.value,
-        }:
+        stop_is_active = stop_order.status in {
+            OrderStatus.CREATED.value,
+            OrderStatus.SUBMITTED.value,
+        }
+        if stop_is_active:
+            # The allow_from_review flag below is passed ONLY because
+            # stop_order.status proves the broker actually holds this stop
+            # active -- this is not a bypass of the S5b-3a review guard, it
+            # is that guard's one documented legitimate exception: a missing
+            # protective stop has just been repaired and confirmed live, so
+            # the alarm that blocked the setup can be cleared.
+            self.repository.update_setup_status(
+                setup["setup_id"],
+                SetupStatus.ENTRY_ORDER_PLACED.value,
+                "Protective stop attached to existing entry order",
+                allow_from_review=True,
+            )
+        else:
             await self._cancel_parent_for_failed_protection(
                 setup,
                 _order_record_from_row(entry_order),
                 stop_order=stop_order,
                 reason="Protective stop repair failed",
                 protection_status="STOP_REPAIR_FAILED",
-            )
-        else:
-            self.repository.update_setup_status(
-                setup["setup_id"],
-                SetupStatus.ENTRY_ORDER_PLACED.value,
-                "Protective stop attached to existing entry order",
             )
         return stop_order
 

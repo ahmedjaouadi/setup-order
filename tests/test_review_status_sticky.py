@@ -229,6 +229,26 @@ class _StopRejectedThenRecoveredBroker(_StopAlwaysRejectedBroker):
         return await SimulatedBrokerConnector.submit_order(self, request)
 
 
+class _StopImmediatelyCancelledBroker(SimulatedBrokerConnector):
+    """Every SELL (stop) submission is *accepted* by the broker but reported
+    back with status CANCELLED, not SUBMITTED -- an edge case
+    place_stop_order's own accepted/REJECTED/ERROR check (order_manager.py:
+    347-350) does not treat as a failure, so before S5b-3b attach_missing_stop
+    would have written ENTRY_ORDER_PLACED here too (audit 45's documented
+    blind spot: "not in {REJECTED, ERROR}" also matches CANCELLED and
+    FILLED, neither of which is an active stop)."""
+
+    async def submit_order(self, request: BrokerOrderRequest) -> BrokerOrderResult:
+        if request.side == "SELL":
+            return BrokerOrderResult(
+                accepted=True,
+                status="CANCELLED",
+                broker_order_id="cancelled-1",
+                reason="Cancelled immediately by test broker",
+            )
+        return await super().submit_order(request)
+
+
 class _UnprotectedEntryFixture(unittest.IsolatedAsyncioTestCase):
     """Shared setup: produce the real, reachable state "entry order
     SUBMITTED locally, setup ERROR_REQUIRES_MANUAL_REVIEW" via
@@ -295,34 +315,35 @@ class AttachMissingStopReviewStickyTests(_UnprotectedEntryFixture):
     Its only guards are on the ORDER (side BUY, status CREATED/SUBMITTED,
     no existing active stop) -- nothing reads setup_status. Reachable via
     the real, human-triggered API route
-    POST /api/orders/{order_id}/attach-stop (app/api/routes_orders.py:78-85)."""
+    POST /api/orders/{order_id}/attach-stop (app/api/routes_orders.py:78-85).
 
-    async def test_error_requires_manual_review_survives_attach_missing_stop(
+    S5b-3b (audit 46): attach_missing_stop now passes allow_from_review=True
+    to update_setup_status, but ONLY in the branch where stop_order.status
+    proves the repaired stop is actually active at the broker (CREATED or
+    SUBMITTED). This is the guard's one documented legitimate exception, not
+    a bypass -- see order_manager.py:454-476."""
+
+    async def test_error_requires_manual_review_is_cleared_by_active_stop_repair(
         self,
     ) -> None:
-        """S5b-3a (audit 44): the central guard blocks this write too, as an
-        unforeseen-by-name-but-anticipated (ORDRE_S5b3a.md section 6) side
-        effect -- attach_missing_stop calls the same update_setup_status it
-        always did, without allow_from_review, so it is now also blocked
-        from alarm. This is NOT a deliberate fix of attach_missing_stop
-        (out of scope, S5b-3b decides whether it should receive the flag as
-        a legitimate repair path); it is the central guard applying
-        uniformly to every caller that does not opt out."""
+        """S5b-3b (audit 46): the repair's own stop submission succeeds
+        (SimulatedBrokerConnector reports SUBMITTED) -- stop_is_active is
+        True, so the review alarm is legitimately cleared via
+        allow_from_review=True."""
         recovered_broker = SimulatedBrokerConnector()
         await recovered_broker.connect()
         recovery_manager = OrderManager(
             repository=self.repository, event_store=self.event_store, broker=recovered_broker
         )
 
-        await recovery_manager.attach_missing_stop(self.order.id)
+        stop_order = await recovery_manager.attach_missing_stop(self.order.id)
 
-        self.assertEqual(
-            self._setup_status(), SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value
-        )
+        self.assertEqual(stop_order.status, OrderStatus.SUBMITTED.value)
+        self.assertEqual(self._setup_status(), SetupStatus.ENTRY_ORDER_PLACED.value)
 
-    async def test_manual_review_required_survives_attach_missing_stop(self) -> None:
-        """S5b-3a (audit 44): same central-guard side effect as above, from
-        MANUAL_REVIEW_REQUIRED instead of ERROR_REQUIRES_MANUAL_REVIEW."""
+    async def test_manual_review_required_is_cleared_by_active_stop_repair(self) -> None:
+        """S5b-3b (audit 46): same as above, from MANUAL_REVIEW_REQUIRED
+        instead of ERROR_REQUIRES_MANUAL_REVIEW."""
         self._force_manual_review_required()
         recovered_broker = SimulatedBrokerConnector()
         await recovered_broker.connect()
@@ -330,9 +351,57 @@ class AttachMissingStopReviewStickyTests(_UnprotectedEntryFixture):
             repository=self.repository, event_store=self.event_store, broker=recovered_broker
         )
 
-        await recovery_manager.attach_missing_stop(self.order.id)
+        stop_order = await recovery_manager.attach_missing_stop(self.order.id)
 
-        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertEqual(stop_order.status, OrderStatus.SUBMITTED.value)
+        self.assertEqual(self._setup_status(), SetupStatus.ENTRY_ORDER_PLACED.value)
+
+    async def test_rejected_repair_attempt_preserves_alarm(self) -> None:
+        """Non-regression: when the repair's OWN stop submission is
+        REJECTED, stop_is_active is False -- no active status is written,
+        the setup is routed to _cancel_parent_for_failed_protection exactly
+        as before this lot. Confirms the positive stop_is_active condition
+        did not change behaviour for the failure case it replaces."""
+        rejecting_broker = _StopAlwaysRejectedBroker()
+        await rejecting_broker.connect()
+        recovery_manager = OrderManager(
+            repository=self.repository, event_store=self.event_store, broker=rejecting_broker
+        )
+
+        stop_order = await recovery_manager.attach_missing_stop(self.order.id)
+
+        self.assertEqual(stop_order.status, OrderStatus.REJECTED.value)
+        self.assertEqual(
+            self._setup_status(), SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value
+        )
+
+    async def test_cancelled_repair_attempt_does_not_clear_alarm(self) -> None:
+        """S5b-3b (audit 46) tightening: stop_order.status == CANCELLED is
+        NOT in {CREATED, SUBMITTED}, so stop_is_active is False even though
+        CANCELLED was not in the old {REJECTED, ERROR} failure set. Before
+        this lot's positive condition, this broker response would have
+        fallen into the `else` branch and written ENTRY_ORDER_PLACED over
+        the alarm despite the stop not actually being active -- the blind
+        spot audit 45 flagged. Proves it is now closed: the setup is routed
+        to _cancel_parent_for_failed_protection exactly like a REJECTED
+        repair (that helper always writes ERROR_REQUIRES_MANUAL_REVIEW,
+        unconditionally, regardless of which alarm was there before --
+        unchanged, out-of-scope behaviour, see ORDRE_S5b3b.md section 2).
+        What matters here is what it does NOT write: ENTRY_ORDER_PLACED."""
+        self._force_manual_review_required()
+        cancelling_broker = _StopImmediatelyCancelledBroker()
+        await cancelling_broker.connect()
+        recovery_manager = OrderManager(
+            repository=self.repository, event_store=self.event_store, broker=cancelling_broker
+        )
+
+        stop_order = await recovery_manager.attach_missing_stop(self.order.id)
+
+        self.assertEqual(stop_order.status, OrderStatus.CANCELLED.value)
+        self.assertNotEqual(self._setup_status(), SetupStatus.ENTRY_ORDER_PLACED.value)
+        self.assertEqual(
+            self._setup_status(), SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value
+        )
 
 
 class PostFillProgressionDirectWriteReviewStickyTests(unittest.TestCase):
