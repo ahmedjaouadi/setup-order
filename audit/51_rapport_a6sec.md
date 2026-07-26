@@ -3,10 +3,9 @@
 ## 1. Identification
 - Lot / ordre de travail : `audit/ORDRE_A6SEC.md` — ne jamais ressusciter un
   setup terminal en statut d'ordre actif ; alerter à la place.
-- Branche : `fix/a6sec-no-terminal-resurrection`  | Commit : voir section 6
-  (commit créé après ce rapport, hash ajouté a posteriori n'était pas
-  possible avant — le hash exact figure dans le message de clôture, la
-  commande `git log -1` juste après le commit fait foi).
+- Branche : `fix/a6sec-no-terminal-resurrection`  | Commit : `4d22d0f`
+  ("fix(reconciliation): alert instead of resurrecting terminal setups
+  with open broker orders").
 - Basée sur : `feat/setup-conditions` @ `121d0c7` (docs(audit): clôture
   S5b-3a+3b — merge/push groupé fix/s5b3a+fix/s5b3b).
 - Mergée : non | Poussée : non.
