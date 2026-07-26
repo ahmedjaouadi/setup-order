@@ -15,13 +15,18 @@ APP_ROOT = Path(__file__).resolve().parent.parent / "app"
 # or added here with a justification.
 #
 # Structural blind spot (documented, not fixed by this ratchet): a call
-# that writes an ACTIF status via a *variable* computed earlier (e.g.
-# reconciliation.py's SUBMITTED branch, which assigns `target_status =
-# SetupStatus.STOP_ORDER_PLACED.value if ... else SetupStatus.
-# ENTRY_ORDER_PLACED.value` before calling update_setup_status(setup_id,
-# target_status, ...)) is invisible to this scan: the literal never
-# appears inside the call's own parentheses. That site is covered instead
-# by SubmittedBranchReviewLockTests (tests/test_reconciliation.py, S5b-1).
+# that writes an ACTIF status via a *variable* computed earlier would be
+# invisible to this scan, since the literal never appears inside the
+# call's own parentheses. reconciliation.py's SUBMITTED branch used to be
+# an example of this (it computed `target_status = SetupStatus.
+# STOP_ORDER_PLACED.value if ... else SetupStatus.ENTRY_ORDER_PLACED.value`
+# and wrote it directly) until A6-SEC (audit 51) replaced that write with a
+# literal MANUAL_REVIEW_REQUIRED -- `target_status` now only feeds an event
+# payload for traceability, never update_setup_status(). No ACTIF-status
+# write remains in that branch, so this blind spot is currently only a
+# structural risk for a *future* variable-target write, not a live gap.
+# That site's alerting behaviour is covered by SubmittedBranchReviewLockTests
+# (tests/test_reconciliation.py, S5b-1 + A6-SEC).
 ACTIVE_STATUSES: frozenset[str] = frozenset(
     {
         "ENTRY_ORDER_PLACED",
@@ -79,11 +84,13 @@ ALLOWED_ACTIVE_WRITE_SITES: dict[str, str] = {
         "ENTRY_FILLED before immediately overwriting it with "
         "MANUAL_REVIEW_REQUIRED (:507) -- gated upstream on setup_status in "
         "{ENTRY_ORDER_PLACED, ENTRY_PARTIALLY_FILLED} (:488-491), "
-        "unreachable from an alarm. (The SUBMITTED branch's restore-from-TWS "
-        "write is a *variable* target, not a literal -- it is invisible to "
-        "this scan by design, see the module docstring above; it is the "
-        "site S5b-1 already fixed and proved sticky, "
-        "SubmittedBranchReviewLockTests in tests/test_reconciliation.py.)"
+        "unreachable from an alarm. (The SUBMITTED branch no longer restores "
+        "an ACTIF status for a terminal setup at all -- A6-SEC, audit 51, "
+        "replaced that write with a literal MANUAL_REVIEW_REQUIRED, which is "
+        "not an ACTIF status and therefore doesn't need a site here; the "
+        "computed `target_status` variable only feeds an event payload now. "
+        "See the module docstring above and SubmittedBranchReviewLockTests "
+        "in tests/test_reconciliation.py, S5b-1 + A6-SEC.)"
     ),
 }
 

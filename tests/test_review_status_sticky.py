@@ -671,15 +671,20 @@ class PlaceEntryOrderUnreachableFromAlarmTests(unittest.IsolatedAsyncioTestCase)
 
 class SubmittedBranchStickyReferenceTest(unittest.TestCase):
     """The SUBMITTED branch of reconciliation.py's
-    _update_setup_after_reconciled_order (the site S5b-1 fixed) writes its
-    target status through a *variable*, not a literal -- it is invisible
-    to tests/test_active_status_write_sites.py by design (see that file's
-    module docstring, audit 39). It is NOT re-tested exhaustively here to
-    avoid duplication (audit/ORDRE_S5b2.md section 5.3): the exhaustive
-    coverage (both alarm statuses, plus the non-regression case for a
-    non-alarm terminal status) already lives in
-    tests/test_reconciliation.py::SubmittedBranchReviewLockTests
-    (S5b-1). This is one direct proof kept in *this* file so that
+    _update_setup_after_reconciled_order (the review-lock the site S5b-1
+    fixed) never writes anything when setup_status is a review alarm -- it
+    only records reconciliation_skipped_review_locked and returns; the
+    computed `target_status` variable is invisible to
+    tests/test_active_status_write_sites.py by design (see that file's
+    module docstring, audit 39) and, since A6-SEC (audit 51), is no longer
+    written anywhere in this branch even for a terminal setup -- a still-open
+    broker order for a terminal setup now writes a literal
+    MANUAL_REVIEW_REQUIRED instead of resurrecting an ACTIF status. It is
+    NOT re-tested exhaustively here to avoid duplication
+    (audit/ORDRE_S5b2.md section 5.3): the exhaustive coverage (both alarm
+    statuses, plus the terminal-status-with-open-order cases) already lives
+    in tests/test_reconciliation.py::SubmittedBranchReviewLockTests
+    (S5b-1 + A6-SEC). This is one direct proof kept in *this* file so that
     "at least one test here proves the sticky behaviour on a real path"
     does not depend on cross-file trust alone."""
 

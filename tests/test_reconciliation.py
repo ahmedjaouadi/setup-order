@@ -519,23 +519,45 @@ class SubmittedBranchReviewLockTests(unittest.TestCase):
         )
         self.assertIn("reconciliation_skipped_review_locked", self._event_types())
 
-    def test_non_alarm_terminal_status_still_restored_from_tws(self) -> None:
-        # Non-regression: CLOSED is a terminal status with no manual-review
-        # meaning. The SUBMITTED branch must keep restoring it exactly as
-        # before this fix.
+    def test_terminal_status_with_open_sell_order_goes_to_manual_review(self) -> None:
+        # A6-SEC (audits 49/50): a terminal setup with a still-open broker
+        # order must never be "resurrected" into an active order status —
+        # it must alert a human instead. Superseded the old behaviour
+        # (restoring STOP_ORDER_PLACED/ENTRY_ORDER_PLACED here), which was
+        # the finding this lot fixes.
+        self.repository.update_setup_status(
+            self.setup_id, SetupStatus.CANCELLED.value, "test setup"
+        )
+
+        with mock.patch.object(
+            self.reconciliation.broker, "cancel_order", new=mock.AsyncMock()
+        ) as cancel_order:
+            self.reconciliation._update_setup_after_reconciled_order(
+                _order(setup_id=self.setup_id, symbol=self.symbol, side="SELL"),
+                OrderStatus.SUBMITTED.value,
+            )
+            cancel_order.assert_not_called()
+
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertIn("reconciliation_terminal_setup_open_order", self._event_types())
+        events = self.repository.list_events(limit=20)
+        event = next(
+            e for e in events if e["event_type"] == "reconciliation_terminal_setup_open_order"
+        )
+        self.assertEqual(event["level"], "WARNING")
+
+    def test_terminal_status_with_open_buy_order_goes_to_manual_review(self) -> None:
         self.repository.update_setup_status(
             self.setup_id, SetupStatus.CLOSED.value, "test setup"
         )
 
         self.reconciliation._update_setup_after_reconciled_order(
-            _order(setup_id=self.setup_id, symbol=self.symbol, side="SELL"),
+            _order(setup_id=self.setup_id, symbol=self.symbol, side="BUY"),
             OrderStatus.SUBMITTED.value,
         )
 
-        self.assertEqual(self._setup_status(), SetupStatus.STOP_ORDER_PLACED.value)
-        setup = self.repository.get_setup(self.setup_id)
-        self.assertEqual(setup["last_event"], "Open order restored from TWS")
-        self.assertNotIn("reconciliation_skipped_review_locked", self._event_types())
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertIn("reconciliation_terminal_setup_open_order", self._event_types())
 
 
 if __name__ == "__main__":

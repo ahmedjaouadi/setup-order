@@ -476,10 +476,29 @@ class ReconciliationEngine:
                 )
                 return
             if setup_status in _TERMINAL_SETUP_STATUSES:
+                status_reason = (
+                    f"Broker shows an open {side} order for a terminal setup "
+                    f"({setup_status}) — needs manual review"
+                )
                 self.repository.update_setup_status(
                     setup_id,
-                    target_status,
-                    "Open order restored from TWS",
+                    SetupStatus.MANUAL_REVIEW_REQUIRED.value,
+                    "Open order for terminal setup — manual review required",
+                    status_reason=status_reason,
+                )
+                self.event_store.record(
+                    EventLevel.WARNING,
+                    "reconciliation_terminal_setup_open_order",
+                    status_reason,
+                    setup_id=setup_id,
+                    symbol=symbol,
+                    data={
+                        "order_id": str(order.get("id") or ""),
+                        "broker_order_id": order.get("broker_order_id"),
+                        "terminal_status": setup_status,
+                        "side": side,
+                        "target_status": target_status,
+                    },
                 )
             return
         if status == OrderStatus.FILLED.value:

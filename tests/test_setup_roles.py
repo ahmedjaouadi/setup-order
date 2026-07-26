@@ -348,9 +348,12 @@ class SetupRoleTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(order)
         self.assertEqual(order["status"], OrderStatus.SUBMITTED.value)
         self.assertEqual(result["local_orders_reactivated"], 1)
+        # A6-SEC (audit 51): a still-open broker order for a terminal setup
+        # (CANCELLED here) must alert for manual review, never resurrect the
+        # setup into an active order status such as STOP_ORDER_PLACED.
         self.assertEqual(
             self.repository.get_setup(setup.config["setup_id"])["status"],
-            SetupStatus.STOP_ORDER_PLACED.value,
+            SetupStatus.MANUAL_REVIEW_REQUIRED.value,
         )
 
     async def test_reconciliation_does_not_cancel_local_orders_when_broker_offline(self) -> None:
