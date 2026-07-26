@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from math import floor
 from typing import Any
 
@@ -9,9 +10,33 @@ from app.models import (
     OrderRecord,
     PositionRecord,
     SetupRecord,
+    SetupStatus,
     utc_now_iso,
 )
 from app.storage.database import Database
+
+logger = logging.getLogger(__name__)
+
+_REVIEW_ALARM_STATUSES = frozenset(
+    {
+        SetupStatus.MANUAL_REVIEW_REQUIRED.value,
+        SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value,
+    }
+)
+
+_ACTIVE_STATUSES = frozenset(
+    {
+        SetupStatus.ENTRY_ORDER_PLACED.value,
+        SetupStatus.ENTRY_PARTIALLY_FILLED.value,
+        SetupStatus.ENTRY_FILLED.value,
+        SetupStatus.STOP_ORDER_PLACED.value,
+        SetupStatus.STOP_PLACED.value,
+        SetupStatus.IN_POSITION.value,
+        SetupStatus.MANAGING_POSITION.value,
+        SetupStatus.PARTIAL_EXIT.value,
+        SetupStatus.RECONCILING_EXISTING_POSITION.value,
+    }
+)
 
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
@@ -458,7 +483,23 @@ class TradingRepository:
         last_event: str,
         status_reason: str | None = None,
         last_revalidated_at: str | None = None,
+        *,
+        allow_from_review: bool = False,
     ) -> None:
+        if not allow_from_review and status in _ACTIVE_STATUSES:
+            row = self.database.execute(
+                "SELECT status FROM setups WHERE setup_id = ?",
+                (setup_id,),
+            ).fetchone()
+            current_status = str(row["status"]) if row else None
+            if current_status in _REVIEW_ALARM_STATUSES:
+                logger.warning(
+                    "Blocked write of active status %s over review alarm %s for setup %s",
+                    status,
+                    current_status,
+                    setup_id,
+                )
+                return
         if status_reason is None and last_revalidated_at is None:
             self.database.execute(
                 """

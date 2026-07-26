@@ -27,15 +27,20 @@ through an automatic (non-disarm_setup) code path, by actually posing the
 setup in MANUAL_REVIEW_REQUIRED / ERROR_REQUIRES_MANUAL_REVIEW, driving
 the real code path, and checking what survives.
 
-Two outcomes are documented here, not just one:
-- STICKY tests: the alarm survives. These pin down protection that already
-  exists and must keep existing.
-- GAP tests (marked "S5b-3 debt" in their docstring): the alarm does NOT
-  survive today. Per audit/ORDRE_S5b2.md section 6, these are NOT fixed by
-  this lot -- the assertions describe the actual current (unsafe) behaviour
-  so that a real fix later has to consciously touch this file, and so a
-  future regression in the opposite direction (an even worse overwrite) is
-  also caught.
+S5b-3a (audit 44) added a central guard in
+TradingRepository.update_setup_status (app/storage/repositories.py) that
+blocks any write of an ACTIVE status over an existing review alarm unless
+the caller passes allow_from_review=True. The tests that used to be marked
+"S5b-3 debt" / GAP here (documenting that the alarm did NOT survive) are
+inverted in this lot to assert that it now does survive -- the guard is
+central, so it protects every one of these call sites without any of them
+being individually modified. The one exception left as debt is
+attach_missing_stop (order_manager.py:466): S5b-3a does not decide whether
+it should receive allow_from_review=True as a legitimate repair path
+(S5b-3b will); in the meantime its write is also blocked, as an inherent
+side effect of the guard being central rather than call-site-specific --
+its tests are inverted here too, for the same reason as the others, not
+because attach_missing_stop itself was touched.
 """
 
 
@@ -139,14 +144,15 @@ class PositionAdoptionReviewStickyTests(unittest.IsolatedAsyncioTestCase):
     def _setup_status(self) -> str:
         return str(self.repository.get_setup(self.setup_id)["status"])
 
-    async def test_manual_review_required_is_overwritten_by_existing_position_adoption(
+    async def test_manual_review_required_survives_existing_position_adoption(
         self,
     ) -> None:
-        """S5b-3 debt (NOT fixed by this lot): a management-only setup left
-        in MANUAL_REVIEW_REQUIRED (e.g. because the broker position was
-        briefly not found, adoption_blocked_position_not_found) is silently
-        adopted into IN_POSITION on the next pass where the position
-        reappears -- no event references the alarm that was overwritten."""
+        """S5b-3a (audit 44): the central guard in update_setup_status now
+        blocks this write. A management-only setup left in
+        MANUAL_REVIEW_REQUIRED (e.g. because the broker position was briefly
+        not found, adoption_blocked_position_not_found) no longer gets
+        silently adopted into IN_POSITION on the next pass where the
+        position reappears -- the alarm survives."""
         _upsert_management_setup(
             self.repository,
             self.setup_id,
@@ -156,7 +162,7 @@ class PositionAdoptionReviewStickyTests(unittest.IsolatedAsyncioTestCase):
 
         await self._run_adoption()
 
-        self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
 
     async def test_error_requires_manual_review_survives_existing_position_adoption(
         self,
@@ -291,10 +297,17 @@ class AttachMissingStopReviewStickyTests(_UnprotectedEntryFixture):
     the real, human-triggered API route
     POST /api/orders/{order_id}/attach-stop (app/api/routes_orders.py:78-85)."""
 
-    async def test_error_requires_manual_review_is_overwritten_by_attach_missing_stop(
+    async def test_error_requires_manual_review_survives_attach_missing_stop(
         self,
     ) -> None:
-        """S5b-3 debt (NOT fixed by this lot)."""
+        """S5b-3a (audit 44): the central guard blocks this write too, as an
+        unforeseen-by-name-but-anticipated (ORDRE_S5b3a.md section 6) side
+        effect -- attach_missing_stop calls the same update_setup_status it
+        always did, without allow_from_review, so it is now also blocked
+        from alarm. This is NOT a deliberate fix of attach_missing_stop
+        (out of scope, S5b-3b decides whether it should receive the flag as
+        a legitimate repair path); it is the central guard applying
+        uniformly to every caller that does not opt out."""
         recovered_broker = SimulatedBrokerConnector()
         await recovered_broker.connect()
         recovery_manager = OrderManager(
@@ -303,10 +316,13 @@ class AttachMissingStopReviewStickyTests(_UnprotectedEntryFixture):
 
         await recovery_manager.attach_missing_stop(self.order.id)
 
-        self.assertEqual(self._setup_status(), SetupStatus.ENTRY_ORDER_PLACED.value)
+        self.assertEqual(
+            self._setup_status(), SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value
+        )
 
-    async def test_manual_review_required_is_overwritten_by_attach_missing_stop(self) -> None:
-        """S5b-3 debt (NOT fixed by this lot)."""
+    async def test_manual_review_required_survives_attach_missing_stop(self) -> None:
+        """S5b-3a (audit 44): same central-guard side effect as above, from
+        MANUAL_REVIEW_REQUIRED instead of ERROR_REQUIRES_MANUAL_REVIEW."""
         self._force_manual_review_required()
         recovered_broker = SimulatedBrokerConnector()
         await recovered_broker.connect()
@@ -316,7 +332,7 @@ class AttachMissingStopReviewStickyTests(_UnprotectedEntryFixture):
 
         await recovery_manager.attach_missing_stop(self.order.id)
 
-        self.assertEqual(self._setup_status(), SetupStatus.ENTRY_ORDER_PLACED.value)
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
 
 
 class PostFillProgressionDirectWriteReviewStickyTests(unittest.TestCase):
@@ -374,8 +390,8 @@ class PostFillProgressionDirectWriteReviewStickyTests(unittest.TestCase):
     def _pose(self, status: str) -> None:
         self.repository.update_setup_status(self.setup_id, status, "test setup")
 
-    def test_error_requires_manual_review_is_overwritten_by_record_fill(self) -> None:
-        """S5b-3 debt (NOT fixed by this lot)."""
+    def test_error_requires_manual_review_survives_record_fill(self) -> None:
+        """S5b-3a (audit 44): the central guard now blocks this write."""
         self._pose(SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value)
 
         self.progression.record_fill(
@@ -386,10 +402,12 @@ class PostFillProgressionDirectWriteReviewStickyTests(unittest.TestCase):
             symbol=self.symbol,
         )
 
-        self.assertEqual(self._setup_status(), SetupStatus.ENTRY_FILLED.value)
+        self.assertEqual(
+            self._setup_status(), SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value
+        )
 
-    def test_manual_review_required_is_overwritten_by_record_fill(self) -> None:
-        """S5b-3 debt (NOT fixed by this lot)."""
+    def test_manual_review_required_survives_record_fill(self) -> None:
+        """S5b-3a (audit 44): the central guard now blocks this write."""
         self._pose(SetupStatus.MANUAL_REVIEW_REQUIRED.value)
 
         self.progression.record_fill(
@@ -400,23 +418,25 @@ class PostFillProgressionDirectWriteReviewStickyTests(unittest.TestCase):
             symbol=self.symbol,
         )
 
-        self.assertEqual(self._setup_status(), SetupStatus.ENTRY_FILLED.value)
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
 
-    def test_error_requires_manual_review_is_overwritten_by_mark_in_position(self) -> None:
-        """S5b-3 debt (NOT fixed by this lot)."""
+    def test_error_requires_manual_review_survives_mark_in_position(self) -> None:
+        """S5b-3a (audit 44): the central guard now blocks this write."""
         self._pose(SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value)
 
         self.progression.mark_in_position(self.setup_id, protection_verified=True)
 
-        self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+        self.assertEqual(
+            self._setup_status(), SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value
+        )
 
-    def test_manual_review_required_is_overwritten_by_mark_in_position(self) -> None:
-        """S5b-3 debt (NOT fixed by this lot)."""
+    def test_manual_review_required_survives_mark_in_position(self) -> None:
+        """S5b-3a (audit 44): the central guard now blocks this write."""
         self._pose(SetupStatus.MANUAL_REVIEW_REQUIRED.value)
 
         self.progression.mark_in_position(self.setup_id, protection_verified=True)
 
-        self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
 
 
 class PlaceStopOrderDirectWriteReviewStickyTests(unittest.IsolatedAsyncioTestCase):
@@ -449,10 +469,10 @@ class PlaceStopOrderDirectWriteReviewStickyTests(unittest.IsolatedAsyncioTestCas
     def _setup_status(self) -> str:
         return str(self.repository.get_setup(self.setup_id)["status"])
 
-    async def test_error_requires_manual_review_is_overwritten_by_place_stop_order(
+    async def test_error_requires_manual_review_survives_place_stop_order(
         self,
     ) -> None:
-        """S5b-3 debt (NOT fixed by this lot)."""
+        """S5b-3a (audit 44): the central guard now blocks this write."""
         self.repository.update_setup_status(
             self.setup_id, SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value, "test setup"
         )
@@ -460,10 +480,12 @@ class PlaceStopOrderDirectWriteReviewStickyTests(unittest.IsolatedAsyncioTestCas
 
         await self.manager.place_stop_order(setup, quantity=10, stop_loss=13.85)
 
-        self.assertEqual(self._setup_status(), SetupStatus.STOP_ORDER_PLACED.value)
+        self.assertEqual(
+            self._setup_status(), SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value
+        )
 
-    async def test_manual_review_required_is_overwritten_by_place_stop_order(self) -> None:
-        """S5b-3 debt (NOT fixed by this lot)."""
+    async def test_manual_review_required_survives_place_stop_order(self) -> None:
+        """S5b-3a (audit 44): the central guard now blocks this write."""
         self.repository.update_setup_status(
             self.setup_id, SetupStatus.MANUAL_REVIEW_REQUIRED.value, "test setup"
         )
@@ -471,7 +493,7 @@ class PlaceStopOrderDirectWriteReviewStickyTests(unittest.IsolatedAsyncioTestCas
 
         await self.manager.place_stop_order(setup, quantity=10, stop_loss=13.85)
 
-        self.assertEqual(self._setup_status(), SetupStatus.STOP_ORDER_PLACED.value)
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
 
 
 class SimulatedFillFullCascadeReviewStickyTests(_UnprotectedEntryFixture):
@@ -488,19 +510,25 @@ class SimulatedFillFullCascadeReviewStickyTests(_UnprotectedEntryFixture):
 
     broker_factory = _StopRejectedThenRecoveredBroker
 
-    async def test_error_requires_manual_review_is_overwritten_by_full_cascade(self) -> None:
-        """S5b-3 debt (NOT fixed by this lot)."""
+    async def test_error_requires_manual_review_survives_full_cascade(self) -> None:
+        """S5b-3a (audit 44): the central guard blocks all three writes in
+        this cascade (record_fill's ENTRY_FILLED, place_stop_order's
+        STOP_ORDER_PLACED, mark_in_position's IN_POSITION), so the alarm
+        set before the fill survives the whole call."""
         await self.manager.simulate_fill_order(self.order.id, fill_price=15.00)
 
-        self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+        self.assertEqual(
+            self._setup_status(), SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value
+        )
 
-    async def test_manual_review_required_is_overwritten_by_full_cascade(self) -> None:
-        """S5b-3 debt (NOT fixed by this lot)."""
+    async def test_manual_review_required_survives_full_cascade(self) -> None:
+        """S5b-3a (audit 44): same as above, forced to MANUAL_REVIEW_REQUIRED
+        instead of the fixture's default ERROR_REQUIRES_MANUAL_REVIEW."""
         self._force_manual_review_required()
 
         await self.manager.simulate_fill_order(self.order.id, fill_price=15.00)
 
-        self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
 
 
 class _ExplodingOrderManager:
@@ -682,6 +710,130 @@ class ReconciliationFilledBranchUnreachableFromAlarmTests(unittest.TestCase):
 
     def test_error_requires_manual_review_blocks_filled_branch(self) -> None:
         self._assert_filled_order_is_ignored(SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value)
+
+
+class CentralReviewGuardDirectTests(unittest.TestCase):
+    """S5b-3a (audit 44): direct coverage of the guard itself inside
+    TradingRepository.update_setup_status, independent of any particular
+    engine call site -- proves the guard's own contract (block, preserve,
+    trace; let non-alarm writes through unchanged; let allow_from_review
+    escape the block) rather than relying only on the behavioural proofs
+    through real engine paths above."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.database = Database(Path(self.tmp.name) / "state.sqlite")
+        self.database.initialize()
+        self.repository = TradingRepository(self.database)
+        config = valid_breakout_config()
+        self.setup_id = config["setup_id"]
+        self.repository.upsert_setup(BreakoutRetestSetup(config).to_record())
+
+    def tearDown(self) -> None:
+        self.database.close()
+        self.tmp.cleanup()
+
+    def _setup_status(self) -> str:
+        return str(self.repository.get_setup(self.setup_id)["status"])
+
+    def test_guard_blocks_manual_review_required_to_in_position_and_logs(self) -> None:
+        self.repository.update_setup_status(
+            self.setup_id, SetupStatus.MANUAL_REVIEW_REQUIRED.value, "test setup"
+        )
+
+        with self.assertLogs("app.storage.repositories", level="WARNING") as logs:
+            self.repository.update_setup_status(
+                self.setup_id, SetupStatus.IN_POSITION.value, "should be blocked"
+            )
+
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertTrue(any("Blocked write" in message for message in logs.output))
+
+    def test_guard_blocks_error_requires_manual_review_to_in_position_and_logs(self) -> None:
+        self.repository.update_setup_status(
+            self.setup_id, SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value, "test setup"
+        )
+
+        with self.assertLogs("app.storage.repositories", level="WARNING") as logs:
+            self.repository.update_setup_status(
+                self.setup_id, SetupStatus.IN_POSITION.value, "should be blocked"
+            )
+
+        self.assertEqual(
+            self._setup_status(), SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value
+        )
+        self.assertTrue(any("Blocked write" in message for message in logs.output))
+
+    def test_non_alarm_active_write_is_unaffected(self) -> None:
+        """Non-regression: a non-alarm source status writing an ACTIF target
+        must behave exactly as before the guard was added."""
+        self.repository.update_setup_status(
+            self.setup_id, SetupStatus.ENTRY_ORDER_PLACED.value, "test setup"
+        )
+
+        self.repository.update_setup_status(
+            self.setup_id, SetupStatus.IN_POSITION.value, "normal progression"
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+
+    def test_allow_from_review_escapes_the_block(self) -> None:
+        """Proves the escape hatch works, even though no caller uses it yet
+        in this lot (attach_missing_stop's adoption of it is S5b-3b)."""
+        self.repository.update_setup_status(
+            self.setup_id, SetupStatus.MANUAL_REVIEW_REQUIRED.value, "test setup"
+        )
+
+        self.repository.update_setup_status(
+            self.setup_id,
+            SetupStatus.IN_POSITION.value,
+            "explicitly allowed",
+            allow_from_review=True,
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+
+
+class UpsertSetupConfigSaveRatchetTests(unittest.TestCase):
+    """S5b-3a (audit 44): freezes the audit 43 Q1 finding that upsert_setup
+    is unreachable from an alarm to an active status, so a future change to
+    SetupEngine._status_after_config_save that starts computing a fresh
+    status (instead of failing to DISABLED for a new setup or recopying the
+    existing status for a known one) cannot silently reopen this path
+    without breaking a test. This is a ratchet, not a guard: upsert_setup
+    itself is not touched (out of scope, see ORDRE_S5b3a.md section 1)."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.database = Database(Path(self.tmp.name) / "state.sqlite")
+        self.database.initialize()
+        self.repository = TradingRepository(self.database)
+        self.event_store = EventStore(self.repository)
+        self.setups_folder = Path(self.tmp.name) / "setups"
+        self.setups_folder.mkdir()
+        self.setup_engine = SetupEngine(self.repository, self.event_store, self.setups_folder)
+        self.config = valid_breakout_config()
+        self.setup_id = self.config["setup_id"]
+        self.repository.upsert_setup(BreakoutRetestSetup(self.config).to_record())
+
+    def tearDown(self) -> None:
+        self.database.close()
+        self.tmp.cleanup()
+
+    def _setup_status(self) -> str:
+        return str(self.repository.get_setup(self.setup_id)["status"])
+
+    def test_config_save_does_not_overwrite_manual_review_required(self) -> None:
+        self.repository.update_setup_status(
+            self.setup_id, SetupStatus.MANUAL_REVIEW_REQUIRED.value, "test setup"
+        )
+        edited_config = dict(self.config)
+        edited_config["risk"] = dict(edited_config["risk"], max_risk_usd=20)
+
+        validation = self.setup_engine.create_or_update_from_config(edited_config)
+
+        self.assertTrue(validation.valid, validation.errors)
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
 
 
 class DisarmSetupLegitimateExitTests(unittest.TestCase):
