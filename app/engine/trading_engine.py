@@ -172,6 +172,7 @@ class TradingEngine:
             self.event_store,
             self.broker,
             settings.raw,
+            position_manager=self.position_manager,
         )
         self.market_data = MarketDataService()
         self.state_machine = StateMachine()

@@ -8,6 +8,7 @@ from unittest import mock
 from app.broker.ib_models import BrokerExecution, BrokerPosition
 from app.broker.tws_connector import SimulatedBrokerConnector
 from app.engine.broker_reality import REPORT_STATE_KEY
+from app.engine.position_manager import PositionManager
 from app.engine.reconciliation import ReconciliationEngine, _match_executions_to_order
 from app.models import OrderRecord, OrderStatus, OrderType, PositionRecord, SetupStatus
 from app.setups.breakout_retest import BreakoutRetestSetup
@@ -395,7 +396,11 @@ class FilledBranchTests(unittest.TestCase):
         self.assertIsNone(self.repository.get_position(self.symbol))
         self.assertIn("entry_filled_unknown_fill_details", self._event_types())
 
-    def test_sell_filled_triggers_no_write(self) -> None:
+    def test_sell_filled_without_resolvable_fill_goes_to_manual_review(self) -> None:
+        # A-1 (root cause A / T1): a SELL fill is no longer ignored outright.
+        # With no matching executions to resolve quantity/price from, it must
+        # alert instead of silently doing nothing (the old, now-removed
+        # `if side != "BUY": return` behaviour).
         with mock.patch.object(
             self.reconciliation.progression,
             "record_fill",
@@ -409,8 +414,9 @@ class FilledBranchTests(unittest.TestCase):
             )
             record_fill.assert_not_called()
 
-        self.assertEqual(self._setup_status(), SetupStatus.ENTRY_ORDER_PLACED.value)
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
         self.assertIsNone(self.repository.get_position(self.symbol))
+        self.assertIn("sell_filled_unknown_fill_details", self._event_types())
 
     def test_setup_already_in_position_receives_no_write(self) -> None:
         self.repository.update_setup_status(
@@ -459,6 +465,228 @@ class FilledBranchTests(unittest.TestCase):
                 broker_executions=executions,
             )
             record_fill.assert_called_once()
+
+
+class SellFilledBranchTests(unittest.TestCase):
+    """A-1: FILLED branch handling of a real SELL fill (root cause A, T1).
+
+    Before this lot, `_update_setup_after_reconciled_order` ignored every
+    SELL fill (`if side != "BUY": return`), so a stop or manual exit fill
+    never closed the local position nor fed the circuit breaker."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.database = Database(Path(self.tmp.name) / "state.sqlite")
+        self.database.initialize()
+        self.repository = TradingRepository(self.database)
+        self.event_store = EventStore(self.repository)
+        self.closed_calls: list[tuple[str, float]] = []
+        self.position_manager = PositionManager(
+            self.repository,
+            self.event_store,
+            on_position_closed=lambda symbol, pnl: self.closed_calls.append((symbol, pnl)),
+        )
+        self.reconciliation = ReconciliationEngine(
+            self.repository,
+            self.event_store,
+            SimulatedBrokerConnector(),
+            position_manager=self.position_manager,
+        )
+        self.config = valid_breakout_config()
+        self.symbol = self.config["symbol"]
+        self.setup_id = self.config["setup_id"]
+        self.repository.upsert_setup(BreakoutRetestSetup(self.config).to_record())
+        self.repository.update_setup_status(
+            self.setup_id, SetupStatus.IN_POSITION.value, "test setup"
+        )
+
+    def tearDown(self) -> None:
+        self.database.close()
+        self.tmp.cleanup()
+
+    def _seed_position(
+        self, quantity: int, average_price: float, current_stop: float | None = None
+    ) -> None:
+        self.repository.upsert_position(
+            PositionRecord(
+                symbol=self.symbol,
+                setup_id=self.setup_id,
+                quantity=quantity,
+                average_price=average_price,
+                current_price=average_price,
+                unrealized_pnl=0.0,
+                current_stop=current_stop,
+                risk_remaining=0.0,
+                status="OPEN",
+            )
+        )
+
+    def _sell_order(self, **overrides) -> dict:
+        base = {
+            "id": "ord-sell-1",
+            "setup_id": self.setup_id,
+            "symbol": self.symbol,
+            "side": "SELL",
+            "quantity": 10,
+            "broker_order_id": "9002",
+            "broker_perm_id": "556",
+        }
+        base.update(overrides)
+        return base
+
+    def _setup_status(self) -> str:
+        return str(self.repository.get_setup(self.setup_id)["status"])
+
+    def _event_types(self) -> set[str]:
+        return {event["event_type"] for event in self.repository.list_events(limit=20)}
+
+    def test_total_sell_closes_position(self) -> None:
+        self._seed_position(quantity=10, average_price=100.0, current_stop=95.0)
+        executions = [
+            _execution(
+                execution_id="ES1",
+                side="SELL",
+                quantity=10,
+                price=90.0,
+                order_id="9002",
+                broker_perm_id="556",
+            )
+        ]
+
+        self.reconciliation._update_setup_after_reconciled_order(
+            self._sell_order(quantity=10),
+            OrderStatus.FILLED.value,
+            broker_positions=[],
+            broker_executions=executions,
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.CLOSED.value)
+        position = self.repository.get_position(self.symbol)
+        self.assertEqual(position["quantity"], 0)
+        self.assertIn("position_closed_on_sell", self._event_types())
+
+    def test_partial_sell_sets_partial_exit_and_keeps_entry_cost(self) -> None:
+        self._seed_position(quantity=40, average_price=100.0, current_stop=95.0)
+        executions = [
+            _execution(
+                execution_id="ES2",
+                side="SELL",
+                quantity=10,
+                price=110.0,
+                order_id="9002",
+                broker_perm_id="556",
+            )
+        ]
+
+        self.reconciliation._update_setup_after_reconciled_order(
+            self._sell_order(quantity=10),
+            OrderStatus.FILLED.value,
+            broker_positions=[],
+            broker_executions=executions,
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.PARTIAL_EXIT.value)
+        position = self.repository.get_position(self.symbol)
+        self.assertEqual(position["quantity"], 30)
+        # average_price must stay the original entry cost, never the sell price.
+        self.assertEqual(position["average_price"], 100.0)
+
+    def test_realized_pnl_uses_real_sell_price_not_generic_quote(self) -> None:
+        # audit 62 Q3: current_price fed to the circuit breaker must be the
+        # real fill price. Entry 100, sell 90, qty 10 -> pnl == -100.0 exactly.
+        self._seed_position(quantity=10, average_price=100.0, current_stop=95.0)
+        executions = [
+            _execution(
+                execution_id="ES3",
+                side="SELL",
+                quantity=10,
+                price=90.0,
+                order_id="9002",
+                broker_perm_id="556",
+            )
+        ]
+
+        self.reconciliation._update_setup_after_reconciled_order(
+            self._sell_order(quantity=10),
+            OrderStatus.FILLED.value,
+            broker_positions=[],
+            broker_executions=executions,
+        )
+
+        self.assertEqual(self.closed_calls, [(self.symbol, -100.0)])
+
+    def test_broker_position_mismatch_triggers_manual_review(self) -> None:
+        self._seed_position(quantity=40, average_price=100.0, current_stop=95.0)
+        executions = [
+            _execution(
+                execution_id="ES4",
+                side="SELL",
+                quantity=10,
+                price=110.0,
+                order_id="9002",
+                broker_perm_id="556",
+            )
+        ]
+        # Local computation says 30 remain (40 - 10), but the broker reports 20.
+        broker_position = BrokerPosition(
+            symbol=self.symbol, quantity=20, average_price=100.0, current_price=110.0
+        )
+
+        self.reconciliation._update_setup_after_reconciled_order(
+            self._sell_order(quantity=10),
+            OrderStatus.FILLED.value,
+            broker_positions=[broker_position],
+            broker_executions=executions,
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertIn("sell_filled_broker_quantity_mismatch", self._event_types())
+        position = self.repository.get_position(self.symbol)
+        self.assertEqual(position["quantity"], 40)
+        self.assertEqual(self.closed_calls, [])
+
+    def test_sell_resolved_but_no_local_position_triggers_manual_review(self) -> None:
+        # Fill details resolve fine, but there is no known local position to
+        # sell out of: a sale without a known position is an incoherence,
+        # not a closure.
+        executions = [
+            _execution(
+                execution_id="ES5",
+                side="SELL",
+                quantity=10,
+                price=90.0,
+                order_id="9002",
+                broker_perm_id="556",
+            )
+        ]
+
+        self.reconciliation._update_setup_after_reconciled_order(
+            self._sell_order(quantity=10),
+            OrderStatus.FILLED.value,
+            broker_positions=[],
+            broker_executions=executions,
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertIn("sell_filled_no_local_position", self._event_types())
+        self.assertIsNone(self.repository.get_position(self.symbol))
+        self.assertEqual(self.closed_calls, [])
+
+    def test_unresolved_executions_trigger_manual_review(self) -> None:
+        self._seed_position(quantity=10, average_price=100.0, current_stop=95.0)
+
+        self.reconciliation._update_setup_after_reconciled_order(
+            self._sell_order(quantity=10),
+            OrderStatus.FILLED.value,
+            broker_positions=[],
+            broker_executions=[],
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertIn("sell_filled_unknown_fill_details", self._event_types())
+        position = self.repository.get_position(self.symbol)
+        self.assertEqual(position["quantity"], 10)
+        self.assertEqual(self.closed_calls, [])
 
 
 class SubmittedBranchReviewLockTests(unittest.TestCase):

@@ -7,6 +7,7 @@ from typing import Any, TypedDict
 from app.broker.ib_models import BrokerExecution, BrokerOrderRequest, BrokerPosition
 from app.broker.tws_connector import BrokerConnector
 from app.engine.broker_reality import REPORT_STATE_KEY, build_broker_reality_report
+from app.engine.position_manager import PositionManager
 from app.engine.post_fill_progression import PostFillProgression
 from app.models import ConnectionStatus, EventLevel, OrderStatus, PositionRecord, SetupStatus
 from app.setups.setup_roles import setup_is_management_only, setup_role_from_config
@@ -50,11 +51,13 @@ class ReconciliationEngine:
         event_store: EventStore,
         broker: BrokerConnector,
         settings: dict[str, Any] | None = None,
+        position_manager: PositionManager | None = None,
     ) -> None:
         self.repository = repository
         self.event_store = event_store
         self.broker = broker
         self.settings = settings if isinstance(settings, dict) else {}
+        self.position_manager = position_manager
         self.progression = PostFillProgression(repository, event_store)
 
     async def run(self) -> ReconciliationResult:
@@ -502,6 +505,15 @@ class ReconciliationEngine:
                 )
             return
         if status == OrderStatus.FILLED.value:
+            if side == "SELL":
+                self._handle_sell_fill(
+                    order,
+                    setup_id=setup_id,
+                    symbol=symbol,
+                    broker_positions=broker_positions or [],
+                    broker_executions=broker_executions or [],
+                )
+                return
             if side != "BUY":
                 return
             if setup_status not in {
@@ -619,6 +631,136 @@ class ReconciliationEngine:
         ):
             return None, None
         return int(order_quantity), broker_position.average_price
+
+    def _handle_sell_fill(
+        self,
+        order: dict[str, Any],
+        *,
+        setup_id: str,
+        symbol: str,
+        broker_positions: list[BrokerPosition],
+        broker_executions: list[BrokerExecution],
+    ) -> None:
+        order_id = str(order.get("id") or "")
+        # Root cause A / T1: only the matched-executions branch of
+        # _resolve_fill_details is trustworthy for a SELL — its broker-position
+        # fallback would hand back an entry cost, not a sale price.
+        match = _match_executions_to_order(broker_executions, order)
+        if match is None or not match["quantity_matches"]:
+            self.repository.update_setup_status(
+                setup_id,
+                SetupStatus.MANUAL_REVIEW_REQUIRED.value,
+                "Sell filled but fill price/quantity unavailable",
+            )
+            self.event_store.record(
+                EventLevel.CRITICAL,
+                "sell_filled_unknown_fill_details",
+                "Sell filled but fill price/quantity unavailable",
+                setup_id=setup_id,
+                symbol=symbol,
+                data={"order_id": order_id},
+            )
+            return
+        sold_quantity = round(match["quantity"])
+        sell_price = match["price"]
+
+        previous = self.repository.get_position(symbol)
+        if previous is None:
+            self.repository.update_setup_status(
+                setup_id,
+                SetupStatus.MANUAL_REVIEW_REQUIRED.value,
+                "Sell filled but no local position exists",
+            )
+            self.event_store.record(
+                EventLevel.CRITICAL,
+                "sell_filled_no_local_position",
+                "Sell filled but no local position exists",
+                setup_id=setup_id,
+                symbol=symbol,
+                data={"order_id": order_id, "sold_quantity": sold_quantity, "sell_price": sell_price},
+            )
+            return
+
+        remaining_quantity = int(previous["quantity"]) - sold_quantity
+
+        broker_position = next(
+            (position for position in broker_positions if position.symbol.upper() == symbol),
+            None,
+        )
+        if broker_position is not None and not math.isclose(
+            broker_position.quantity, remaining_quantity, rel_tol=1e-9, abs_tol=1e-6
+        ):
+            self.repository.update_setup_status(
+                setup_id,
+                SetupStatus.MANUAL_REVIEW_REQUIRED.value,
+                "Sell filled but broker position quantity disagrees",
+            )
+            self.event_store.record(
+                EventLevel.CRITICAL,
+                "sell_filled_broker_quantity_mismatch",
+                "Sell filled but broker-reported quantity disagrees with the local computation",
+                setup_id=setup_id,
+                symbol=symbol,
+                data={
+                    "order_id": order_id,
+                    "local_remaining_quantity": remaining_quantity,
+                    "broker_quantity": broker_position.quantity,
+                },
+            )
+            return
+
+        if self.position_manager is None:
+            self.repository.update_setup_status(
+                setup_id,
+                SetupStatus.MANUAL_REVIEW_REQUIRED.value,
+                "Sell filled but position manager is not configured",
+            )
+            self.event_store.record(
+                EventLevel.CRITICAL,
+                "sell_filled_no_position_manager",
+                "Sell filled but position manager is not configured",
+                setup_id=setup_id,
+                symbol=symbol,
+                data={"order_id": order_id},
+            )
+            return
+
+        average_price = float(previous["average_price"])
+        # current_price must be the real sell fill price (audit 62 Q3): it is
+        # what PositionManager._notify_if_closed uses as the exit price to
+        # feed the circuit breaker's realized PnL — never a generic quote.
+        self.position_manager.open_or_update_position(
+            setup_id,
+            symbol,
+            quantity=remaining_quantity,
+            average_price=average_price,
+            current_price=sell_price,
+            stop_loss=previous.get("current_stop"),
+        )
+
+        realized_pnl = round((sell_price - average_price) * sold_quantity, 2)
+        if remaining_quantity == 0:
+            new_status = SetupStatus.CLOSED.value
+            reason = "Position closed on sell fill"
+        else:
+            new_status = SetupStatus.PARTIAL_EXIT.value
+            reason = "Position partially exited on sell fill"
+        self.repository.update_setup_status(setup_id, new_status, reason)
+
+        self.event_store.record(
+            EventLevel.SYNC,
+            "position_closed_on_sell",
+            reason,
+            setup_id=setup_id,
+            symbol=symbol,
+            data={
+                "order_id": order_id,
+                "sold_quantity": sold_quantity,
+                "sell_price": sell_price,
+                "realized_pnl": realized_pnl,
+                "remaining_quantity": remaining_quantity,
+            },
+        )
 
 
 def _protective_stop(config: dict) -> float | None:
