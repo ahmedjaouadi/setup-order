@@ -154,6 +154,7 @@ class ReconciliationEngine:
             )
         if startup:
             self._detect_unprotected_entry_orphans(local_setups)
+            self._repair_frozen_setups(local_setups)
         positions_by_symbol = {
             position.symbol.upper(): position
             for position in broker_positions
@@ -356,6 +357,76 @@ class ReconciliationEngine:
                     setup_id=setup_id,
                     symbol=symbol,
                     data=data,
+                )
+
+    def _repair_frozen_setups(self, local_setups: list[dict[str, Any]]) -> None:
+        # Root C (audits 69/70): two non-atomic crash windows leave a setup
+        # frozen after a restart even though the broker/local state is
+        # otherwise consistent. Both branches here write a normal progression
+        # status (never MANUAL_REVIEW_REQUIRED) and are idempotent by
+        # construction: the entry branch only fires while status is still
+        # ENTRY_FILLED, and the exit branch's target (CLOSED) is terminal and
+        # filtered out on the next startup.
+        for setup in local_setups:
+            setup_id = str(setup.get("setup_id") or "")
+            if not setup_id:
+                continue
+            current_setup = self.repository.get_setup(setup_id)
+            if current_setup:
+                setup = current_setup
+            status = str(setup.get("status") or "")
+            if status in _TERMINAL_SETUP_STATUSES:
+                continue
+            symbol = str(setup.get("symbol") or "").upper()
+
+            if status == SetupStatus.ENTRY_FILLED.value:
+                # S58.3: crash after the stop was placed at the broker but
+                # before the setup progressed past ENTRY_FILLED. A-3's
+                # orphan scan does not cover this signature because a stop
+                # IS active -- protection_status is POSITION_OPEN_STOP_ACTIVE,
+                # not one of the unprotected-orphan statuses.
+                snapshot = self.repository.protection_snapshot_for_setup(setup_id)
+                if str(snapshot.get("protection_status") or "") != "POSITION_OPEN_STOP_ACTIVE":
+                    continue
+                protection_verified = self.progression.has_active_protection(setup_id)
+                self.progression.mark_in_position(setup_id, protection_verified=protection_verified)
+                if protection_verified:
+                    self.event_store.record(
+                        EventLevel.SYNC,
+                        "startup_frozen_entry_repaired",
+                        "Filled entry with active protective stop reconciled to IN_POSITION at startup",
+                        setup_id=setup_id,
+                        symbol=symbol,
+                        data={"previous_status": status},
+                    )
+                continue
+
+            if status in _FROZEN_EXIT_SETUP_STATUSES:
+                # Root A / fenêtre A-1: the sell fill soldered the local
+                # position to quantity 0 but the crash landed before
+                # _handle_sell_fill wrote the setup to CLOSED. positions is
+                # indexed by symbol, not setup_id, so the same-setup check is
+                # mandatory: a different setup may since have reused the
+                # symbol (audit 70 Q1).
+                position = self.repository.get_position(symbol)
+                if position is None:
+                    continue
+                if str(position.get("setup_id") or "") != setup_id:
+                    continue
+                if int(position["quantity"]) != 0:
+                    continue
+                self.repository.update_setup_status(
+                    setup_id,
+                    SetupStatus.CLOSED.value,
+                    "Position closed reconciled at startup",
+                )
+                self.event_store.record(
+                    EventLevel.SYNC,
+                    "startup_frozen_exit_repaired",
+                    "Position closed reconciled at startup",
+                    setup_id=setup_id,
+                    symbol=symbol,
+                    data={"previous_status": status},
                 )
 
     def _save_broker_reality_report(
@@ -872,6 +943,14 @@ _REVIEW_LOCKED_SETUP_STATUSES = {
 _UNPROTECTED_ENTRY_ORPHAN_STATUSES = {
     "ENTRY_ORDER_PENDING_WITHOUT_STOP_BLOCKED",
     "POSITION_OPEN_STOP_MISSING_CRITICAL",
+}
+# root C / fenêtre A-1 (audits 69/70): setup statuses that can be left
+# stranded when a fully-sold position's local quantity reaches 0 but the
+# crash lands before _handle_sell_fill writes CLOSED.
+_FROZEN_EXIT_SETUP_STATUSES = {
+    SetupStatus.IN_POSITION.value,
+    SetupStatus.MANAGING_POSITION.value,
+    SetupStatus.PARTIAL_EXIT.value,
 }
 
 

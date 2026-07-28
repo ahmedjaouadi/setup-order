@@ -994,5 +994,178 @@ class StartupOrphanDetectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("startup_filled_entry_without_stop", self._event_types())
 
 
+class FrozenSetupRepairTests(unittest.IsolatedAsyncioTestCase):
+    """C-1 (audits 69/70, root C): two non-atomic crash windows leave a
+    setup frozen after a restart even though the broker/local state is
+    otherwise consistent. reconciliation.run(startup=True) must repair both
+    signatures without raising a MANUAL_REVIEW_REQUIRED alarm."""
+
+    async def asyncSetUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.database = Database(Path(self.tmp.name) / "state.sqlite")
+        self.database.initialize()
+        self.repository = TradingRepository(self.database)
+        self.event_store = EventStore(self.repository)
+        self.broker = SimulatedBrokerConnector()
+        await self.broker.connect()
+        self.reconciliation = ReconciliationEngine(self.repository, self.event_store, self.broker)
+        self.config = valid_breakout_config()
+        self.symbol = self.config["symbol"]
+        self.setup_id = self.config["setup_id"]
+        self.repository.upsert_setup(BreakoutRetestSetup(self.config).to_record())
+
+    async def asyncTearDown(self) -> None:
+        self.database.close()
+        self.tmp.cleanup()
+
+    def _setup_status(self) -> str:
+        return str(self.repository.get_setup(self.setup_id)["status"])
+
+    def _events(self) -> list[dict]:
+        return self.repository.list_events(limit=50)
+
+    def _event_types(self) -> set[str]:
+        return {event["event_type"] for event in self._events()}
+
+    def _event_count(self, event_type: str) -> int:
+        return sum(1 for e in self._events() if e["event_type"] == event_type)
+
+    def _set_status(self, status: str) -> None:
+        self.repository.update_setup_status(self.setup_id, status, "test fixture")
+
+    def _add_filled_entry_order(self) -> None:
+        self.repository.upsert_order(
+            OrderRecord(
+                id="ord-entry-1",
+                setup_id=self.setup_id,
+                symbol=self.symbol,
+                side="BUY",
+                order_type=OrderType.STP_LMT.value,
+                quantity=40,
+                status=OrderStatus.FILLED.value,
+                broker_order_id="9001",
+                broker_perm_id="555",
+            )
+        )
+
+    def _add_active_stop_order(self) -> None:
+        self.repository.upsert_order(
+            OrderRecord(
+                id="ord-stop-1",
+                setup_id=self.setup_id,
+                symbol=self.symbol,
+                side="SELL",
+                order_type=OrderType.STP.value,
+                quantity=40,
+                status=OrderStatus.SUBMITTED.value,
+                stop_price=13.85,
+                parent_id="ord-entry-1",
+                broker_order_id="9002",
+                broker_perm_id="556",
+            )
+        )
+        self.broker._orders["9002"] = BrokerOrderRequest(
+            client_order_id="ord-stop-1",
+            setup_id=self.setup_id,
+            symbol=self.symbol,
+            side="SELL",
+            order_type=OrderType.STP.value,
+            quantity=40,
+            stop_price=13.85,
+            status=OrderStatus.SUBMITTED.value,
+            broker_order_id="9002",
+            broker_perm_id="556",
+        )
+
+    def _seed_position(self, *, setup_id: str | None = None, quantity: int = 40) -> None:
+        self.repository.upsert_position(
+            PositionRecord(
+                symbol=self.symbol,
+                setup_id=setup_id or self.setup_id,
+                quantity=quantity,
+                average_price=14.60,
+                current_price=14.65,
+                unrealized_pnl=2.0,
+                current_stop=13.85,
+                risk_remaining=0.0,
+                status="OPEN",
+            )
+        )
+
+    async def test_c1_frozen_entry_reaches_in_position(self) -> None:
+        self._set_status(SetupStatus.ENTRY_FILLED.value)
+        self._add_filled_entry_order()
+        self._add_active_stop_order()
+        self._seed_position()
+
+        await self.reconciliation.run(startup=True)
+
+        self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+        self.assertIn("startup_frozen_entry_repaired", self._event_types())
+
+    async def test_c1_idempotent_second_startup_run_does_not_re_emit(self) -> None:
+        self._set_status(SetupStatus.ENTRY_FILLED.value)
+        self._add_filled_entry_order()
+        self._add_active_stop_order()
+        self._seed_position()
+
+        await self.reconciliation.run(startup=True)
+        self.assertEqual(self._event_count("startup_frozen_entry_repaired"), 1)
+
+        await self.reconciliation.run(startup=True)
+
+        self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+        self.assertEqual(self._event_count("startup_frozen_entry_repaired"), 1)
+
+    async def test_c1_excludes_entry_without_active_stop(self) -> None:
+        self._set_status(SetupStatus.ENTRY_FILLED.value)
+        self._add_filled_entry_order()
+        self._seed_position()
+
+        await self.reconciliation.run(startup=True)
+
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertIn("startup_filled_entry_without_stop", self._event_types())
+        self.assertNotIn("startup_frozen_entry_repaired", self._event_types())
+
+    async def test_c1b_frozen_full_exit_reaches_closed(self) -> None:
+        self._set_status(SetupStatus.IN_POSITION.value)
+        self._seed_position(quantity=0)
+
+        await self.reconciliation.run(startup=True)
+
+        self.assertEqual(self._setup_status(), SetupStatus.CLOSED.value)
+        self.assertIn("startup_frozen_exit_repaired", self._event_types())
+
+    async def test_c1b_does_not_close_on_other_setups_symbol_reuse(self) -> None:
+        self._set_status(SetupStatus.IN_POSITION.value)
+        self._seed_position(setup_id="OTHER_SETUP_001", quantity=0)
+
+        await self.reconciliation.run(startup=True)
+
+        self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+        self.assertNotIn("startup_frozen_exit_repaired", self._event_types())
+
+    async def test_c1b_idempotent_second_startup_run_does_not_re_emit(self) -> None:
+        self._set_status(SetupStatus.IN_POSITION.value)
+        self._seed_position(quantity=0)
+
+        await self.reconciliation.run(startup=True)
+        self.assertEqual(self._event_count("startup_frozen_exit_repaired"), 1)
+
+        await self.reconciliation.run(startup=True)
+
+        self.assertEqual(self._setup_status(), SetupStatus.CLOSED.value)
+        self.assertEqual(self._event_count("startup_frozen_exit_repaired"), 1)
+
+    async def test_c1b_never_entered_guard_no_position_at_all(self) -> None:
+        self._set_status(SetupStatus.IN_POSITION.value)
+
+        await self.reconciliation.run(startup=True)
+
+        self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+        self.assertNotIn("startup_frozen_exit_repaired", self._event_types())
+
+
 if __name__ == "__main__":
     unittest.main()
