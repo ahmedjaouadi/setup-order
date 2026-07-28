@@ -60,7 +60,7 @@ class ReconciliationEngine:
         self.position_manager = position_manager
         self.progression = PostFillProgression(repository, event_store)
 
-    async def run(self) -> ReconciliationResult:
+    async def run(self, *, startup: bool = False) -> ReconciliationResult:
         broker_connected = await self.broker.status() == ConnectionStatus.CONNECTED
         local_setups = self.repository.list_setups()
         local_orders = self.repository.list_orders()
@@ -152,6 +152,8 @@ class ReconciliationEngine:
                 broker_executions=broker_executions,
                 result=result,
             )
+        if startup:
+            self._detect_unprotected_entry_orphans(local_setups)
         positions_by_symbol = {
             position.symbol.upper(): position
             for position in broker_positions
@@ -302,6 +304,59 @@ class ReconciliationEngine:
             data=dict(result),
         )
         return result
+
+    def _detect_unprotected_entry_orphans(self, local_setups: list[dict[str, Any]]) -> None:
+        # A-3 (audits 58 S58.1, 66): a crash between the entry-order upsert
+        # and the stop placement in order_manager.place_entry_order leaves an
+        # active BUY entry at the broker with no stop, while the setup never
+        # reached ENTRY_ORDER_PLACED. That signature cannot occur during a
+        # normal cycle (place_entry_order never yields between the two), so
+        # this only runs once, right after startup.
+        for setup in local_setups:
+            setup_id = str(setup.get("setup_id") or "")
+            if not setup_id:
+                continue
+            current_setup = self.repository.get_setup(setup_id)
+            if current_setup:
+                setup = current_setup
+            status = str(setup.get("status") or "")
+            if status in _TERMINAL_SETUP_STATUSES or status in _REVIEW_LOCKED_SETUP_STATUSES:
+                continue
+            snapshot = self.repository.protection_snapshot_for_setup(setup_id)
+            protection_status = str(snapshot.get("protection_status") or "")
+            if protection_status not in _UNPROTECTED_ENTRY_ORPHAN_STATUSES:
+                continue
+            symbol = str(setup.get("symbol") or "").upper()
+            data = {
+                "protection_status": protection_status,
+                "active_entry_order_id": snapshot.get("active_entry_order_id"),
+            }
+            if snapshot.get("position_open"):
+                message = "Filled entry without protective stop after restart"
+                self.repository.update_setup_status(
+                    setup_id, SetupStatus.MANUAL_REVIEW_REQUIRED.value, message
+                )
+                self.event_store.record(
+                    EventLevel.CRITICAL,
+                    "startup_filled_entry_without_stop",
+                    message,
+                    setup_id=setup_id,
+                    symbol=symbol,
+                    data=data,
+                )
+            else:
+                message = "Pending entry without protective stop after restart"
+                self.repository.update_setup_status(
+                    setup_id, SetupStatus.MANUAL_REVIEW_REQUIRED.value, message
+                )
+                self.event_store.record(
+                    EventLevel.RISK,
+                    "startup_pending_entry_without_stop",
+                    message,
+                    setup_id=setup_id,
+                    symbol=symbol,
+                    data=data,
+                )
 
     def _save_broker_reality_report(
         self,
@@ -807,6 +862,16 @@ _TERMINAL_SETUP_STATUSES = {
 _REVIEW_LOCKED_SETUP_STATUSES = {
     SetupStatus.MANUAL_REVIEW_REQUIRED.value,
     SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value,
+}
+# protection_snapshot_for_setup statuses meaning "an entry order is active and
+# no stop is active" (A-3, audits 58 S58.1/66). STOP_SUBMISSION_FAILED is
+# deliberately excluded: it means a stop order was attempted and failed,
+# which order_manager already handles synchronously via
+# _cancel_parent_for_failed_protection — not the startup-orphan case here,
+# where no stop order exists at all.
+_UNPROTECTED_ENTRY_ORPHAN_STATUSES = {
+    "ENTRY_ORDER_PENDING_WITHOUT_STOP_BLOCKED",
+    "POSITION_OPEN_STOP_MISSING_CRITICAL",
 }
 
 

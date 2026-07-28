@@ -321,7 +321,7 @@ class TradingEngine:
             ),
         )
         loaded = self.setup_engine.load_all()
-        reconciliation_result = await self.reconciliation.run()
+        reconciliation_result = await self.reconciliation.run(startup=True)
         self._mark_reconciliation_completed(reconciliation_result)
         self.setup_lifecycle.revalidate_all(force=True)
         self.event_store.record(

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from app.broker.ib_models import BrokerExecution, BrokerPosition
+from app.broker.ib_models import BrokerExecution, BrokerOrderRequest, BrokerPosition
 from app.broker.tws_connector import SimulatedBrokerConnector
 from app.engine.broker_reality import REPORT_STATE_KEY
 from app.engine.position_manager import PositionManager
@@ -820,6 +820,178 @@ class SubmittedBranchReviewLockTests(unittest.TestCase):
 
         self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
         self.assertIn("reconciliation_terminal_setup_open_order", self._event_types())
+
+
+class StartupOrphanDetectionTests(unittest.IsolatedAsyncioTestCase):
+    """A-3 (audits 58 S58.1, 66): a crash between the entry-order upsert and
+    the stop placement in order_manager.place_entry_order leaves an active
+    BUY entry at the broker with no stop, never reaching ENTRY_ORDER_PLACED.
+    Only reconciliation.run(startup=True), on the first post-start cycle,
+    must detect and flag it."""
+
+    async def asyncSetUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.database = Database(Path(self.tmp.name) / "state.sqlite")
+        self.database.initialize()
+        self.repository = TradingRepository(self.database)
+        self.event_store = EventStore(self.repository)
+        self.broker = SimulatedBrokerConnector()
+        await self.broker.connect()
+        self.reconciliation = ReconciliationEngine(self.repository, self.event_store, self.broker)
+        self.config = valid_breakout_config()
+        self.symbol = self.config["symbol"]
+        self.setup_id = self.config["setup_id"]
+        self.repository.upsert_setup(BreakoutRetestSetup(self.config).to_record())
+
+    async def asyncTearDown(self) -> None:
+        self.database.close()
+        self.tmp.cleanup()
+
+    def _setup_status(self) -> str:
+        return str(self.repository.get_setup(self.setup_id)["status"])
+
+    def _events(self) -> list[dict]:
+        return self.repository.list_events(limit=20)
+
+    def _event_types(self) -> set[str]:
+        return {event["event_type"] for event in self._events()}
+
+    def _add_active_entry_order(self) -> None:
+        self.repository.upsert_order(
+            OrderRecord(
+                id="ord-entry-1",
+                setup_id=self.setup_id,
+                symbol=self.symbol,
+                side="BUY",
+                order_type=OrderType.STP_LMT.value,
+                quantity=40,
+                status=OrderStatus.SUBMITTED.value,
+                broker_order_id="9001",
+                broker_perm_id="555",
+            )
+        )
+        # Keep the broker's own view in sync so _reconcile_local_orders sees
+        # this order as still open (broker-open-order) rather than inferring
+        # it vanished and marking it CANCELLED -- this test targets the
+        # startup-orphan detection, not the missing-order inference branch.
+        self.broker._orders["9001"] = BrokerOrderRequest(
+            client_order_id="ord-entry-1",
+            setup_id=self.setup_id,
+            symbol=self.symbol,
+            side="BUY",
+            order_type=OrderType.STP_LMT.value,
+            quantity=40,
+            status=OrderStatus.SUBMITTED.value,
+            broker_order_id="9001",
+            broker_perm_id="555",
+        )
+
+    def _add_active_stop_order(self) -> None:
+        self.repository.upsert_order(
+            OrderRecord(
+                id="ord-stop-1",
+                setup_id=self.setup_id,
+                symbol=self.symbol,
+                side="SELL",
+                order_type=OrderType.STP.value,
+                quantity=40,
+                status=OrderStatus.SUBMITTED.value,
+                stop_price=13.85,
+                parent_id="ord-entry-1",
+                broker_order_id="9002",
+                broker_perm_id="556",
+            )
+        )
+        self.broker._orders["9002"] = BrokerOrderRequest(
+            client_order_id="ord-stop-1",
+            setup_id=self.setup_id,
+            symbol=self.symbol,
+            side="SELL",
+            order_type=OrderType.STP.value,
+            quantity=40,
+            stop_price=13.85,
+            status=OrderStatus.SUBMITTED.value,
+            broker_order_id="9002",
+            broker_perm_id="556",
+        )
+
+    def _seed_position(self) -> None:
+        self.repository.upsert_position(
+            PositionRecord(
+                symbol=self.symbol,
+                setup_id=self.setup_id,
+                quantity=40,
+                average_price=14.60,
+                current_price=14.65,
+                unrealized_pnl=2.0,
+                current_stop=None,
+                risk_remaining=0.0,
+                status="OPEN",
+            )
+        )
+
+    async def test_pending_entry_without_stop_raises_lesser_severity(self) -> None:
+        self._add_active_entry_order()
+
+        await self.reconciliation.run(startup=True)
+
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertIn("startup_pending_entry_without_stop", self._event_types())
+        event = next(
+            e for e in self._events() if e["event_type"] == "startup_pending_entry_without_stop"
+        )
+        self.assertEqual(event["level"], "RISK")
+
+    async def test_filled_entry_without_stop_is_critical(self) -> None:
+        self._add_active_entry_order()
+        self._seed_position()
+
+        await self.reconciliation.run(startup=True)
+
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertIn("startup_filled_entry_without_stop", self._event_types())
+        event = next(
+            e for e in self._events() if e["event_type"] == "startup_filled_entry_without_stop"
+        )
+        self.assertEqual(event["level"], "CRITICAL")
+
+    async def test_idempotent_second_startup_run_does_not_re_alert(self) -> None:
+        self._add_active_entry_order()
+
+        await self.reconciliation.run(startup=True)
+        first_count = sum(
+            1
+            for e in self._events()
+            if e["event_type"] == "startup_pending_entry_without_stop"
+        )
+        await self.reconciliation.run(startup=True)
+        second_count = sum(
+            1
+            for e in self._events()
+            if e["event_type"] == "startup_pending_entry_without_stop"
+        )
+
+        self.assertEqual(first_count, 1)
+        self.assertEqual(second_count, 1)
+
+    async def test_no_alert_when_stop_is_active(self) -> None:
+        self._add_active_entry_order()
+        self._add_active_stop_order()
+
+        await self.reconciliation.run(startup=True)
+
+        self.assertNotEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertNotIn("startup_pending_entry_without_stop", self._event_types())
+        self.assertNotIn("startup_filled_entry_without_stop", self._event_types())
+
+    async def test_periodic_cycle_does_not_detect_orphan(self) -> None:
+        self._add_active_entry_order()
+
+        await self.reconciliation.run()
+
+        self.assertNotEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertNotIn("startup_pending_entry_without_stop", self._event_types())
+        self.assertNotIn("startup_filled_entry_without_stop", self._event_types())
 
 
 if __name__ == "__main__":
