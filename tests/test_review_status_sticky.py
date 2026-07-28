@@ -838,6 +838,38 @@ class CentralReviewGuardDirectTests(unittest.TestCase):
         )
         self.assertTrue(any("Blocked write" in message for message in logs.output))
 
+    def test_guard_blocks_manual_review_required_to_closed_and_logs(self) -> None:
+        """A-1b (audit 64): CLOSED joined _ACTIVE_STATUSES so a position
+        close cannot silently clear a review alarm -- "l'alarme prime"
+        (audit 61 P3)."""
+        self.repository.update_setup_status(
+            self.setup_id, SetupStatus.MANUAL_REVIEW_REQUIRED.value, "test setup"
+        )
+
+        with self.assertLogs("app.storage.repositories", level="WARNING") as logs:
+            self.repository.update_setup_status(
+                self.setup_id, SetupStatus.CLOSED.value, "should be blocked"
+            )
+
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertTrue(any("Blocked write" in message for message in logs.output))
+
+    def test_guard_blocks_error_requires_manual_review_to_closed_and_logs(self) -> None:
+        """A-1b (audit 64): same as above, from ERROR_REQUIRES_MANUAL_REVIEW."""
+        self.repository.update_setup_status(
+            self.setup_id, SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value, "test setup"
+        )
+
+        with self.assertLogs("app.storage.repositories", level="WARNING") as logs:
+            self.repository.update_setup_status(
+                self.setup_id, SetupStatus.CLOSED.value, "should be blocked"
+            )
+
+        self.assertEqual(
+            self._setup_status(), SetupStatus.ERROR_REQUIRES_MANUAL_REVIEW.value
+        )
+        self.assertTrue(any("Blocked write" in message for message in logs.output))
+
     def test_non_alarm_active_write_is_unaffected(self) -> None:
         """Non-regression: a non-alarm source status writing an ACTIF target
         must behave exactly as before the guard was added."""
@@ -850,6 +882,19 @@ class CentralReviewGuardDirectTests(unittest.TestCase):
         )
 
         self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+
+    def test_non_alarm_closed_write_is_unaffected(self) -> None:
+        """A-1b (audit 64): non-regression companion to the above for CLOSED
+        -- a normal close from a non-alarm status must still write CLOSED."""
+        self.repository.update_setup_status(
+            self.setup_id, SetupStatus.ENTRY_ORDER_PLACED.value, "test setup"
+        )
+
+        self.repository.update_setup_status(
+            self.setup_id, SetupStatus.CLOSED.value, "normal close"
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.CLOSED.value)
 
     def test_allow_from_review_escapes_the_block(self) -> None:
         """Proves the escape hatch works, even though no caller uses it yet

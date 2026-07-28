@@ -565,6 +565,40 @@ class SellFilledBranchTests(unittest.TestCase):
         self.assertEqual(position["quantity"], 0)
         self.assertIn("position_closed_on_sell", self._event_types())
 
+    def test_total_sell_on_alarmed_setup_closes_position_but_keeps_alarm(self) -> None:
+        """A-1b (audit 64): "l'alarme prime" (audit 61 P3) -- a total SELL
+        fill still closes the position at the broker (PositionManager runs
+        unconditionally), but the CLOSED write itself is blocked by the
+        S5b-3a review guard now that CLOSED is in _ACTIVE_STATUSES, so the
+        setup stays in its review-alarm status instead of silently clearing
+        it."""
+        self._seed_position(quantity=10, average_price=100.0, current_stop=95.0)
+        self.repository.update_setup_status(
+            self.setup_id, SetupStatus.MANUAL_REVIEW_REQUIRED.value, "test setup: alarm raised"
+        )
+        executions = [
+            _execution(
+                execution_id="ES1b",
+                side="SELL",
+                quantity=10,
+                price=90.0,
+                order_id="9002",
+                broker_perm_id="556",
+            )
+        ]
+
+        self.reconciliation._update_setup_after_reconciled_order(
+            self._sell_order(quantity=10),
+            OrderStatus.FILLED.value,
+            broker_positions=[],
+            broker_executions=executions,
+        )
+
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        position = self.repository.get_position(self.symbol)
+        self.assertEqual(position["quantity"], 0)
+        self.assertIn("position_closed_on_sell", self._event_types())
+
     def test_partial_sell_sets_partial_exit_and_keeps_entry_cost(self) -> None:
         self._seed_position(quantity=40, average_price=100.0, current_stop=95.0)
         executions = [

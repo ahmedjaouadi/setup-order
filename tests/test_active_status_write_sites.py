@@ -38,6 +38,11 @@ ACTIVE_STATUSES: frozenset[str] = frozenset(
         "MANAGING_POSITION",
         "PARTIAL_EXIT",
         "RECONCILING_EXISTING_POSITION",
+        # A-1b (audit 64): CLOSED joined repositories.py's _ACTIVE_STATUSES so
+        # the review guard also protects it. Mirrored here so a future
+        # literal update_setup_status(..., SetupStatus.CLOSED.value, ...)
+        # call gets caught by this ratchet like any other ACTIF write.
+        "CLOSED",
     }
 )
 

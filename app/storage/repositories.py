@@ -35,6 +35,10 @@ _ACTIVE_STATUSES = frozenset(
         SetupStatus.MANAGING_POSITION.value,
         SetupStatus.PARTIAL_EXIT.value,
         SetupStatus.RECONCILING_EXISTING_POSITION.value,
+        # CLOSED is a terminal status but must not overwrite a review alarm:
+        # a closed position does not cancel the need for human review
+        # ("l'alarme prime", audit 61 P3).
+        SetupStatus.CLOSED.value,
     }
 )
 
