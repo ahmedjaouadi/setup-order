@@ -9,7 +9,7 @@ from app.broker.tws_connector import SimulatedBrokerConnector
 from app.engine.entry_order_executor import EntryOrderExecutor
 from app.engine.order_manager import OrderManager
 from app.engine.post_fill_progression import PostFillProgression
-from app.engine.reconciliation import ReconciliationEngine
+from app.engine.reconciliation import ADOPTION_STOP_NOT_FOUND_MESSAGE, ReconciliationEngine
 from app.engine.setup_engine import SetupEngine
 from app.models import OrderRecord, OrderStatus, OrderType, RiskDecision, SetupRecord, SetupStatus
 from app.setups.breakout_retest import BreakoutRetestSetup
@@ -68,6 +68,8 @@ def _upsert_management_setup(
     setup_id: str,
     symbol: str,
     status: str,
+    *,
+    last_event: str = "test setup",
 ) -> None:
     config = _adoption_config(setup_id, symbol)
     repository.upsert_setup(
@@ -83,7 +85,7 @@ def _upsert_management_setup(
             risk_amount=None,
             order_status="",
             position_status="",
-            last_event="test setup",
+            last_event=last_event,
             config=config,
         )
     )
@@ -92,7 +94,8 @@ def _upsert_management_setup(
 class _AdoptionBroker(SimulatedBrokerConnector):
     """Reports exactly one broker position, no open orders -- enough for
     the reconciliation.run() existing-position adoption loop to reach its
-    unconditional IN_POSITION write (reconciliation.py:263)."""
+    IN_POSITION write (reconciliation.py:289), with no fresh stop found this
+    cycle (root C, audit 74: this models "alarm survives, no repair yet")."""
 
     def __init__(self, position: BrokerPosition) -> None:
         super().__init__()
@@ -103,6 +106,34 @@ class _AdoptionBroker(SimulatedBrokerConnector):
 
     async def open_orders(self) -> list[BrokerOrderRequest]:
         return []
+
+
+class _AdoptionBrokerWithRestoredStop(_AdoptionBroker):
+    """Same one broker position as _AdoptionBroker, but this cycle also
+    reports one active protective SELL stop order for the symbol -- models
+    the human having reposed the stop in TWS after the adoption loop
+    alarmed for cause #3 (audit 73/74, root C: S59.3a)."""
+
+    def __init__(
+        self, position: BrokerPosition, *, stop_price: float, broker_order_id: str
+    ) -> None:
+        super().__init__(position)
+        self._stop_price = stop_price
+        self._stop_broker_order_id = broker_order_id
+
+    async def open_orders(self) -> list[BrokerOrderRequest]:
+        return [
+            BrokerOrderRequest(
+                client_order_id="restored-stop-1",
+                setup_id="",
+                symbol=self._adoption_position.symbol,
+                side="SELL",
+                order_type="STP",
+                quantity=int(self._adoption_position.quantity),
+                stop_price=self._stop_price,
+                broker_order_id=self._stop_broker_order_id,
+            )
+        ]
 
 
 class PositionAdoptionReviewStickyTests(unittest.IsolatedAsyncioTestCase):
@@ -128,8 +159,8 @@ class PositionAdoptionReviewStickyTests(unittest.IsolatedAsyncioTestCase):
         self.database.close()
         self.tmp.cleanup()
 
-    async def _run_adoption(self) -> None:
-        broker = _AdoptionBroker(
+    async def _run_adoption(self, broker: _AdoptionBroker | None = None) -> None:
+        broker = broker or _AdoptionBroker(
             BrokerPosition(
                 symbol=self.symbol,
                 quantity=100,
@@ -144,25 +175,108 @@ class PositionAdoptionReviewStickyTests(unittest.IsolatedAsyncioTestCase):
     def _setup_status(self) -> str:
         return str(self.repository.get_setup(self.setup_id)["status"])
 
-    async def test_manual_review_required_survives_existing_position_adoption(
+    def _setup_last_event(self) -> str:
+        return str(self.repository.get_setup(self.setup_id)["last_event"])
+
+    async def test_manual_review_required_survives_existing_position_adoption_without_restored_stop(
         self,
     ) -> None:
-        """S5b-3a (audit 44): the central guard in update_setup_status now
-        blocks this write. A management-only setup left in
-        MANUAL_REVIEW_REQUIRED (e.g. because the broker position was briefly
-        not found, adoption_blocked_position_not_found) no longer gets
-        silently adopted into IN_POSITION on the next pass where the
-        position reappears -- the alarm survives."""
+        """S5b-3a (audit 44) + root C (audit 73/74, cause #3, S59.3a): the
+        central guard blocks this write, and C-2's new clearing condition
+        does not fire either because _AdoptionBroker reports no open orders
+        this cycle -- _matching_stop_order finds nothing, so there is no
+        fresh proof the stop was actually repaired. A management-only setup
+        alarmed for cause #3 ("Broker stop order not found") stays alarmed
+        until the stop is genuinely seen again at the broker."""
         _upsert_management_setup(
             self.repository,
             self.setup_id,
             self.symbol,
             SetupStatus.MANUAL_REVIEW_REQUIRED.value,
+            last_event=ADOPTION_STOP_NOT_FOUND_MESSAGE,
         )
 
         await self._run_adoption()
 
         self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+
+    async def test_manual_review_required_is_cleared_when_stop_reappears(self) -> None:
+        """C-2 (audit 74, root C, S59.3a): the real, atteignable case. A
+        management-only setup alarmed for cause #3 ("Broker stop order not
+        found") is adopted into IN_POSITION once the human reposes the stop
+        in TWS and it shows up as an active SELL stop order in the broker's
+        open orders this cycle -- the inverse of the test just above. This
+        is the one new site (besides attach_missing_stop) allowed to pass
+        allow_from_review=True to update_setup_status."""
+        _upsert_management_setup(
+            self.repository,
+            self.setup_id,
+            self.symbol,
+            SetupStatus.MANUAL_REVIEW_REQUIRED.value,
+            last_event=ADOPTION_STOP_NOT_FOUND_MESSAGE,
+        )
+        broker = _AdoptionBrokerWithRestoredStop(
+            BrokerPosition(
+                symbol=self.symbol,
+                quantity=100,
+                average_price=95.0,
+                current_price=100.0,
+            ),
+            stop_price=90.0,
+            broker_order_id="restored-9001",
+        )
+
+        await self._run_adoption(broker)
+
+        self.assertEqual(self._setup_status(), SetupStatus.IN_POSITION.value)
+        cleared_events = self.repository.list_events(
+            event_type="adoption_review_cleared_stop_restored"
+        )
+        self.assertEqual(len(cleared_events), 1)
+        self.assertEqual(cleared_events[0]["setup_id"], self.setup_id)
+        self.assertEqual(cleared_events[0]["symbol"], self.symbol)
+        self.assertEqual(
+            cleared_events[0]["data"]["stop_order_id"], "restored-9001"
+        )
+
+    async def test_other_cause_alarm_survives_even_with_position_and_stop(self) -> None:
+        """THE CRITICAL TEST (audit 73 Q2 / ORDRE_C2 section 5.2): a setup
+        alarmed for a DIFFERENT cause -- not cause #3 -- must never be
+        cleared by this path, even though the geometry (open position, active
+        stop present) looks identical to the real case above. Only the
+        last_event filter tells the two apart; without it, this test would
+        wrongly clear an alarm whose cause never went away."""
+        _upsert_management_setup(
+            self.repository,
+            self.setup_id,
+            self.symbol,
+            SetupStatus.MANUAL_REVIEW_REQUIRED.value,
+            last_event="Sell filled but broker position quantity disagrees",
+        )
+        broker = _AdoptionBrokerWithRestoredStop(
+            BrokerPosition(
+                symbol=self.symbol,
+                quantity=100,
+                average_price=95.0,
+                current_price=100.0,
+            ),
+            stop_price=90.0,
+            broker_order_id="restored-9002",
+        )
+
+        await self._run_adoption(broker)
+
+        self.assertEqual(self._setup_status(), SetupStatus.MANUAL_REVIEW_REQUIRED.value)
+        self.assertEqual(
+            self._setup_last_event(),
+            "Sell filled but broker position quantity disagrees",
+        )
+        self.assertEqual(
+            self.repository.list_events(
+                event_type="adoption_review_cleared_stop_restored"
+            ),
+            [],
+        )
 
     async def test_error_requires_manual_review_survives_existing_position_adoption(
         self,

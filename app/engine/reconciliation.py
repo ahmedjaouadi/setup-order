@@ -16,6 +16,12 @@ from app.storage.repositories import TradingRepository
 
 logger = logging.getLogger(__name__)
 
+# Root C (audit 73, cause #3): the exact last_event message the adoption
+# loop's own missing-stop branch below writes when it raises the alarm.
+# Shared with the check further down that clears the alarm once the stop
+# reappears, so the two can never drift out of sync.
+ADOPTION_STOP_NOT_FOUND_MESSAGE = "Broker stop order not found"
+
 
 class ReconciliationResult(TypedDict):
     broker_positions: int
@@ -234,16 +240,30 @@ class ReconciliationEngine:
                 self.repository.update_setup_status(
                     setup["setup_id"],
                     SetupStatus.MANUAL_REVIEW_REQUIRED.value,
-                    "Broker stop order not found",
+                    ADOPTION_STOP_NOT_FOUND_MESSAGE,
                 )
                 self.event_store.record(
                     EventLevel.RISK,
                     "adoption_blocked_stop_not_found",
-                    "Broker stop order not found",
+                    ADOPTION_STOP_NOT_FOUND_MESSAGE,
                     setup_id=setup["setup_id"],
                     symbol=symbol,
                 )
                 continue
+            # Root C (audit 73/74, cause #3): a fresh, active stop
+            # (stop_order is not None, proven this cycle by
+            # _matching_stop_order against the broker's own open orders --
+            # never stale) found for a setup that is currently alarmed for
+            # exactly this cause is the one legitimate, verified reason to
+            # clear a MANUAL_REVIEW_REQUIRED alarm here. Any other alarm
+            # cause, or no alarm at all, leaves allow_from_review False --
+            # strictly unchanged behaviour, the S5b-3a guard keeps protecting
+            # it exactly as before this lot.
+            clearing_stop_alarm = (
+                stop_order is not None
+                and str(setup.get("status") or "") == SetupStatus.MANUAL_REVIEW_REQUIRED.value
+                and str(setup.get("last_event") or "") == ADOPTION_STOP_NOT_FOUND_MESSAGE
+            )
             current_stop = stop_order.stop_price if stop_order else protective_stop
             risk_remaining = max(
                 broker_position.current_price - float(current_stop),
@@ -266,11 +286,27 @@ class ReconciliationEngine:
                     status="OPEN",
                 )
             )
-            self.repository.update_setup_status(
-                setup["setup_id"],
-                SetupStatus.IN_POSITION.value,
-                "Existing IBKR position adopted",
-            )
+            if clearing_stop_alarm:
+                # The allow_from_review flag below is passed ONLY because
+                # stop_order is not None proves the broker's own open orders
+                # (fresh this cycle) hold an active protective stop again --
+                # this is not a bypass of the S5b-3a review guard, it is that
+                # guard's second documented legitimate exception (the first
+                # is attach_missing_stop, order_manager.py:465): cause #3's
+                # alarm ("Broker stop order not found") is verified gone, so
+                # the alarm it raised can be cleared.
+                self.repository.update_setup_status(
+                    setup["setup_id"],
+                    SetupStatus.IN_POSITION.value,
+                    "Existing IBKR position adopted",
+                    allow_from_review=True,
+                )
+            else:
+                self.repository.update_setup_status(
+                    setup["setup_id"],
+                    SetupStatus.IN_POSITION.value,
+                    "Existing IBKR position adopted",
+                )
             result["adopted_positions"] += 1
             self.event_store.record(
                 EventLevel.SYNC,
@@ -284,6 +320,15 @@ class ReconciliationEngine:
                     "current_stop": current_stop,
                 },
             )
+            if clearing_stop_alarm:
+                self.event_store.record(
+                    EventLevel.SYNC,
+                    "adoption_review_cleared_stop_restored",
+                    "Broker stop order reappeared; adoption review alarm cleared",
+                    setup_id=setup["setup_id"],
+                    symbol=symbol,
+                    data={"stop_order_id": stop_order.broker_order_id},
+                )
         self._save_broker_reality_report(
             local_setups=self.repository.list_setups(),
             local_orders=self.repository.list_orders(),
