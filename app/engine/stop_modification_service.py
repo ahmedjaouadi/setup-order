@@ -16,6 +16,18 @@ REASON_NO_STOP_TARGET = "NO_STOP_TARGET"
 REASON_BROKER_REJECTED = "BROKER_REJECTED"
 
 
+def _matching_broker_stop(orders: list[Any], symbol: str) -> float | None:
+    """Same match pattern as reconciliation._matching_stop_order: active SELL stop."""
+    for order in orders:
+        if order.symbol.upper() != symbol:
+            continue
+        if order.side != "SELL":
+            continue
+        if order.stop_price is not None:
+            return float(order.stop_price)
+    return None
+
+
 class StopModificationService:
     """Moves a protective stop for a symbol, broker first, local state second.
 
@@ -60,13 +72,32 @@ class StopModificationService:
                 "No position or active stop order found for this symbol",
             )
 
-        current_stop = self._current_stop(position, stop_order)
+        current_stop, degraded = await self._resolve_stop_guard_reference(
+            normalized, position, stop_order
+        )
+        if degraded:
+            decision = "rejected" if (current_stop is not None and new_stop < current_stop) else "allowed"
+            self.event_store.record(
+                EventLevel.WARNING,
+                "stop_guard_degraded_mode",
+                "Stop guard evaluated without live broker confirmation",
+                symbol=normalized,
+                data={
+                    "new_stop": new_stop,
+                    "local_reference_stop": current_stop,
+                    "decision": decision,
+                },
+            )
         if current_stop is not None and new_stop < current_stop:
             return self._rejected(
                 normalized,
                 REASON_STOP_LOWERING_FORBIDDEN,
                 "Stop lowering is forbidden (never_lower_stop)",
-                data={"current_stop": current_stop, "requested_stop": new_stop},
+                data={
+                    "current_stop": current_stop,
+                    "requested_stop": new_stop,
+                    **({"degraded_mode": True} if degraded else {}),
+                },
             )
 
         broker_updated = False
@@ -119,6 +150,33 @@ class StopModificationService:
         except Exception:
             return False
 
+    async def _resolve_stop_guard_reference(
+        self,
+        symbol: str,
+        position: dict[str, Any] | None,
+        stop_order: dict[str, Any] | None,
+    ) -> tuple[float | None, bool]:
+        """Resolves the never_lower_stop reference and whether it is degraded.
+
+        Broker-connected and reachable: the live open_orders() stop wins when
+        a matching SELL stop exists for the symbol (fresh truth); if none
+        exists, that is a legitimate "no stop" answer, not a failure, so we
+        fall back to the local reference unchanged. Broker unreachable
+        (disconnected or open_orders() raised): the local MAXIMUM is used and
+        the result is flagged degraded, so callers can enforce the asymmetric
+        rule (allow rises, refuse falls).
+        """
+        if await self._broker_is_connected():
+            try:
+                broker_orders = await self.broker.open_orders()
+            except Exception:
+                return self._max_local_stop(position, stop_order), True
+            broker_stop = _matching_broker_stop(broker_orders, symbol)
+            if broker_stop is not None:
+                return broker_stop, False
+            return self._current_stop(position, stop_order), False
+        return self._max_local_stop(position, stop_order), True
+
     @staticmethod
     def _current_stop(
         position: dict[str, Any] | None,
@@ -134,6 +192,24 @@ class StopModificationService:
                 except (TypeError, ValueError):
                     continue
         return None
+
+    @staticmethod
+    def _max_local_stop(
+        position: dict[str, Any] | None,
+        stop_order: dict[str, Any] | None,
+    ) -> float | None:
+        values: list[float] = []
+        for source, key in ((stop_order, "stop_price"), (position, "current_stop")):
+            if not source:
+                continue
+            value = source.get(key)
+            if value is None:
+                continue
+            try:
+                values.append(float(value))
+            except (TypeError, ValueError):
+                continue
+        return max(values) if values else None
 
     def _rejected(
         self,

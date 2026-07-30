@@ -25,6 +25,22 @@ from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
 
 
+class _OpenOrdersFailingBroker:
+    """Proxies every call to `inner` except open_orders(), which always
+    raises -- simulates a broker that is connected but unreachable for this
+    one read (timeout, dropped socket mid-call), i.e. "broker muet" (B-2).
+    """
+
+    def __init__(self, inner: object) -> None:
+        self._inner = inner
+
+    async def open_orders(self):
+        raise RuntimeError("simulated broker outage")
+
+    def __getattr__(self, name: str):
+        return getattr(self._inner, name)
+
+
 class StopModificationServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -182,6 +198,116 @@ class StopModificationServiceTests(unittest.IsolatedAsyncioTestCase):
         position = self.repository.get_position("LUNR")
         assert position is not None
         self.assertEqual(position["current_stop"], 19.5)
+
+    async def test_broker_truth_overrides_stale_local_reference(self) -> None:
+        """B-2 central proof: a stop raised at the broker (trailing IB, manual
+        TWS edit) while local records stay stale must be the guard's
+        reference. Before B-2, comparing 19.0 to the stale local 18.0 would
+        have let the modification through even though it lowers the real,
+        broker-side stop of 20.0.
+        """
+        await self._seed_position(current_stop=18.0)
+        broker_order_id = await self._seed_stop_order_at_broker(18.0)
+        moved = await self.broker.modify_stop_order(broker_order_id, 20.0)
+        assert moved.accepted
+
+        result = await self.service.modify_stop("LUNR", 19.0)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason_code"], REASON_STOP_LOWERING_FORBIDDEN)
+        broker_order = (await self.broker.open_orders())[0]
+        self.assertEqual(broker_order.stop_price, 20.0)
+        local_order = self.repository.get_order("stp_LUNR_1")
+        assert local_order is not None
+        self.assertEqual(local_order["stop_price"], 18.0)
+
+    async def test_broker_truth_accepts_rise_above_broker_stop(self) -> None:
+        await self._seed_position(current_stop=18.0)
+        broker_order_id = await self._seed_stop_order_at_broker(18.0)
+
+        result = await self.service.modify_stop("LUNR", 20.0)
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["broker_updated"])
+        broker_order = (await self.broker.open_orders())[0]
+        self.assertEqual(broker_order.stop_price, 20.0)
+        self.assertEqual(broker_order.broker_order_id, broker_order_id)
+
+    async def test_degraded_mode_allows_rise_when_broker_open_orders_fails(self) -> None:
+        await self._seed_position(current_stop=18.0)
+        await self._seed_stop_order_at_broker(18.0)
+        service = StopModificationService(
+            self.repository,
+            self.event_store,
+            _OpenOrdersFailingBroker(self.broker),
+            self.position_manager,
+        )
+
+        result = await service.modify_stop("LUNR", 19.0)
+
+        self.assertTrue(result["ok"])
+        position = self.repository.get_position("LUNR")
+        assert position is not None
+        self.assertEqual(position["current_stop"], 19.0)
+        degraded_events = self.repository.list_events(event_type="stop_guard_degraded_mode")
+        self.assertEqual(len(degraded_events), 1)
+        self.assertEqual(degraded_events[0]["level"], "WARNING")
+        self.assertEqual(degraded_events[0]["data"]["decision"], "allowed")
+
+    async def test_degraded_mode_refuses_fall_when_broker_open_orders_fails(self) -> None:
+        await self._seed_position(current_stop=18.0)
+        await self._seed_stop_order_at_broker(18.0)
+        service = StopModificationService(
+            self.repository,
+            self.event_store,
+            _OpenOrdersFailingBroker(self.broker),
+            self.position_manager,
+        )
+
+        result = await service.modify_stop("LUNR", 17.0)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason_code"], REASON_STOP_LOWERING_FORBIDDEN)
+        position = self.repository.get_position("LUNR")
+        assert position is not None
+        self.assertEqual(position["current_stop"], 18.0)
+        degraded_events = self.repository.list_events(event_type="stop_guard_degraded_mode")
+        self.assertEqual(len(degraded_events), 1)
+        self.assertEqual(degraded_events[0]["level"], "WARNING")
+        self.assertEqual(degraded_events[0]["data"]["decision"], "rejected")
+
+    async def test_degraded_mode_uses_max_of_local_sources_not_first(self) -> None:
+        await self._seed_position(current_stop=15.0)
+        await self._seed_stop_order_at_broker(18.0)
+        service = StopModificationService(
+            self.repository,
+            self.event_store,
+            _OpenOrdersFailingBroker(self.broker),
+            self.position_manager,
+        )
+
+        result = await service.modify_stop("LUNR", 17.0)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason_code"], REASON_STOP_LOWERING_FORBIDDEN)
+
+    async def test_symbol_absent_from_open_orders_falls_back_to_local_unchanged(self) -> None:
+        """A broker that answers but knows nothing of this symbol's stop is a
+        legitimate "no stop" reply, not a broker failure: the guard must fall
+        back to the local reference exactly as it did before B-2.
+        """
+        await self._seed_position(current_stop=18.0)
+
+        result = await self.service.modify_stop("LUNR", 19.0)
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["broker_updated"])
+        position = self.repository.get_position("LUNR")
+        assert position is not None
+        self.assertEqual(position["current_stop"], 19.0)
+        self.assertEqual(
+            self.repository.list_events(event_type="stop_guard_degraded_mode"), []
+        )
 
 
 class StopModificationGuardTests(unittest.IsolatedAsyncioTestCase):
