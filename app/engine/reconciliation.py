@@ -9,10 +9,18 @@ from app.broker.tws_connector import BrokerConnector
 from app.engine.broker_reality import REPORT_STATE_KEY, build_broker_reality_report
 from app.engine.position_manager import PositionManager
 from app.engine.post_fill_progression import PostFillProgression
-from app.models import ConnectionStatus, EventLevel, OrderStatus, PositionRecord, SetupStatus
+from app.models import (
+    ConnectionStatus,
+    EventLevel,
+    OrderRecord,
+    OrderStatus,
+    PositionRecord,
+    SetupStatus,
+)
 from app.setups.setup_roles import setup_is_management_only, setup_role_from_config
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
+from app.utils.id_generator import new_id
 
 logger = logging.getLogger(__name__)
 
@@ -264,6 +272,8 @@ class ReconciliationEngine:
                 and str(setup.get("status") or "") == SetupStatus.MANUAL_REVIEW_REQUIRED.value
                 and str(setup.get("last_event") or "") == ADOPTION_STOP_NOT_FOUND_MESSAGE
             )
+            if stop_order is not None:
+                self._persist_adopted_stop_order(stop_order, setup, symbol)
             current_stop = stop_order.stop_price if stop_order else protective_stop
             risk_remaining = max(
                 broker_position.current_price - float(current_stop),
@@ -350,6 +360,60 @@ class ReconciliationEngine:
             data=dict(result),
         )
         return result
+
+    def _persist_adopted_stop_order(
+        self,
+        stop_order: BrokerOrderRequest,
+        setup: dict[str, Any],
+        symbol: str,
+    ) -> None:
+        # B-1a (audit 80): the adoption loop above sees the broker's
+        # protective stop (stop_order) but, before this, never wrote it to
+        # the local orders table -- StopModificationService (root B, B-1b)
+        # can only find a broker_order_id to modify via
+        # active_stop_order_for_symbol, which reads that table. Idempotent:
+        # this loop reruns every reconciliation cycle for any non-terminal
+        # adopted setup, so reuse the existing row (upsert on its id) rather
+        # than inserting a new one each pass. Anti-theft: a row already
+        # owned by a DIFFERENT setup_id for this symbol is never reassigned
+        # -- that would silently steal order ownership between setups
+        # (audit 80 Q4) -- a fresh row is created instead and flagged.
+        setup_id = setup["setup_id"]
+        existing = self.repository.active_stop_order_for_symbol(symbol)
+        if existing is not None and str(existing.get("setup_id") or "") == str(setup_id):
+            order_id = existing["id"]
+        elif existing is not None:
+            order_id = new_id("adp")
+            self.event_store.record(
+                EventLevel.RISK,
+                "adoption_stop_order_owner_conflict",
+                "Active stop order for symbol belongs to a different setup",
+                setup_id=setup_id,
+                symbol=symbol,
+                data={
+                    "existing_setup_id": existing.get("setup_id"),
+                    "existing_order_id": existing.get("id"),
+                },
+            )
+        else:
+            order_id = new_id("adp")
+        status = _normalize_order_status(stop_order.status) or OrderStatus.SUBMITTED.value
+        self.repository.upsert_order(
+            OrderRecord(
+                id=order_id,
+                setup_id=setup_id,
+                symbol=symbol,
+                side="SELL",
+                order_type=stop_order.order_type,
+                quantity=stop_order.quantity,
+                status=status,
+                stop_price=stop_order.stop_price,
+                broker_order_id=stop_order.broker_order_id,
+                broker_perm_id=stop_order.broker_perm_id,
+                parent_id=None,
+                oca_group=stop_order.oca_group,
+            )
+        )
 
     def _detect_unprotected_entry_orphans(self, local_setups: list[dict[str, Any]]) -> None:
         # A-3 (audits 58 S58.1, 66): a crash between the entry-order upsert
