@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -432,6 +433,88 @@ def broker_reality_blocking_reasons(
     if not fresh.get("auto_execution_blocked"):
         return []
     return [str(item) for item in fresh.get("blocking_reasons", []) if str(item or "")]
+
+
+@dataclass(frozen=True, slots=True)
+class AccountWideExposure:
+    """Account-wide position count / capital read from the cached broker
+    reality report (root D, D-1).
+
+    ``fresh`` mirrors the report's own freshness contract (connected, synced,
+    not stale) -- when it is ``False`` neither ``positions_count`` nor
+    ``capital_usd`` may be trusted and callers must fall back to their local
+    view, exactly as they did before D-1. When ``True``, the two values are
+    account-wide totals that already include this instance's own positions:
+    a caller must never add them to a local count (double counting), only
+    take ``max(local, this)``.
+    """
+
+    fresh: bool
+    positions_count: int | None
+    capital_usd: float | None
+    fallback_reason: str | None = None
+
+
+def account_wide_exposure(
+    repository: Any,
+    settings: dict[str, Any] | None,
+    *,
+    now: str | None = None,
+) -> AccountWideExposure:
+    """Read the account-wide exposure from the cached ``broker_reality`` report.
+
+    No broker call is made here: this only re-reads and re-freshens the report
+    already persisted by ``ReconciliationEngine`` every cycle (~45s) and at
+    startup (audit 87 P2.2, audit 88 Q1/Q2). ``max_total_open_risk_R`` has no
+    account-wide equivalent (it depends on each setup's local risk config) and
+    is intentionally not covered by this helper -- it stays local-only.
+    """
+    report = repository.get_bot_state(REPORT_STATE_KEY, {})
+    if not isinstance(report, dict) or not report.get("broker_last_sync_at"):
+        return AccountWideExposure(
+            fresh=False,
+            positions_count=None,
+            capital_usd=None,
+            fallback_reason="BROKER_REALITY_REPORT_ABSENT",
+        )
+    fresh_report = freshen_broker_reality_report(report, settings=settings, now=now)
+    status = str(fresh_report.get("broker_tracker_status") or "")
+    if not fresh_report.get("broker_connected") or status != "OK":
+        reason = (
+            "BROKER_REALITY_REPORT_STALE"
+            if status == "STALE"
+            else "BROKER_REALITY_REPORT_DISCONNECTED"
+        )
+        return AccountWideExposure(
+            fresh=False,
+            positions_count=None,
+            capital_usd=None,
+            fallback_reason=reason,
+        )
+    positions_count = fresh_report.get("broker_positions_count")
+    if not isinstance(positions_count, int):
+        return AccountWideExposure(
+            fresh=False,
+            positions_count=None,
+            capital_usd=None,
+            fallback_reason="BROKER_REALITY_POSITIONS_UNAVAILABLE",
+        )
+    capital_usd = 0.0
+    for row in fresh_report.get("rows", []) or []:
+        if not isinstance(row, dict):
+            continue
+        quantity = _number_or_none(row.get("position_quantity"))
+        if quantity is None or quantity == 0:
+            continue
+        price = _number_or_none(row.get("average_price"))
+        if price is None:
+            continue
+        capital_usd += price * quantity
+    return AccountWideExposure(
+        fresh=True,
+        positions_count=positions_count,
+        capital_usd=round(capital_usd, 2),
+    )
 
 
 def _broker_reality_row(

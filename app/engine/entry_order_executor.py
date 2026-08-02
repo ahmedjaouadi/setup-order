@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.engine.broker_reality import (
+    account_wide_exposure,
     broker_reality_blocking_reasons,
     engine_safety_blocking_reasons,
 )
@@ -195,6 +196,33 @@ class EntryOrderExecutor:
             float(position["average_price"]) * int(position["quantity"]) for position in positions
         )
         daily_pnl = sum(float(position["unrealized_pnl"]) for position in positions)
+        account_exposure = account_wide_exposure(self.repository, self.settings)
+        if account_exposure.fresh:
+            # Account-wide view already includes this instance's own
+            # positions -- replace, never add, to avoid double counting
+            # (root D, D-1, audit 88 Q4).
+            if account_exposure.positions_count is not None:
+                open_positions = max(open_positions, account_exposure.positions_count)
+            if account_exposure.capital_usd is not None:
+                exposure = max(exposure, account_exposure.capital_usd)
+        else:
+            self.event_store.record(
+                EventLevel.WARNING,
+                "exposure_cap_local_fallback",
+                (
+                    "Account-wide broker view unavailable "
+                    f"({account_exposure.fallback_reason}); risk engine exposure "
+                    "evaluated on local positions only."
+                ),
+                setup_id=setup["setup_id"],
+                symbol=setup["symbol"],
+                data={
+                    "gate": "risk_engine",
+                    "reason": account_exposure.fallback_reason,
+                    "local_open_positions": open_positions,
+                    "local_exposure_usd": exposure,
+                },
+            )
         decision = self.risk_engine.evaluate(
             setup_config=effective_setup["config"],
             entry_price=signal.entry_price,

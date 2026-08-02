@@ -58,7 +58,9 @@ from app.decision_codes import STATUS_INVALIDATED as STATUS_INVALIDATED
 from app.decision_codes import STATUS_NO_GO as STATUS_NO_GO
 from app.decision_codes import STATUS_PAUSED as STATUS_PAUSED
 from app.decision_codes import STATUS_WAIT as STATUS_WAIT
-from app.models import MarketSnapshot, SetupSignal, SignalAction, utc_now_iso
+from app.engine.broker_reality import account_wide_exposure
+from app.models import EventLevel, MarketSnapshot, SetupSignal, SignalAction, utc_now_iso
+from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
 from app.utils.market_hours import (
     US_EQUITY_TIMEZONE,
@@ -357,9 +359,12 @@ class TradeGuardsService:
         self,
         repository: TradingRepository,
         settings: dict[str, Any] | None = None,
+        *,
+        event_store: EventStore | None = None,
     ) -> None:
         self.repository = repository
         self.settings = settings if isinstance(settings, dict) else {}
+        self.event_store = event_store
         self.circuit_breakers = CircuitBreakerTracker(repository, self.settings)
 
     def _config(self) -> dict[str, Any]:
@@ -467,22 +472,47 @@ class TradeGuardsService:
                     )
 
         max_open = int(_number(config.get("max_open_positions"), 0) or 0)
-        if max_open > 0 and len(positions) >= max_open:
-            return GuardVerdict(
-                status=STATUS_NO_GO,
-                reason_code=REASON_EXPOSURE_LIMIT,
-                decision_status="EXPOSURE_LIMIT",
-                title="Nombre maximal de positions atteint",
-                message=(
-                    f"{len(positions)} positions ouvertes (max {max_open}). "
-                    "Aucune nouvelle entree autorisee."
-                ),
-                context={"open_positions": len(positions), "max_open_positions": max_open},
-            )
+        if max_open > 0:
+            effective_open_positions = len(positions)
+            account_exposure = account_wide_exposure(self.repository, self.settings)
+            if account_exposure.fresh and account_exposure.positions_count is not None:
+                # Account-wide view already includes this instance's own
+                # positions -- replace, never add, to avoid double counting
+                # (root D, D-1, audit 88 Q4).
+                effective_open_positions = max(
+                    effective_open_positions, account_exposure.positions_count
+                )
+            else:
+                self._record_exposure_cap_local_fallback(
+                    symbol=normalized,
+                    gate="max_open_positions",
+                    reason=account_exposure.fallback_reason,
+                    local_value=len(positions),
+                )
+            if effective_open_positions >= max_open:
+                return GuardVerdict(
+                    status=STATUS_NO_GO,
+                    reason_code=REASON_EXPOSURE_LIMIT,
+                    decision_status="EXPOSURE_LIMIT",
+                    title="Nombre maximal de positions atteint",
+                    message=(
+                        f"{effective_open_positions} positions ouvertes (max {max_open}). "
+                        "Aucune nouvelle entree autorisee."
+                    ),
+                    context={
+                        "open_positions": effective_open_positions,
+                        "local_open_positions": len(positions),
+                        "max_open_positions": max_open,
+                    },
+                )
 
         risk_unit = abs(
             _number(_mapping(self.settings.get("risk")).get("max_risk_per_trade_usd"), 15.0) or 15.0
         )
+        # max_total_open_risk_R stays local-only: it is derived from each
+        # setup's own risk config (max_risk_usd), a notion that does not
+        # exist for positions opened by another instance on the broker
+        # (audit 87 Q3, audit 88 Q3 -- no account-wide equivalent).
         max_open_risk_r = _number(config.get("max_total_open_risk_R"), 0.0) or 0.0
         if max_open_risk_r > 0:
             open_risk = sum(
@@ -561,6 +591,32 @@ class TradeGuardsService:
                         },
                     )
         return None
+
+    def _record_exposure_cap_local_fallback(
+        self,
+        *,
+        symbol: str,
+        gate: str,
+        reason: str | None,
+        local_value: float,
+    ) -> None:
+        if self.event_store is None:
+            return
+        self.event_store.record(
+            EventLevel.WARNING,
+            "exposure_cap_local_fallback",
+            (
+                f"Account-wide broker view unavailable ({reason}); "
+                f"{gate} evaluated on local positions only."
+            ),
+            symbol=symbol,
+            data={
+                "gate": "trade_guards",
+                "limit": gate,
+                "reason": reason,
+                "local_value": local_value,
+            },
+        )
 
     def _candidate_risk_usd(self, setup: dict[str, Any] | None, risk_unit: float) -> float:
         config = setup.get("config") if isinstance(setup, dict) else None

@@ -161,7 +161,9 @@ class TradingEngine:
             ),
             settings=settings.raw,
         )
-        self.trade_guards = TradeGuardsService(repository, settings.raw)
+        self.trade_guards = TradeGuardsService(
+            repository, settings.raw, event_store=self.event_store
+        )
         self.position_manager = PositionManager(
             repository,
             self.event_store,

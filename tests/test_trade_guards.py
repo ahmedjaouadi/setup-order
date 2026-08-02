@@ -5,6 +5,8 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from app.broker.ib_models import BrokerPosition
+from app.engine.broker_reality import REPORT_STATE_KEY, build_broker_reality_report
 from app.engine.trade_guards import (
     REASON_CONFLICT_WITH_OPEN_POSITION,
     REASON_COOLDOWN_AFTER_STOP,
@@ -19,6 +21,7 @@ from app.engine.trade_guards import (
 )
 from app.models import PositionRecord, utc_now_iso
 from app.storage.database import Database
+from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
 
 NOW = datetime(2026, 7, 1, 15, 0, tzinfo=UTC)  # 11:00 New York, a Wednesday
@@ -229,6 +232,120 @@ class ExposureLimitTests(TradeGuardsTestCase):
         self.open_position("AAAA")
         service = TradeGuardsService(self.repository, {})
         self.assertIsNone(service.evaluate_entry("AAAA", now=NOW))
+
+
+class AccountWideExposureCapTests(TradeGuardsTestCase):
+    """Root D, D-1: max_open_positions (exposure) plafonne aussi sur le
+    compte-entier via le rapport broker_reality en cache (audit/ORDRE_D1.md)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.event_store = EventStore(self.repository)
+
+    def service_with_events(self, settings: dict | None = None) -> TradeGuardsService:
+        return TradeGuardsService(
+            self.repository, settings or guard_settings(), event_store=self.event_store
+        )
+
+    def store_broker_report(
+        self,
+        positions: list[BrokerPosition],
+        *,
+        now: str | None = None,
+        connected: bool = True,
+    ) -> None:
+        report = build_broker_reality_report(
+            local_setups=[],
+            local_orders=[],
+            local_positions=[],
+            broker_orders=[],
+            broker_positions=positions,
+            broker_connected=connected,
+            now=now,
+        )
+        self.repository.set_bot_state(REPORT_STATE_KEY, report)
+
+    def test_account_wide_count_refuses_earlier_than_local(self) -> None:
+        # PREUVE 1 : compte-entier montre 4 positions, local 2, seuil 3 ->
+        # refusee alors que le local seul (2) l'aurait autorisee.
+        self.open_position("AAAA", risk_remaining=1.0)
+        self.open_position("BBBB", risk_remaining=1.0)
+        self.store_broker_report(
+            [
+                BrokerPosition(symbol=f"P{i}", quantity=1, average_price=10.0, current_price=10.0)
+                for i in range(4)
+            ]
+        )
+        verdict = self.service_with_events().evaluate_entry("CCCC", now=NOW)
+        self.assertIsNotNone(verdict)
+        self.assertEqual(verdict.reason_code, REASON_EXPOSURE_LIMIT)
+        self.assertEqual(verdict.context["open_positions"], 4)
+        self.assertEqual(verdict.context["local_open_positions"], 2)
+
+    def test_no_double_counting_same_positions(self) -> None:
+        # PREUVE 2 (Q4, LE test central) : local 2 positions, compte-entier
+        # montre les MEMES 2 (pas 4) -> max(2, 2) = 2 < 3, entree autorisee.
+        # Une addition locale+broker donnerait 4 et refuserait a tort.
+        self.open_position("AAAA", risk_remaining=1.0)
+        self.open_position("BBBB", risk_remaining=1.0)
+        self.store_broker_report(
+            [
+                BrokerPosition(symbol="AAAA", quantity=10, average_price=20.0, current_price=20.0),
+                BrokerPosition(symbol="BBBB", quantity=10, average_price=20.0, current_price=20.0),
+            ]
+        )
+        verdict = self.service_with_events().evaluate_entry("CCCC", now=NOW)
+        self.assertIsNone(verdict)
+
+    def test_absent_report_falls_back_to_local_and_traces_event(self) -> None:
+        # PREUVE 4 : rapport absent -> base = local seul, comportement
+        # identique a aujourd'hui, evenement de tracabilite emis.
+        self.open_position("AAAA", risk_remaining=1.0)
+        verdict = self.service_with_events().evaluate_entry("BBBB", now=NOW)
+        self.assertIsNone(verdict)
+        events = self.repository.list_events(event_type="exposure_cap_local_fallback")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["data"]["reason"], "BROKER_REALITY_REPORT_ABSENT")
+
+    def test_stale_report_falls_back_to_local_and_traces_event(self) -> None:
+        # PREUVE 5 : rapport perime -> idem PREUVE 4.
+        self.open_position("AAAA", risk_remaining=1.0)
+        old = (datetime.now(UTC) - timedelta(seconds=9999)).isoformat()
+        self.store_broker_report(
+            [BrokerPosition(symbol="ZZZZ", quantity=5, average_price=1.0, current_price=1.0)],
+            now=old,
+        )
+        verdict = self.service_with_events().evaluate_entry("BBBB", now=NOW)
+        self.assertIsNone(verdict)
+        events = self.repository.list_events(event_type="exposure_cap_local_fallback")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["data"]["reason"], "BROKER_REALITY_REPORT_STALE")
+
+    def test_never_relaxes_below_local(self) -> None:
+        # PREUVE 6 : garde de surete, le compte-entier montre MOINS que le
+        # local -> ne jamais relacher (max() ne peut jamais descendre
+        # sous le local).
+        self.open_position("AAAA", risk_remaining=1.0)
+        self.open_position("BBBB", risk_remaining=1.0)
+        self.open_position("CCCC", risk_remaining=1.0)
+        self.store_broker_report(
+            [BrokerPosition(symbol="ZZZZ", quantity=1, average_price=1.0, current_price=1.0)]
+        )
+        verdict = self.service_with_events().evaluate_entry("DDDD", now=NOW)
+        self.assertIsNotNone(verdict)
+        self.assertEqual(verdict.context["open_positions"], 3)
+
+    def test_total_open_risk_limit_unaffected_by_broker_report(self) -> None:
+        # PREUVE 7 : max_total_open_risk_R reste local-seul, non-regression.
+        self.open_position("AAAA", risk_remaining=25.0)
+        self.store_broker_report(
+            [BrokerPosition(symbol="ZZZZ", quantity=1, average_price=1.0, current_price=1.0)]
+        )
+        setup = {"config": {"risk": {"max_risk_usd": 15}}}
+        verdict = self.service_with_events().evaluate_entry("BBBB", setup=setup, now=NOW)
+        self.assertIsNotNone(verdict)
+        self.assertEqual(verdict.status, STATUS_NO_GO)
+        self.assertEqual(verdict.reason_code, REASON_EXPOSURE_LIMIT)
 
 
 if __name__ == "__main__":
