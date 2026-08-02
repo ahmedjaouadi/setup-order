@@ -121,6 +121,9 @@ class StopModificationServiceTests(unittest.IsolatedAsyncioTestCase):
         position = self.repository.get_position("LUNR")
         assert position is not None
         self.assertEqual(position["current_stop"], 19.5)
+        self.assertEqual(
+            self.repository.list_events(event_type="stop_modification_local_only"), []
+        )
 
     async def test_lowering_stop_is_rejected_before_touching_broker(self) -> None:
         await self._seed_position(current_stop=18.0)
@@ -179,6 +182,40 @@ class StopModificationServiceTests(unittest.IsolatedAsyncioTestCase):
         position = self.repository.get_position("LUNR")
         assert position is not None
         self.assertEqual(position["current_stop"], 19.0)
+        self.assertEqual(
+            self.repository.list_events(event_type="stop_modification_local_only"), []
+        )
+
+    async def test_stop_order_without_broker_order_id_emits_local_only_alert(self) -> None:
+        """orderId=0 case from B-1a: a stop entered manually in TWS is
+        persisted locally with broker_order_id=None. modify_stop still
+        succeeds locally but must flag that the broker was never reached.
+        """
+        await self._seed_position(current_stop=18.0)
+        self.repository.upsert_order(
+            OrderRecord(
+                id="stp_LUNR_1",
+                setup_id="LUNR_SETUP",
+                symbol="LUNR",
+                side="SELL",
+                order_type="STP",
+                quantity=6,
+                status="SUBMITTED",
+                stop_price=18.0,
+                broker_order_id=None,
+            )
+        )
+
+        result = await self.service.modify_stop("LUNR", 19.5)
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["broker_updated"])
+        events = self.repository.list_events(event_type="stop_modification_local_only")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["level"], "WARNING")
+        self.assertEqual(events[0]["data"]["cause"], "no_broker_order_id")
+        self.assertEqual(events[0]["data"]["broker_updated"], False)
+        self.assertEqual(events[0]["data"]["new_stop"], 19.5)
 
     async def test_unknown_symbol_is_rejected(self) -> None:
         result = await self.service.modify_stop("GHOST", 19.0)
@@ -198,6 +235,11 @@ class StopModificationServiceTests(unittest.IsolatedAsyncioTestCase):
         position = self.repository.get_position("LUNR")
         assert position is not None
         self.assertEqual(position["current_stop"], 19.5)
+        events = self.repository.list_events(event_type="stop_modification_local_only")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["level"], "WARNING")
+        self.assertEqual(events[0]["data"]["cause"], "broker_disconnected")
+        self.assertEqual(events[0]["data"]["broker_updated"], False)
 
     async def test_broker_truth_overrides_stale_local_reference(self) -> None:
         """B-2 central proof: a stop raised at the broker (trailing IB, manual

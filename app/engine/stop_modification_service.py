@@ -113,6 +113,21 @@ class StopModificationService:
                 )
             broker_updated = True
 
+        if stop_order is not None and not broker_updated:
+            cause = "no_broker_order_id" if not broker_order_id else "broker_disconnected"
+            self.event_store.record(
+                EventLevel.WARNING,
+                "stop_modification_local_only",
+                "Stop modification was not confirmed by the broker; local stop may diverge from the real stop",
+                symbol=normalized,
+                data={
+                    "symbol": normalized,
+                    "new_stop": new_stop,
+                    "cause": cause,
+                    "broker_updated": False,
+                },
+            )
+
         if stop_order is not None:
             self.repository.update_order_stop_price(str(stop_order["id"]), new_stop)
         if position is not None:
