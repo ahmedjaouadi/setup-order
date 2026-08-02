@@ -206,18 +206,19 @@ class TradingEngine:
             self.event_store,
             self.state_machine,
         )
-        self.position_action_executor = PositionActionExecutor(
-            repository,
-            self.event_store,
-            self.position_manager,
-            self.state_machine,
-        )
         self.stop_modification_service = StopModificationService(
             repository,
             self.event_store,
             self.broker,
             self.position_manager,
             trade_guards=self.trade_guards,
+        )
+        self.position_action_executor = PositionActionExecutor(
+            repository,
+            self.event_store,
+            self.position_manager,
+            self.state_machine,
+            self.stop_modification_service,
         )
         self.entry_order_executor = EntryOrderExecutor(
             repository,
@@ -2468,7 +2469,7 @@ class TradingEngine:
     ) -> None:
         if self.action_executor.execute_simple_action(setup, current_status, signal):
             return
-        if self.position_action_executor.execute_raise_stop_signal(setup, current_status, signal):
+        if await self.position_action_executor.execute_raise_stop_signal(setup, current_status, signal):
             return
         if signal.action == SignalAction.ENTRY_READY and current_status not in ENTRY_ELIGIBLE_STATUSES:
             self.event_store.record(

@@ -5,6 +5,7 @@ from typing import Any
 
 from app.engine.position_manager import PositionManager
 from app.engine.state_machine import StateMachine
+from app.engine.stop_modification_service import StopModificationService
 from app.models import EventLevel, SetupStatus, SignalAction
 from app.storage.event_store import EventStore
 from app.storage.repositories import TradingRepository
@@ -19,13 +20,15 @@ class PositionActionExecutor:
         event_store: EventStore,
         position_manager: PositionManager,
         state_machine: StateMachine,
+        stop_modification_service: StopModificationService,
     ) -> None:
         self.repository = repository
         self.event_store = event_store
         self.position_manager = position_manager
         self.state_machine = state_machine
+        self.stop_modification_service = stop_modification_service
 
-    def execute_raise_stop_signal(
+    async def execute_raise_stop_signal(
         self,
         setup: dict[str, Any],
         current_status: SetupStatus,
@@ -34,9 +37,19 @@ class PositionActionExecutor:
         if signal.action != SignalAction.RAISE_STOP or signal.new_stop is None:
             return False
 
-        moved = self.move_stop(setup["symbol"], signal.new_stop)
-        if moved and signal.target_status:
-            self.transition_setup(setup, current_status, signal.target_status, signal.reason)
+        result = await self.stop_modification_service.modify_stop(setup["symbol"], signal.new_stop)
+        if result["ok"]:
+            if signal.target_status:
+                self.transition_setup(setup, current_status, signal.target_status, signal.reason)
+        else:
+            self.event_store.record(
+                EventLevel.WARNING,
+                "raise_stop_rejected",
+                result.get("reason", "Stop modification service rejected the raise"),
+                setup_id=setup["setup_id"],
+                symbol=setup["symbol"],
+                data={"reason_code": result.get("reason_code")},
+            )
         return True
 
     def move_stop(
